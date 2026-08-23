@@ -1,0 +1,7 @@
+<resources>
+    <!-- Launcher-icon palette, dark mode. See values/colors.xml for why the icon carries a light
+         and a dark pair at all; this file must define exactly the same names, or the icon silently
+         falls back to the light pair on a dark home screen. -->
+    <color name="brand_icon_ground">#101710</color>
+    <color name="brand_icon_mark">#A3E635</color>
+</resources>

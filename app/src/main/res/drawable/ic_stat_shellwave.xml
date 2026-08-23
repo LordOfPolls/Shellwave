@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?><!-- Notification small icon. The system renders status-bar icons as an alpha-only
+     silhouette (colour is ignored), so this is plain white - it must not use
+     @color/brand_icon_mark, which would make the light-mode icon a mid-tone the status bar then
+     flattens to a muddy shape.
+
+     Same `~/` Prompt Wave geometry and 0.809 safe-zone fit as ic_launcher_foreground.xml, drawn on
+     the same 108-unit viewport at 24dp so all three copies of the mark stay identical. The status
+     bar is where the old block cursor read worst - a silhouette has no shading to separate the
+     cursor from the wave's cap - so the slash earns its keep most here. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:pivotX="54"
+        android:pivotY="54"
+        android:scaleX="0.809"
+        android:scaleY="0.809"
+        android:translateX="-4.22"
+        android:translateY="5.1">
+        <path
+            android:fillColor="#00000000"
+            android:pathData="M25,57 C31,43 41,43 49,52 C57,61 67,61 73,47"
+            android:strokeWidth="10.5"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeLineCap="round" />
+        <path
+            android:fillColor="#00000000"
+            android:pathData="M83,65.5 L93.5,38.5"
+            android:strokeWidth="10.5"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeLineCap="round" />
+    </group>
+</vector>

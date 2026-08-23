@@ -1,0 +1,17 @@
+<resources>
+    <!-- Launcher-icon palette, light mode. The `-night` variant in values-night/colors.xml holds
+         the dark pair; the launcher resolves whichever matches its own configuration, which is how
+         the icon follows the system theme without a second adaptive-icon XML.
+
+         This is separate from, and additional to, the API 33+ themed icon: <monochrome> is opt-in
+         (the user turns "Themed icons" on in Wallpaper & style) and hands the launcher a flat
+         silhouette to tint from the wallpaper. These two colours are what the *un*-themed icon
+         shows, which is what the overwhelming majority of installs will actually see, so it gets a
+         light and a dark rendition rather than a single dark one that ignores half the users.
+
+         Values are the brand pairs from the icon concept board: paper/deep-lime on light,
+         near-black-green/bright-lime on dark. Both pairs were picked for contrast against their
+         own ground, so neither can be swapped independently of the other. -->
+    <color name="brand_icon_ground">#F4F7EF</color>
+    <color name="brand_icon_mark">#4D7C0F</color>
+</resources>

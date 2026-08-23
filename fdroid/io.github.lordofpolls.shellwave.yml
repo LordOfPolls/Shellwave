@@ -1,0 +1,39 @@
+# Not read by anything in this repository. This is the metadata file to copy into a fork of
+# https://gitlab.com/fdroid/fdroiddata as metadata/io.github.lordofpolls.shellwave.yml, then open
+# a merge request from. Kept here so it stays in step with the build it describes.
+#
+# Before submitting:
+#   - tag the release commit (v1.0) and push the tag; `commit:` below must resolve
+#   - run `fdroid lint io.github.lordofpolls.shellwave` and `fdroid build` from the fork
+#   - the buildserver needs SDK platform 37 and an AGP 9-capable JDK; if the image lags, add a
+#     `sudo:` line to the build entry to install the platform, or hold the submission until it
+#     catches up
+#
+# The `foss` flavour is load-bearing: it is the one without com.android.billingclient. Building
+# `play` here would put a proprietary library in the APK and get the app rejected.
+
+Categories:
+  - Connectivity
+  - Development
+License: GPL-3.0-only
+AuthorName: LordOfPolls
+AuthorWebSite: https://github.com/LordOfPolls
+SourceCode: https://github.com/LordOfPolls/Shellwave
+IssueTracker: https://github.com/LordOfPolls/Shellwave/issues
+Changelog: https://github.com/LordOfPolls/Shellwave/releases
+
+RepoType: git
+Repo: https://github.com/LordOfPolls/Shellwave.git
+
+Builds:
+  - versionName: '1.0'
+    versionCode: 1
+    commit: v1.0
+    subdir: app
+    gradle:
+      - foss
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags
+CurrentVersion: '1.0'
+CurrentVersionCode: 1

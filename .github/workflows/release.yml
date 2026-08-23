@@ -1,0 +1,106 @@
+# Builds the FOSS flavour when a GitHub release is published and attaches the APK to it.
+#
+# `foss` is deliberate: it is the flavour without com.android.billingclient, so the artifact
+# published here matches what F-Droid builds from the same tag. The `play` flavour is not built
+# by CI - that one goes through Play Console.
+#
+# Signing: set the SHELLWAVE_RELEASE_KEYSTORE_BASE64 secret (base64 of the .jks) plus
+# SHELLWAVE_RELEASE_STORE_PASSWORD / _KEY_ALIAS / _KEY_PASSWORD. Without them the build still
+# runs, but app/build.gradle.kts leaves the APK unsigned rather than falling back to the debug
+# key, and the job fails before it uploads anything so an uninstallable APK never lands on a
+# release.
+name: Release (FOSS)
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: '16111833'
+          packages: 'platforms;android-37.0 build-tools;36.0.0'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Decode release keystore
+        id: keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.SHELLWAVE_RELEASE_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "SHELLWAVE_RELEASE_KEYSTORE_BASE64 is not set - the build will be unsigned." >&2
+            echo "path=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Outside the checkout, so it cannot be picked up by anything that globs the workspace.
+          keystore="$RUNNER_TEMP/shellwave-release.jks"
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$keystore"
+          echo "path=$keystore" >> "$GITHUB_OUTPUT"
+
+      - name: Build assembleFossRelease
+        env:
+          SHELLWAVE_RELEASE_STORE_FILE: ${{ steps.keystore.outputs.path }}
+          SHELLWAVE_RELEASE_STORE_PASSWORD: ${{ secrets.SHELLWAVE_RELEASE_STORE_PASSWORD }}
+          SHELLWAVE_RELEASE_KEY_ALIAS: ${{ secrets.SHELLWAVE_RELEASE_KEY_ALIAS }}
+          SHELLWAVE_RELEASE_KEY_PASSWORD: ${{ secrets.SHELLWAVE_RELEASE_KEY_PASSWORD }}
+        run: ./gradlew --no-daemon assembleFossRelease
+
+      - name: Delete keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/shellwave-release.jks"
+
+      - name: Locate the APK
+        id: apk
+        run: |
+          apk=$(find app/build/outputs/apk/foss/release -name '*.apk' -print -quit)
+          if [ -z "$apk" ]; then
+            echo "No APK under app/build/outputs/apk/foss/release" >&2
+            exit 1
+          fi
+          case "$apk" in
+            *unsigned*)
+              # An unsigned APK cannot be installed, so it must not reach a release page.
+              echo "Built $apk - unsigned. Set the SHELLWAVE_RELEASE_* secrets." >&2
+              exit 1
+              ;;
+          esac
+          echo "path=$apk" >> "$GITHUB_OUTPUT"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: shellwave-foss-release-apk
+          path: ${{ steps.apk.outputs.path }}
+          if-no-files-found: error
+
+      - name: Attach the APK to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+          APK: ${{ steps.apk.outputs.path }}
+        run: |
+          # Named after the tag: a release page full of app-foss-release.apk tells a user
+          # nothing about which version they just downloaded.
+          asset="$RUNNER_TEMP/shellwave-$TAG-foss.apk"
+          cp "$APK" "$asset"
+          gh release upload "$TAG" "$asset" --clobber

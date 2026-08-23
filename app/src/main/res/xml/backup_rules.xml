@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+    Consulted only on API 23-30 (ignored on 31+, where data_extraction_rules.xml applies
+    instead); minSdk is 31 here so no real device ever reads this file. Filled in to match
+    data_extraction_rules.xml anyway, in case minSdk is ever lowered - see that file's comment
+    for why the whole database domain (not just shellwave.db by name - Room's WAL journal mode
+    puts live data in shellwave.db-wal/-shm too) is excluded.
+-->
+<full-backup-content>
+    <exclude
+        domain="database"
+        path="." />
+</full-backup-content>

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?><!-- Monochrome layer for API 33+ themed icons. Same `~/` Prompt Wave geometry as
+     ic_launcher_foreground.xml, including its 0.809 safe-zone fit - see that file for the
+     arithmetic, for why the second glyph is a slash rather than a block cursor, and for why the
+     three copies of this mark must stay identical.
+
+     Single flat colour on purpose: the launcher discards it and tints the shape from the wallpaper
+     palette, so a brand colour here would be thrown away, and a second colour would collapse into
+     one tone. Kept as its own file rather than reusing the foreground because the foreground is
+     now driven by @color/brand_icon_mark, which is exactly the theming this layer must not do. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:pivotX="54"
+        android:pivotY="54"
+        android:scaleX="0.809"
+        android:scaleY="0.809"
+        android:translateX="-4.22"
+        android:translateY="5.1">
+        <path
+            android:fillColor="#00000000"
+            android:pathData="M25,57 C31,43 41,43 49,52 C57,61 67,61 73,47"
+            android:strokeWidth="10.5"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeLineCap="round" />
+        <path
+            android:fillColor="#00000000"
+            android:pathData="M83,65.5 L93.5,38.5"
+            android:strokeWidth="10.5"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeLineCap="round" />
+    </group>
+</vector>

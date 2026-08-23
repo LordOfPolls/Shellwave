@@ -1,0 +1,19 @@
+*.iml
+.gradle
+/.idea/
+.DS_Store
+build/
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Release signing - never committed. See keystore.properties.example.
+keystore.properties
+*.jks
+*.keystore
+*.p12
+
+# Working notes. Kept on disk, out of the repository.
+docs/
+/scripts/

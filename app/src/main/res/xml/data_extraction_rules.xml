@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+    allowBackup="false" (AndroidManifest.xml) already blocks cloud backup entirely, but it does
+    NOT cover device-to-device transfer (Android 12+ "Copy your data" / D2D restore), which is
+    governed separately by the <device-transfer> block below. Room's shellwave.db is where every
+    CredentialEntity row lives (see core/db/entities/CredentialEntity.kt) - the AES-GCM
+    ciphertext plus the alias naming which Android Keystore key sealed it. The key itself never
+    leaves the Keystore (hardware-backed, per-device) so the ciphertext alone is unusable on
+    another device, but excluding the database matters anyway: hosts/scripts/etc. carry little
+    value without their credentials.
+
+    Room opens in WAL journal mode by default, so shellwave.db is never alone - confirmed on
+    device (`run-as ... ls -la databases/`) that shellwave.db-shm and shellwave.db-wal sit beside
+    it in the same databases/ directory from the moment the DB is first opened. Recent writes -
+    including a newly-sealed CredentialEntity row not yet checkpointed back into the main file -
+    live in -wal, not shellwave.db. A `path="shellwave.db"` exclude is an exact-file match, not a
+    prefix, so it does NOT cover -wal/-shm: naming only the main file would leave exactly the
+    freshest credential ciphertext eligible for transfer. This dialect has no glob/prefix
+    matching, but domain="database" path="." matches the whole database directory recursively,
+    which is both correct (catches -wal/-shm, and any future companion file the journal mode
+    adds) and simple: this app has exactly one database, so excluding the domain is excluding
+    the database, not a broader blast radius.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude
+            domain="database"
+            path="." />
+    </cloud-backup>
+    <device-transfer>
+        <exclude
+            domain="database"
+            path="." />
+    </device-transfer>
+</data-extraction-rules>

@@ -1,0 +1,120 @@
+Shellwave
+Copyright (C) 2026 the Shellwave contributors
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License version 3, as published by the
+Free Software Foundation. See the LICENSE file for the full text.
+
+Third-party notices
+====================
+
+Terminal engine (module :terminal-core)
+----------------------------------------
+The files under `terminal-core/src/main/java/com/termux/terminal/` are vendored,
+with minimal changes, from the Termux project:
+
+    https://github.com/termux/termux-app
+
+  Upstream module: terminal-emulator
+  Upstream commit: 3df69d1da197dd9bd71a3bafd902dffd720576b4
+  Upstream licence: GNU General Public License v3.0 only
+
+See `terminal-core/VENDORING.md` for the exact file list and the edits made to
+get the engine compiling without its original pty/JNI subprocess code, which
+this app does not use (Shellwave connects to a remote shell over SSH instead
+of driving a local pseudoterminal).
+
+Terminal renderer (module :app)
+----------------------------------------
+`app/src/main/java/io/github/lordofpolls/shellwave/terminal/TerminalRenderer.kt` is a Kotlin
+port of Termux's `TerminalRenderer.java`, GPL-derived from the same upstream project and commit
+as above:
+
+    https://github.com/termux/termux-app
+    Upstream path:   terminal-view/src/main/java/com/termux/view/TerminalRenderer.java
+    Upstream commit: 3df69d1da197dd9bd71a3bafd902dffd720576b4
+    Upstream licence: GNU General Public License v3.0 only
+
+See the header comment in that file for what was changed in the port.
+
+Text selection (module :app)
+----------------------------------------
+`app/src/main/java/io/github/lordofpolls/shellwave/terminal/TerminalSelectionState.kt` and
+`TerminalSelectionOverlay.kt` are a Compose port of the selection-controller design in Termux's
+`terminal-view` module - the coordinate model, the handle-drag clamp/snap behaviour, and the use
+of the platform floating `ActionMode` for the selection action menu (Copy/Select All/Paste/Share
+here, vs. upstream's Copy/Paste/More) - GPL-derived from the same upstream project and commit as
+above:
+
+    https://github.com/termux/termux-app
+    Upstream paths:  terminal-view/src/main/java/com/termux/view/textselection/TextSelectionCursorController.java
+                     terminal-view/src/main/java/com/termux/view/textselection/TextSelectionHandleView.java
+                     terminal-view/src/main/java/com/termux/view/TerminalView.java
+    Upstream commit: 3df69d1da197dd9bd71a3bafd902dffd720576b4
+    Upstream licence: GNU General Public License v3.0 only
+
+Unlike the renderer port above, `terminal-view` itself was never vendored into this repository
+(only `terminal-emulator` was - see `terminal-core/VENDORING.md`) - these two files are a port of
+its design to Compose (a `Popup`-hosted handle in place of `TextSelectionHandleView`'s
+`PopupWindow`, and `TextSelectionCursorController.setInitialTextSelectionPosition`'s single-row,
+column-by-column word scan - not `TerminalBuffer.getWordAtLocation`'s cross-row text-joining,
+which an earlier draft of this port built on and which turned out to mishandle wide (CJK)
+characters; see `wordSelectionAt`'s doc comment in `TerminalSelection.kt` for how that was found
+and why the shipped version scans the way `TextSelectionCursorController` actually does), not a
+line-for-line translation. See the header comments in both files for what was kept, adapted, or
+left out.
+
+Bundled terminal fonts (module :app)
+----------------------------------------
+Four monospace fonts are bundled under
+`app/src/main/res/font/` as selectable terminal profile fonts (a user's own `.ttf`/`.otf`,
+picked via the system file picker, is never bundled - only these four are). All four are
+served from the Google Fonts collection as variable fonts (a single file covering the family's
+full weight range; only the default/regular instance is used here), each under the SIL Open
+Font License, Version 1.1 - a different licence from this project's own GPLv3 (see `LICENSE`),
+so its full text is reproduced per font rather than merely named:
+
+  JetBrains Mono   -> app/src/main/res/font/jetbrains_mono.ttf
+    https://github.com/JetBrains/JetBrainsMono
+    Source:  https://github.com/google/fonts/blob/main/ofl/jetbrainsmono/JetBrainsMono%5Bwght%5D.ttf
+    Licence: SIL Open Font License 1.1 - full text in licenses/fonts/OFL-JetBrainsMono.txt
+
+  Fira Code        -> app/src/main/res/font/fira_code.ttf
+    https://github.com/tonsky/FiraCode
+    Source:  https://github.com/google/fonts/blob/main/ofl/firacode/FiraCode%5Bwght%5D.ttf
+    Licence: SIL Open Font License 1.1 - full text in licenses/fonts/OFL-FiraCode.txt
+
+  Source Code Pro  -> app/src/main/res/font/source_code_pro.ttf
+    https://github.com/adobe-fonts/source-code-pro
+    Source:  https://github.com/google/fonts/blob/main/ofl/sourcecodepro/SourceCodePro%5Bwght%5D.ttf
+    Licence: SIL Open Font License 1.1 - full text in licenses/fonts/OFL-SourceCodePro.txt
+
+  Roboto Mono      -> app/src/main/res/font/roboto_mono.ttf
+    https://github.com/googlefonts/robotomono
+    Source:  https://github.com/google/fonts/blob/main/ofl/robotomono/RobotoMono%5Bwght%5D.ttf
+    Licence: SIL Open Font License 1.1 - full text in licenses/fonts/OFL-RobotoMono.txt
+
+Third-party libraries (module :app)
+----------------------------------------
+Compiled into the app as dependencies (see gradle/libs.versions.toml and app/build.gradle.kts),
+each under its own permissive licence, none of which is GPLv3 and none of which requires
+reproducing full licence text here (unlike the OFL fonts above, which do):
+
+  sshj - SSH/SFTP client used for every connection this app makes
+    https://github.com/hierynomus/sshj
+    Licence: Apache License, Version 2.0
+
+  Bouncy Castle (bcprov-jdk18on, bcpkix-jdk18on) - cryptographic provider sshj delegates to for
+  key parsing, key exchange, and host key verification
+    https://www.bouncycastle.org/
+    Licence: Bouncy Castle Licence (an adaptation of the MIT licence)
+
+  SLF4J Android (org.slf4j:slf4j-android) - the logging facade sshj logs through
+    https://www.slf4j.org/
+    Licence: MIT License
+
+  AndroidX / Jetpack (Compose UI, Material 3, Material 3 Adaptive, Room, Hilt/Dagger, Glance,
+  Biometric, Window, Fragment, Activity, Core, Lifecycle) - the UI toolkit and platform libraries
+  this app is built on
+    https://developer.android.com/jetpack
+    Licence: Apache License, Version 2.0

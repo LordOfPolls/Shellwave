@@ -1,0 +1,627 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 7,
+    "identityHash": "962effc8cbc043858c0bc31dd8c8fc5f",
+    "entities": [
+      {
+        "tableName": "hosts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `label` TEXT, `hostname` TEXT NOT NULL, `port` INTEGER NOT NULL, `username` TEXT NOT NULL, `credentialId` INTEGER NOT NULL, `lastConnectedAt` INTEGER, `createdAt` INTEGER NOT NULL, `resilientSession` INTEGER NOT NULL, `terminalProfileId` INTEGER, `colorSchemeId` INTEGER, `keyBarLayoutId` INTEGER, `proxyJumpHostId` INTEGER, FOREIGN KEY(`credentialId`) REFERENCES `credentials`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`proxyJumpHostId`) REFERENCES `hosts`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "label",
+            "columnName": "label",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "hostname",
+            "columnName": "hostname",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "port",
+            "columnName": "port",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "username",
+            "columnName": "username",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "credentialId",
+            "columnName": "credentialId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastConnectedAt",
+            "columnName": "lastConnectedAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "resilientSession",
+            "columnName": "resilientSession",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "terminalProfileId",
+            "columnName": "terminalProfileId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "colorSchemeId",
+            "columnName": "colorSchemeId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "keyBarLayoutId",
+            "columnName": "keyBarLayoutId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "proxyJumpHostId",
+            "columnName": "proxyJumpHostId",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_hosts_credentialId",
+            "unique": false,
+            "columnNames": [
+              "credentialId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_hosts_credentialId` ON `${TABLE_NAME}` (`credentialId`)"
+          },
+          {
+            "name": "index_hosts_proxyJumpHostId",
+            "unique": false,
+            "columnNames": [
+              "proxyJumpHostId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_hosts_proxyJumpHostId` ON `${TABLE_NAME}` (`proxyJumpHostId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "credentials",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "credentialId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "hosts",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "proxyJumpHostId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "credentials",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `type` TEXT NOT NULL, `label` TEXT, `keystoreAlias` TEXT, `secretIv` BLOB, `secretCiphertext` BLOB, `passphraseIv` BLOB, `passphraseCiphertext` BLOB, `publicKeyText` TEXT, `createdAt` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "label",
+            "columnName": "label",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "keystoreAlias",
+            "columnName": "keystoreAlias",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "secretIv",
+            "columnName": "secretIv",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "secretCiphertext",
+            "columnName": "secretCiphertext",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "passphraseIv",
+            "columnName": "passphraseIv",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "passphraseCiphertext",
+            "columnName": "passphraseCiphertext",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "publicKeyText",
+            "columnName": "publicKeyText",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "terminal_profiles",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `fontFamily` TEXT NOT NULL, `customFontUri` TEXT, `fontSizeSp` REAL NOT NULL, `lineHeightMultiplier` REAL NOT NULL, `cursorStyle` TEXT NOT NULL, `cursorBlink` INTEGER NOT NULL, `scrollbackLines` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fontFamily",
+            "columnName": "fontFamily",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "customFontUri",
+            "columnName": "customFontUri",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "fontSizeSp",
+            "columnName": "fontSizeSp",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lineHeightMultiplier",
+            "columnName": "lineHeightMultiplier",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cursorStyle",
+            "columnName": "cursorStyle",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cursorBlink",
+            "columnName": "cursorBlink",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "scrollbackLines",
+            "columnName": "scrollbackLines",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "color_schemes",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `isBuiltIn` INTEGER NOT NULL, `background` INTEGER NOT NULL, `foreground` INTEGER NOT NULL, `cursor` INTEGER NOT NULL, `selection` INTEGER NOT NULL, `ansiColorsCsv` TEXT NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isBuiltIn",
+            "columnName": "isBuiltIn",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "background",
+            "columnName": "background",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "foreground",
+            "columnName": "foreground",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cursor",
+            "columnName": "cursor",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "selection",
+            "columnName": "selection",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ansiColorsCsv",
+            "columnName": "ansiColorsCsv",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "key_bar_layouts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `keysJson` TEXT NOT NULL, `rows` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "keysJson",
+            "columnName": "keysJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rows",
+            "columnName": "rows",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "scripts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `icon` TEXT, `color` INTEGER, `targetHostId` INTEGER, `snippet` TEXT NOT NULL, `mode` TEXT NOT NULL, `disconnectAfter` INTEGER NOT NULL, `paramsJson` TEXT NOT NULL, `confirmBeforeRun` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `allowAutomation` INTEGER NOT NULL, FOREIGN KEY(`targetHostId`) REFERENCES `hosts`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "icon",
+            "columnName": "icon",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "color",
+            "columnName": "color",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "targetHostId",
+            "columnName": "targetHostId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "snippet",
+            "columnName": "snippet",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mode",
+            "columnName": "mode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "disconnectAfter",
+            "columnName": "disconnectAfter",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "paramsJson",
+            "columnName": "paramsJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confirmBeforeRun",
+            "columnName": "confirmBeforeRun",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "allowAutomation",
+            "columnName": "allowAutomation",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_scripts_targetHostId",
+            "unique": false,
+            "columnNames": [
+              "targetHostId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_scripts_targetHostId` ON `${TABLE_NAME}` (`targetHostId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "hosts",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "targetHostId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "script_runs",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `scriptId` INTEGER NOT NULL, `startedAt` INTEGER NOT NULL, `finishedAt` INTEGER, `exitStatus` INTEGER, `stdout` TEXT, `stderr` TEXT, FOREIGN KEY(`scriptId`) REFERENCES `scripts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "scriptId",
+            "columnName": "scriptId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startedAt",
+            "columnName": "startedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "finishedAt",
+            "columnName": "finishedAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "exitStatus",
+            "columnName": "exitStatus",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "stdout",
+            "columnName": "stdout",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "stderr",
+            "columnName": "stderr",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_script_runs_scriptId",
+            "unique": false,
+            "columnNames": [
+              "scriptId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_script_runs_scriptId` ON `${TABLE_NAME}` (`scriptId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "scripts",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "scriptId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "port_forwards",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `hostId` INTEGER NOT NULL, `type` TEXT NOT NULL, `bindAddress` TEXT, `bindPort` INTEGER NOT NULL, `targetHost` TEXT, `targetPort` INTEGER, `autoStart` INTEGER NOT NULL, FOREIGN KEY(`hostId`) REFERENCES `hosts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "hostId",
+            "columnName": "hostId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "bindAddress",
+            "columnName": "bindAddress",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "bindPort",
+            "columnName": "bindPort",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "targetHost",
+            "columnName": "targetHost",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "targetPort",
+            "columnName": "targetPort",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "autoStart",
+            "columnName": "autoStart",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_port_forwards_hostId",
+            "unique": false,
+            "columnNames": [
+              "hostId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_port_forwards_hostId` ON `${TABLE_NAME}` (`hostId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "hosts",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "hostId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '962effc8cbc043858c0bc31dd8c8fc5f')"
+    ]
+  }
+}

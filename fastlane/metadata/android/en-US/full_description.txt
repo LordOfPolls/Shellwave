@@ -1,0 +1,52 @@
+Shellwave is an SSH client for Android phones and foldables, built to feel like a
+proper terminal, not a phone app pretending to be one.
+
+A real terminal
+256 colours, wide character support, correct cursor and scroll handling. If you use
+vim, tmux, or htop, they will look and behave the way you expect. No weird redraws,
+no broken keys, no compromises.
+
+Connect your way
+Password, an imported private key, a key generated on your device, or
+keyboard-interactive/2FA — whatever you already use. Everything is encrypted
+on-device, with hardware-backed protection on phones that support it, and an
+optional biometric lock. Host keys are checked the first time you connect and
+remembered after that, with the fingerprint shown so you can check it yourself.
+If a host key ever changes, Shellwave stops you before you go any further.
+
+Save yourself the typing
+Save commands or scripts against a host, with parameters you fill in when you run
+them. Watch them run live, run them in the background and check back later, or
+fire them into a session you already have open. You can launch a script from the
+app itself, a home-screen widget, an app shortcut, or a Quick Settings tile. Hosts
+can also keep a persistent session running, so you can close the app and come back
+to exactly where you left off.
+
+Networking, done properly
+- Local and remote port forwarding
+- A SOCKS5 proxy
+- Jump host/bastion chaining through multiple hops
+- Import your existing ~/.ssh/config as-is — hosts, ports, users, keys, jump hosts
+
+File transfer
+Send files to a host or pull them down over SFTP, without switching apps.
+
+Built with foldables in mind
+On unfolded or wide screens you get a two-pane layout, host list next to the
+terminal. Tabletop mode keeps the terminal above the hinge and the keyboard below
+it. Fold or unfold mid-session and nothing drops.
+
+Make it look like yours
+A handful of bundled monospace fonts, or bring your own. Colour schemes like
+Solarized, Gruvbox, Nord, Dracula, Tango and Campbell, plus a full editor if you
+want to build your own. A key bar you can customise per host with macros and
+layouts. Material You colour throughout.
+
+Privacy
+No usage data, no analytics, no crash reporting. Shellwave only connects to the
+hosts you tell it to — nothing else.
+
+The Play Store build has an optional one-time tip for the developer. It does not unlock
+anything, and the F-Droid build leaves it out entirely.
+
+Open source, GNU GPLv3.

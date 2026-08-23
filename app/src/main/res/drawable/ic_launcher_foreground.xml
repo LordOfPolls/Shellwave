@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?><!-- "the Prompt Wave" - a shell prompt that is also a wave.
+
+     The mark is `~/`, the same two glyphs the wordmark opens with (ui/design/Wordmark.kt), with the
+     tilde drawn out into the wave. It used to be the wave plus a block cursor, and at launcher
+     sizes the cursor's flat left edge butted straight into the wave's trailing cap: the two fused
+     into one blob instead of reading as two glyphs. A slash separates cleanly because it leans away
+     from the cap it sits next to, and it matches what the app calls itself in the app bar.
+
+     Colours come from @color/brand_icon_* so the icon follows the system light/dark theme; see
+     values/colors.xml. The mark is deliberately *not* tinted from the Material You palette - the
+     accent means identity here, and a wallpaper-derived launcher icon would stop being a constant
+     the user can find on a crowded home screen. API 33+ themed icons are served separately by
+     ic_launcher_monochrome.xml.
+
+     Geometry, all of which is measured rather than eyeballed:
+
+     - The slash leans 21 degrees off vertical, which is what JetBrains Mono's `/` measures - that
+       is the wordmark's face, so the drawn slash and the typeset one lean alike.
+     - It clears the wave by 4.5 units at rendered size. Solved against the *whole* wave, not just
+       its trailing cap: at this spacing the nearest feature is sometimes the cap and sometimes the
+       rising tail, and pinning only the cap lets the tail run into the slash.
+     - The group transform is a safe-zone correction, not styling. On the 108x108 grid the safe zone
+       is the centred circle of radius 33; the two glyphs together have a minimal enclosing circle
+       of radius 40.7 about (59.2, 47.7) as drawn, so scaling by 0.809 about the centre and shifting
+       by (-4.22, +5.10) lands that circle on the safe one. Longest reach is now 32.96. Fitting the
+       lockup this way preserves both drawn forms exactly, which trimming either path would not.
+     - Stroke 10.5, up from the 9.5 this mark carried when it only had to shrink by 0.96. The fit
+       above is a harder squeeze, and 10.5 x 0.809 = 8.49 rendered, near the 9.5 x 0.96 = 9.12 the
+       icon has always had. Both glyphs take the same width because the wordmark's tilde and slash
+       are one weight; splitting them would read as two typefaces.
+
+     Keep all of this identical in ic_launcher_monochrome.xml and ic_stat_shellwave.xml - the three
+     are the same mark and must not drift apart. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:pivotX="54"
+        android:pivotY="54"
+        android:scaleX="0.809"
+        android:scaleY="0.809"
+        android:translateX="-4.22"
+        android:translateY="5.1">
+        <path
+            android:fillColor="#00000000"
+            android:pathData="M25,57 C31,43 41,43 49,52 C57,61 67,61 73,47"
+            android:strokeWidth="10.5"
+            android:strokeColor="@color/brand_icon_mark"
+            android:strokeLineCap="round" />
+        <path
+            android:fillColor="#00000000"
+            android:pathData="M83,65.5 L93.5,38.5"
+            android:strokeWidth="10.5"
+            android:strokeColor="@color/brand_icon_mark"
+            android:strokeLineCap="round" />
+    </group>
+</vector>

@@ -1,0 +1,4 @@
+First release. SSH client with a Termux-derived terminal engine, Keystore-backed
+credential vault, host key verification, one-tap scripts (widget, shortcuts, Quick
+Settings tile), port forwarding, ProxyJump, SOCKS5, ~/.ssh/config import, SFTP file
+transfer, foldable-aware layouts, and customisable fonts/colour schemes/key bar.

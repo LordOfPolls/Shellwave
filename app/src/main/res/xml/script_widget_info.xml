@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?><!-- The launcher widget's AppWidgetProviderInfo.
+     Resizable only vertically (one button per row - see ScriptWidget.kt) since the button
+     labels are the whole point; a horizontal resize wouldn't add anything a wider button
+     doesn't already give for free. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="180dp"
+    android:minHeight="110dp"
+    android:previewImage="@mipmap/ic_launcher"
+    android:resizeMode="vertical"
+    android:targetCellWidth="3"
+    android:targetCellHeight="2"
+    android:updatePeriodMillis="0"
+    android:widgetCategory="home_screen" />

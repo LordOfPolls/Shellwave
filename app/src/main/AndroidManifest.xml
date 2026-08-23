@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Android 16+. Without it, connects to 10.x/192.168.x hang until timeout instead of
+         failing fast. -->
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
+
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- Requested at runtime on API 33+. Without it the service still runs; only its notification
+         is invisible. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- HostReachabilityProbe defaults to Wi-Fi only, so it has to ask whether the active network
+         is metered. No runtime prompt, but it is a visible permission-list entry for an app that
+         claims not to touch the network, so the release notes name it. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <application
+        android:name=".ShellwaveApplication"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Shellwave">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name=".service.SessionService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keeps connected SSH terminal sessions open and streaming output while Shellwave is backgrounded, so remote commands the user started keep running." />
+        </service>
+
+        <!-- Runs a capture-mode script from the widget, the tile or a shortcut with no Activity on
+             screen. Started only from a user tap through a PendingIntent, which is what makes the
+             foreground-service start legal on Android 14+. -->
+        <service
+            android:name=".service.ScriptTriggerService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Runs a single headless script the user chose to trigger from a home screen widget, Quick Settings tile, or app shortcut, and reports the result via notification." />
+        </service>
+
+        <!-- The only exported component. See AutomationTriggerActivity. -->
+        <activity
+            android:name=".service.AutomationTriggerActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="io.github.lordofpolls.shellwave.action.RUN_SCRIPT" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <!-- Quick Settings tile bound to one script - see ScriptTileService.kt. -->
+        <service
+            android:name=".feature.glance.ScriptTileService"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <!-- The launcher widget; see ScriptWidget.kt. Bound whenever the widget is pinned, updated
+             or removed. It forwards taps to ScriptTriggerService and does no SSH work itself. -->
+        <receiver
+            android:name=".feature.glance.ScriptWidgetReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/script_widget_info" />
+        </receiver>
+
+    </application>
+
+</manifest>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+    The resource analogue of a -keep rule. `optimization { enable = true }` turns on resource
+    shrinking alongside code shrinking, and Glance's GeneratedLayouts picks one of
+    glance-appwidget's bundled layouts by name at runtime to build a widget's RemoteViews tree, so
+    nothing statically references them and the shrinker stripped them.
+
+    Observed: pinning ScriptWidget on a release build failed to inflate, with
+    `Resources$NotFoundException: Resource ID #0x0` in logcat and "can't load widget" on the
+    launcher. Confirmed as the shrinker rather than app code by matching the stripped names against
+    glance-appwidget-1.1.1.aar's own res/layout* contents, which is this prefix set and nothing else.
+-->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@layout/box_*,@layout/column_*,@layout/complex_*,@layout/glance_*,@layout/radio_*,@layout/root_*,@layout/row_*,@layout/size_*" />

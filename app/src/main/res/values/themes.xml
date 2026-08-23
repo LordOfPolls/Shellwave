@@ -1,0 +1,6 @@
+<resources>
+    <!-- Manifest-level window theme. Actual UI theming (Material You dynamic colour,
+         light/dark/system) is applied by the ShellwaveTheme composable in MainActivity;
+         this only needs to exist so the window has a sane theme before Compose draws. -->
+    <style name="Theme.Shellwave" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>
