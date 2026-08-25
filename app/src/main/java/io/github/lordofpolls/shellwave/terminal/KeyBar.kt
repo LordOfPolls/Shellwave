@@ -1,7 +1,10 @@
 package io.github.lordofpolls.shellwave.terminal
 
 import android.view.KeyEvent
+import android.view.ViewConfiguration
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -20,6 +23,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
@@ -27,6 +33,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import io.github.lordofpolls.shellwave.ui.design.MachineText
+import kotlinx.coroutines.delay
 import java.util.Locale
 
 /**
@@ -227,10 +234,28 @@ private fun CursorCluster(onSpecialKey: (keyCode: Int) -> Unit) {
     }
 }
 
+/**
+ * Repeat rides `clickable`'s press state rather than a `pointerInput` of its own, which would have
+ * to out-consume the button to stop it clicking too. So the initiating tap lands on release, after
+ * the repeats - the count is still right.
+ */
 @Composable
 private fun ClusterKey(keyCode: Int, glyph: String, onSpecialKey: (keyCode: Int) -> Unit) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+
+    LaunchedEffect(pressed, keyCode) {
+        if (!pressed) return@LaunchedEffect
+        delay(ViewConfiguration.getKeyRepeatTimeout().toLong())
+        while (true) {
+            onSpecialKey(keyCode)
+            delay(ViewConfiguration.getKeyRepeatDelay().toLong())
+        }
+    }
+
     FilledTonalButton(
         onClick = { onSpecialKey(keyCode) },
+        interactionSource = interactionSource,
         modifier =
             Modifier
                 .size(ClusterKeySize)
