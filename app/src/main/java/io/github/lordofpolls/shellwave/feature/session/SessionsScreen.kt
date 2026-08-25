@@ -264,6 +264,24 @@ fun SessionsScreen(
             },
         )
 
+        current?.takeIf { it.status == SessionStatus.FAILED }?.error?.let { error ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    error,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = { sessionManager.reconnectNow(current.id) }) { Text("Retry") }
+            }
+        }
+
         if (scriptPickerOpen && current != null) {
             ScriptPickerDialog(
                 scripts = runnableHere,
