@@ -11,3 +11,13 @@ fun mark(text: String, truncated: Boolean): String =
  */
 fun redact(text: String, secretValues: List<String>): String =
     secretValues.fold(text) { acc, secret -> acc.replace(secret, "[REDACTED]") }
+
+fun runOutcomeMessage(exitStatus: Int?, stdout: String, stderr: String): String {
+    val output = stdout.ifBlank { stderr }.trim()
+    return when {
+        exitStatus != null && exitStatus != 0 -> "Exited with status $exitStatus.\n$output".trim()
+        output.isNotEmpty() -> output
+        exitStatus == null -> "Finished - exit status unknown."
+        else -> "Finished successfully."
+    }
+}

@@ -23,6 +23,7 @@ import io.github.lordofpolls.shellwave.core.db.dao.ScriptRunDao
 import io.github.lordofpolls.shellwave.core.db.entities.ScriptRunEntity
 import io.github.lordofpolls.shellwave.core.util.substituteParams
 import io.github.lordofpolls.shellwave.feature.scripts.mark
+import io.github.lordofpolls.shellwave.feature.scripts.runOutcomeMessage
 import io.github.lordofpolls.shellwave.service.ScriptTriggerService.Companion.start
 import io.github.lordofpolls.shellwave.ssh.ScriptRunner
 import io.github.lordofpolls.shellwave.ssh.resolveProxyHops
@@ -194,20 +195,20 @@ class ScriptTriggerService : Service() {
             return
         }
 
+        val stdout = mark(result.stdout, result.stdoutTruncated)
+        val stderr = mark(result.stderr, result.stderrTruncated)
         val entity =
             ScriptRunEntity(
                 scriptId = script.id,
                 startedAt = startedAt,
                 finishedAt = finishedAt,
                 exitStatus = result.exitStatus,
-                stdout = mark(result.stdout, result.stdoutTruncated),
-                stderr = mark(result.stderr, result.stderrTruncated),
+                stdout = stdout,
+                stderr = stderr,
             )
         scriptRunDao.insert(entity)
 
-        val summary =
-            if (result.exitStatus == 0) "Finished successfully." else "Exited with status ${result.exitStatus}."
-        notifyOutcome(script.name, summary)
+        notifyOutcome(script.name, runOutcomeMessage(result.exitStatus, stdout, stderr))
     }
 
     private fun notifyOutcome(scriptName: String, message: String) {
