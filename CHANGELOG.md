@@ -1,6 +1,14 @@
 # Changelog
 
 
+## 1.3.1 - 2026-08-25
+
+### Internal
+- Drop the foojay-provisioned daemon JVM toolchain
+- Build the release on JDK 25
+
+[Every commit in this release](https://github.com/LordOfPolls/Shellwave/compare/1.3.0...1.3.1)
+
 ## 1.3.0 - 2026-08-25
 
 ### New
