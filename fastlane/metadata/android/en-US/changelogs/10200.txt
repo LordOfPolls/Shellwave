@@ -1,0 +1,5 @@
+New:
+- Detect a host's MAC address over SSH
+
+Fixed:
+- Show why a session failed to connect on the terminal screen
