@@ -1,0 +1,2 @@
+Fixed:
+- Keep the WorkManager InputMerger constructor R8 strips

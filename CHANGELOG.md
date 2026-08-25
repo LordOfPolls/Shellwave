@@ -1,6 +1,13 @@
 # Changelog
 
 
+## 1.2.2 - 2026-08-25
+
+### Fixed
+- Keep the WorkManager InputMerger constructor R8 strips
+
+[Every commit in this release](https://github.com/LordOfPolls/Shellwave/compare/1.2.1...1.2.2)
+
 ## 1.2.1 - 2026-08-25
 
 ### Fixed
