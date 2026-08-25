@@ -58,6 +58,11 @@ engine's pty/JNI subprocess code is not used; sessions are remote shells over SS
 Third-party attribution lives in `NOTICE`, which a Gradle task copies into `res/raw` for the in-app
 licence screen.
 
+
+## Downloading 
+
+APKs are generated through a Github action for each release ~ download here: https://github.com/LordOfPolls/Shellwave/releases
+
 ## Building
 
 Two product flavours, identical but for one dependency:
@@ -68,12 +73,8 @@ Two product flavours, identical but for one dependency:
 ```
 
 `SupporterBilling` is an interface in `:app`'s main source set with one implementation per
-flavour, so only `play` links `com.android.billingclient`. On `foss` the Support section of
-Settings does not exist. `fdroid/io.github.lordofpolls.shellwave.yml` is the F-Droid metadata,
-kept here so it stays in step with the build it describes.
-
-Release builds are unsigned unless the `SHELLWAVE_RELEASE_*` properties are set - see the comment
-at the top of `app/build.gradle.kts`.
+flavour, so only `play` links `com.android.billingclient`. 
+On `foss` the Support section of Settings does not exist.
 
 ## Licence
 
