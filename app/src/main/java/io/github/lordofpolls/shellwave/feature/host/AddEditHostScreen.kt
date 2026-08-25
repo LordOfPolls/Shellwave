@@ -47,6 +47,7 @@ import io.github.lordofpolls.shellwave.core.db.dao.TerminalProfileDao
 import io.github.lordofpolls.shellwave.core.db.entities.ColorSchemeEntity
 import io.github.lordofpolls.shellwave.core.db.entities.HostEntity
 import io.github.lordofpolls.shellwave.core.db.entities.TerminalProfileEntity
+import io.github.lordofpolls.shellwave.core.net.parseMacAddress
 import io.github.lordofpolls.shellwave.feature.settings.ColorSchemeFields
 import io.github.lordofpolls.shellwave.feature.settings.TerminalProfileFields
 import io.github.lordofpolls.shellwave.ssh.GeneratedKey
@@ -112,6 +113,7 @@ fun AddEditHostScreen(
             existing?.resilientSession ?: false
         )
     }
+    var macAddress by remember(existing?.id) { mutableStateOf(existing?.macAddress.orEmpty()) }
 
     // Each override is its own dedicated row, shared with nothing. Null means "no override yet"; a
     // non-null value is already persisted, inserted the moment the checkbox is switched on, so its
@@ -233,6 +235,10 @@ fun AddEditHostScreen(
 
     fun save() {
         val portInt = port.toIntOrNull() ?: return
+        if (macAddress.isNotBlank() && parseMacAddress(macAddress) == null) {
+            error = "\"$macAddress\" is not a MAC address - six hex pairs, like 3c:22:fb:01:02:03"
+            return
+        }
         scope.launch {
             try {
                 val credentialId =
@@ -289,6 +295,7 @@ fun AddEditHostScreen(
                             colorSchemeId = colorSchemeOverride?.id,
                             keyBarLayoutId = keyBarLayoutId,
                             proxyJumpHostId = proxyJumpHostId,
+                            macAddress = macAddress.ifBlank { null },
                         ),
                     )
                 } else {
@@ -304,6 +311,7 @@ fun AddEditHostScreen(
                             colorSchemeId = colorSchemeOverride?.id,
                             keyBarLayoutId = keyBarLayoutId,
                             proxyJumpHostId = proxyJumpHostId,
+                            macAddress = macAddress.ifBlank { null },
                         ),
                     )
                 }
@@ -472,6 +480,17 @@ fun AddEditHostScreen(
                 onValueChange = { port = it },
                 label = { Text("Port") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            OutlinedTextField(
+                value = macAddress,
+                // Clears the rejection this field caused, so the red line cannot outlive a fix.
+                onValueChange = { macAddress = it; error = null },
+                label = { Text("MAC address (optional)") },
+                placeholder = { Text("3c:22:fb:01:02:03") },
+                supportingText = { Text("Adds a Wake-on-LAN action to this host's menu.") },
+                singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
 

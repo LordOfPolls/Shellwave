@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -57,6 +58,7 @@ import io.github.lordofpolls.shellwave.core.db.dao.ScriptRunDao
 import io.github.lordofpolls.shellwave.core.db.dao.TerminalProfileDao
 import io.github.lordofpolls.shellwave.core.db.entities.HostEntity
 import io.github.lordofpolls.shellwave.core.net.HostReachabilityProbe
+import io.github.lordofpolls.shellwave.core.net.sendMagicPacket
 import io.github.lordofpolls.shellwave.core.prefs.AppearancePreferences
 import io.github.lordofpolls.shellwave.core.prefs.AutomationPreferences
 import io.github.lordofpolls.shellwave.core.prefs.ReachabilityPreferences
@@ -730,6 +732,21 @@ class MainActivity : FragmentActivity() {
                                                         colorSchemeId = null,
                                                     ),
                                                 )
+                                            }
+                                        },
+                                        onWakeHost = { host ->
+                                            scope.launch {
+                                                val message =
+                                                    runCatching { sendMagicPacket(host.macAddress.orEmpty()) }
+                                                        .fold(
+                                                            { "Wake packet sent to ${host.label ?: host.hostname}" },
+                                                            { it.message ?: "Couldn't send the wake packet" },
+                                                        )
+                                                Toast.makeText(
+                                                    this@MainActivity,
+                                                    message,
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
                                             }
                                         },
                                         reachability = reachability,

@@ -108,6 +108,7 @@ fun HomeScreen(
     onEditHost: (HostEntity) -> Unit,
     onDeleteHost: (HostEntity) -> Unit,
     onDuplicateHost: (HostEntity) -> Unit = {},
+    onWakeHost: (HostEntity) -> Unit = {},
     onRunScript: (ScriptEntity, HostEntity) -> Unit = { _, _ -> },
     onImportSshConfig: () -> Unit = {},
     modifier: Modifier = Modifier,
@@ -258,6 +259,7 @@ fun HomeScreen(
                         },
                         onEdit = { onEditHost(host) },
                         onDuplicate = { onDuplicateHost(host) },
+                        onWake = host.macAddress?.let { { onWakeHost(host) } },
                         onDelete = { hostPendingDelete = host },
                     )
                 }

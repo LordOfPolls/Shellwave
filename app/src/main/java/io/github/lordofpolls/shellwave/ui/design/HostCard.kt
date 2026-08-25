@@ -18,6 +18,7 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.PowerSettingsNew
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -63,6 +64,8 @@ fun HostCard(
     onEdit: () -> Unit,
     onDuplicate: () -> Unit,
     onDelete: () -> Unit,
+    /** Null hides the Wake item rather than disabling it. */
+    onWake: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
@@ -146,6 +149,7 @@ fun HostCard(
                     onConnect = { menuExpanded = false; onClick() },
                     onEdit = { menuExpanded = false; onEdit() },
                     onDuplicate = { menuExpanded = false; onDuplicate() },
+                    onWake = onWake?.let { wake -> { menuExpanded = false; wake() } },
                     onDelete = { menuExpanded = false; onDelete() },
                     onRunScript = { action -> menuExpanded = false; action.onRun() },
                 )
@@ -166,6 +170,7 @@ private fun HostMenu(
     onConnect: () -> Unit,
     onEdit: () -> Unit,
     onDuplicate: () -> Unit,
+    onWake: (() -> Unit)?,
     onDelete: () -> Unit,
     onRunScript: (HostScriptAction) -> Unit,
 ) {
@@ -209,6 +214,15 @@ private fun HostMenu(
                 leadingIcon = { Icon(Icons.Outlined.ContentCopy, contentDescription = null) },
                 onClick = onDuplicate,
             )
+            if (onWake != null) {
+                DropdownMenuItem(
+                    text = { Text("Wake") },
+                    leadingIcon = {
+                        Icon(Icons.Outlined.PowerSettingsNew, contentDescription = null)
+                    },
+                    onClick = onWake,
+                )
+            }
             if (scripts.isNotEmpty()) {
                 DropdownMenuItem(
                     text = { Text("Run script") },

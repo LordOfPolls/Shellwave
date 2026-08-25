@@ -234,6 +234,37 @@ class MigrationTest {
         }
     }
 
+    @Test
+    fun migrate7To8PreservesHostsAndAddsMacAddress() {
+        helper.createDatabase(TEST_DB, 7).use { db ->
+            val values =
+                ContentValues().apply {
+                    put("label", "nas")
+                    put("hostname", "10.0.2.2")
+                    put("port", 2222)
+                    put("username", "test")
+                    put("credentialId", 1L)
+                    putNull("lastConnectedAt")
+                    put("createdAt", 1000L)
+                    put("resilientSession", 0)
+                    putNull("terminalProfileId")
+                    putNull("colorSchemeId")
+                    putNull("keyBarLayoutId")
+                    putNull("proxyJumpHostId")
+                }
+            db.insert("hosts", android.database.sqlite.SQLiteDatabase.CONFLICT_FAIL, values)
+        }
+
+        val migrated = helper.runMigrationsAndValidate(TEST_DB, 8, true, MIGRATION_7_8)
+
+        migrated.query("SELECT hostname, macAddress FROM hosts").use { cursor ->
+            assertEquals(1, cursor.count)
+            assertEquals(true, cursor.moveToFirst())
+            assertEquals("10.0.2.2", cursor.getString(cursor.getColumnIndexOrThrow("hostname")))
+            assertEquals(true, cursor.isNull(cursor.getColumnIndexOrThrow("macAddress")))
+        }
+    }
+
     companion object {
         private const val TEST_DB = "migration-test"
     }

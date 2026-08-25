@@ -68,3 +68,11 @@ val MIGRATION_6_7 =
             db.execSQL("ALTER TABLE scripts ADD COLUMN allowAutomation INTEGER NOT NULL DEFAULT 0")
         }
     }
+
+/** Nullable with no default: an existing host simply has no MAC to wake. */
+val MIGRATION_7_8 =
+    object : Migration(7, 8) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE hosts ADD COLUMN macAddress TEXT")
+        }
+    }

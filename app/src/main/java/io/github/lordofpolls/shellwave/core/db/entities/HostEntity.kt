@@ -54,4 +54,6 @@ data class HostEntity(
      * from outside Room, and `resolveProxyChain` reports that as a connect-time error.
      */
     val proxyJumpHostId: Long? = null,
+    /** Wake-on-LAN MAC, as typed. Null means the host has no wake action. */
+    val macAddress: String? = null,
 )
