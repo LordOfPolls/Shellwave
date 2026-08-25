@@ -3,6 +3,7 @@
      labels are the whole point; a horizontal resize wouldn't add anything a wider button
      doesn't already give for free. -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:initialLayout="@layout/glance_default_loading_layout"
     android:minWidth="180dp"
     android:minHeight="110dp"
     android:previewImage="@mipmap/ic_launcher"

@@ -17,3 +17,4 @@ keystore.properties
 # Working notes. Kept on disk, out of the repository.
 docs/
 /scripts/
+*.der
