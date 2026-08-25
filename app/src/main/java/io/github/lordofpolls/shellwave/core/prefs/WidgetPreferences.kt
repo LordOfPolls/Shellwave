@@ -43,7 +43,7 @@ object WidgetPreferences {
         )
         editor.apply()
     }
-    
+
     fun pinnedScriptIdsFlow(context: Context): Flow<Set<Long>> = callbackFlow {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->

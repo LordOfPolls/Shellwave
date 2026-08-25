@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.IBinder
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
@@ -140,6 +141,7 @@ class ScriptTriggerService : Service() {
         }
         // The run is going to happen, so the notification can stop being generic.
         nameRunningNotification(script.name)
+        Toast.makeText(this, "Running \"${script.name}\"\u2026", Toast.LENGTH_SHORT).show()
 
         // Non-null once the refusals above have passed - the last of them is exactly this check.
         val hostId = script.targetHostId ?: return
