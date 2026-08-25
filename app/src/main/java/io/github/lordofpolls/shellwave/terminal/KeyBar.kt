@@ -28,6 +28,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -84,6 +87,8 @@ fun KeyBar(
     rows: Int = 1,
     modifier: Modifier = Modifier,
 ) {
+    val haptics = LocalHapticFeedback.current
+
     // A cluster is drawn as its own pinned column below, so it never enters the chunked flow.
     val hasCluster = keys.any { it.type == KeyBarKeyType.CURSOR_CLUSTER }
 
@@ -97,6 +102,7 @@ fun KeyBar(
                 add {
                     FilledTonalButton(
                         onClick = {
+                            haptics.keyTap()
                             when (key.type) {
                                 KeyBarKeyType.SPECIAL -> onSpecialKey(key.keyCode)
                                 KeyBarKeyType.MACRO -> onMacro(key.macroText)
@@ -201,6 +207,8 @@ private fun KeyboardKey(visible: Boolean, onClick: () -> Unit) {
     }
 }
 
+private fun HapticFeedback.keyTap() = performHapticFeedback(HapticFeedbackType.KeyboardTap)
+
 const val MAX_KEY_BAR_ROWS = 2
 
 /**
@@ -241,6 +249,7 @@ private fun CursorCluster(onSpecialKey: (keyCode: Int) -> Unit) {
  */
 @Composable
 private fun ClusterKey(keyCode: Int, glyph: String, onSpecialKey: (keyCode: Int) -> Unit) {
+    val haptics = LocalHapticFeedback.current
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
 
@@ -254,7 +263,10 @@ private fun ClusterKey(keyCode: Int, glyph: String, onSpecialKey: (keyCode: Int)
     }
 
     FilledTonalButton(
-        onClick = { onSpecialKey(keyCode) },
+        onClick = {
+            haptics.keyTap()
+            onSpecialKey(keyCode)
+        },
         interactionSource = interactionSource,
         modifier =
             Modifier
@@ -305,8 +317,12 @@ private val MinKeyWidth = 48.dp
 
 @Composable
 private fun LatchButton(label: String, latched: Boolean, onClick: () -> Unit) {
+    val haptics = LocalHapticFeedback.current
     FilledTonalButton(
-        onClick = onClick,
+        onClick = {
+            haptics.keyTap()
+            onClick()
+        },
         colors =
             if (latched) {
                 ButtonDefaults.filledTonalButtonColors(
