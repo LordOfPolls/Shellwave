@@ -35,6 +35,7 @@ import io.github.lordofpolls.shellwave.terminal.KeyBarKeyType
 import io.github.lordofpolls.shellwave.terminal.SPECIAL_KEY_CHOICES
 import io.github.lordofpolls.shellwave.terminal.decodeKeyBarKeys
 import io.github.lordofpolls.shellwave.terminal.encodeKeyBarKeys
+import io.github.lordofpolls.shellwave.ui.design.BackTopBar
 import kotlinx.coroutines.launch
 
 /**
@@ -51,66 +52,66 @@ fun KeyBarLayoutsScreen(
     val scope = rememberCoroutineScope()
     var expandedId by remember { mutableStateOf<Long?>(null) }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onBack) { Text("< Back") }
-            Text("Key bar layouts", style = MaterialTheme.typography.headlineSmall)
-        }
-        Text(
-            "A host with no layout assigned uses the default bar (Esc, Tab, Home, End, arrows).",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+    Column(modifier = modifier.fillMaxSize()) {
+        BackTopBar(title = "Key bar layouts", onBack = onBack)
 
-        TextButton(onClick = {
-            scope.launch {
-                val id = keyBarLayoutDao.insert(
-                    KeyBarLayoutEntity(
-                        name = "New layout",
-                        keysJson = encodeKeyBarKeys(DEFAULT_KEY_BAR_KEYS)
-                    )
-                )
-                expandedId = id
-            }
-        }) { Text("+ New layout") }
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                "A host with no layout assigned uses the default bar (Esc, Tab, Home, End, arrows).",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
 
-        layouts.forEach { layout ->
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            layout.name,
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.weight(1f)
+            TextButton(onClick = {
+                scope.launch {
+                    val id = keyBarLayoutDao.insert(
+                        KeyBarLayoutEntity(
+                            name = "New layout",
+                            keysJson = encodeKeyBarKeys(DEFAULT_KEY_BAR_KEYS)
                         )
-                        TextButton(onClick = {
-                            expandedId = if (expandedId == layout.id) null else layout.id
-                        }) {
-                            Text(if (expandedId == layout.id) "Close" else "Edit")
-                        }
-                        TextButton(onClick = { scope.launch { keyBarLayoutDao.delete(layout) } }) {
+                    )
+                    expandedId = id
+                }
+            }) { Text("+ New layout") }
+
+            layouts.forEach { layout ->
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
                             Text(
-                                "Delete"
+                                layout.name,
+                                style = MaterialTheme.typography.titleMedium,
+                                modifier = Modifier.weight(1f)
                             )
+                            TextButton(onClick = {
+                                expandedId = if (expandedId == layout.id) null else layout.id
+                            }) {
+                                Text(if (expandedId == layout.id) "Close" else "Edit")
+                            }
+                            TextButton(onClick = { scope.launch { keyBarLayoutDao.delete(layout) } }) {
+                                Text(
+                                    "Delete"
+                                )
+                            }
                         }
-                    }
-                    if (expandedId == layout.id) {
-                        KeyBarLayoutEditor(
-                            layout = layout,
-                            onChange = { updated -> scope.launch { keyBarLayoutDao.update(updated) } })
+                        if (expandedId == layout.id) {
+                            KeyBarLayoutEditor(
+                                layout = layout,
+                                onChange = { updated -> scope.launch { keyBarLayoutDao.update(updated) } })
+                        }
                     }
                 }
             }

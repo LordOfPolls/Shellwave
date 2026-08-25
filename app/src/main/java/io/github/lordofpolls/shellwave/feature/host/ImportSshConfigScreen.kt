@@ -45,6 +45,7 @@ import io.github.lordofpolls.shellwave.ssh.ParsedSshHost
 import io.github.lordofpolls.shellwave.ssh.parseSshConfig
 import io.github.lordofpolls.shellwave.ssh.publicKeyLineOf
 import io.github.lordofpolls.shellwave.ssh.readKeyText
+import io.github.lordofpolls.shellwave.ui.design.BackTopBar
 import kotlinx.coroutines.launch
 
 /** How a previewed entry gets its mandatory HostEntity.credentialId - see this file's class doc. */
@@ -217,76 +218,78 @@ fun ImportSshConfigScreen(
         }
     }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Text("Import from ~/.ssh/config", style = MaterialTheme.typography.headlineSmall)
+    Column(modifier = modifier.fillMaxSize()) {
+        BackTopBar(title = "Import from ~/.ssh/config", onBack = onDone)
 
-        if (importSummary == null) {
-            Button(onClick = { pickDocument.launch(arrayOf("*/*")) }) { Text(if (parsed == null) "Pick config file" else "Pick a different file") }
-            readError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            if (importSummary == null) {
+                Button(onClick = { pickDocument.launch(arrayOf("*/*")) }) { Text(if (parsed == null) "Pick config file" else "Pick a different file") }
+                readError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
 
-            parsed?.let { config ->
-                if (config.includeDirectives.isNotEmpty()) {
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Column(
-                            modifier = Modifier.padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Text(
-                                "Include not followed",
-                                style = MaterialTheme.typography.titleSmall
-                            )
-                            Text(
-                                "This file references other files Shellwave can't open (a picked file only grants access to itself). " +
-                                        "Hosts inside them won't appear below:",
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                            config.includeDirectives.forEach {
+                parsed?.let { config ->
+                    if (config.includeDirectives.isNotEmpty()) {
+                        Card(modifier = Modifier.fillMaxWidth()) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
                                 Text(
-                                    "Include $it",
-                                    style = MaterialTheme.typography.bodySmall
+                                    "Include not followed",
+                                    style = MaterialTheme.typography.titleSmall
                                 )
+                                Text(
+                                    "This file references other files Shellwave can't open (a picked file only grants access to itself). " +
+                                            "Hosts inside them won't appear below:",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                                config.includeDirectives.forEach {
+                                    Text(
+                                        "Include $it",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
                             }
                         }
                     }
-                }
 
-                if (config.hosts.isEmpty()) {
-                    Text(
-                        "No importable Host entries found in this file.",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                } else {
-                    Text(
-                        "${entries.count { it.selected }} of ${entries.size} selected",
-                        style = MaterialTheme.typography.titleSmall
-                    )
-                    entries.forEach { state ->
-                        ImportEntryCard(
-                            state = state,
-                            allEntries = entries,
-                            existingCredentials = existingCredentials
+                    if (config.hosts.isEmpty()) {
+                        Text(
+                            "No importable Host entries found in this file.",
+                            style = MaterialTheme.typography.bodyMedium
                         )
-                    }
-                    Button(
-                        onClick = ::performImport,
-                        enabled = entries.any { it.selected && it.isReady() }) {
-                        Text("Import selected (${entries.count { it.selected && it.isReady() }} ready)")
+                    } else {
+                        Text(
+                            "${entries.count { it.selected }} of ${entries.size} selected",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        entries.forEach { state ->
+                            ImportEntryCard(
+                                state = state,
+                                allEntries = entries,
+                                existingCredentials = existingCredentials
+                            )
+                        }
+                        Button(
+                            onClick = ::performImport,
+                            enabled = entries.any { it.selected && it.isReady() }) {
+                            Text("Import selected (${entries.count { it.selected && it.isReady() }} ready)")
+                        }
                     }
                 }
+            } else {
+                Text("Import complete", style = MaterialTheme.typography.titleSmall)
+                importSummary!!.forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
             }
-        } else {
-            Text("Import complete", style = MaterialTheme.typography.titleSmall)
-            importSummary!!.forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
-        }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(onClick = onDone) { Text(if (importSummary == null) "Cancel" else "Done") }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = onDone) { Text(if (importSummary == null) "Cancel" else "Done") }
+            }
         }
     }
 }

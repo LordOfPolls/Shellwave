@@ -23,6 +23,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import io.github.lordofpolls.shellwave.R
+import io.github.lordofpolls.shellwave.ui.design.BackTopBar
 
 /**
  * GPLv3 §6's "written offer of source" for this exact build: the URL a user reads this screen to
@@ -74,139 +75,138 @@ fun LicenseScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     var licenseExpanded by remember { mutableStateOf(false) }
     var noticeExpanded by remember { mutableStateOf(false) }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onBack) { Text("< Back") }
-            Text("Licences", style = MaterialTheme.typography.headlineSmall)
-        }
+    Column(modifier = modifier.fillMaxSize()) {
+        BackTopBar(title = "Licences", onBack = onBack)
 
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text("Shellwave", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    "Shellwave is free software: you can redistribute it and/or modify it under the " +
-                            "terms of the GNU General Public License version 3 (GPLv3) as published by the " +
-                            "Free Software Foundation. It is distributed WITHOUT ANY WARRANTY, without even " +
-                            "the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. " +
-                            "The full licence text is reproduced below.",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-        }
-
-        // The app's strongest compliance obligation, so it gets its own card ahead of the general
-        // third-party list instead of being one more entry inside the reproduced NOTICE text.
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text("Vendored terminal engine", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    "The terminal-emulation engine (module :terminal-core) is vendored, with minimal " +
-                            "changes, from the Termux project (termux/termux-app), copyright the Termux " +
-                            "project and its contributors, licensed under the GNU General Public License " +
-                            "v3.0 only - the same licence as Shellwave itself. It is pinned to upstream " +
-                            "commit $TERMUX_PINNED_COMMIT; see NOTICE below and terminal-core/VENDORING.md " +
-                            "in the source tree for the exact file list and what was changed to make it " +
-                            "compile without its original local-pty/JNI subprocess code, which this app " +
-                            "does not use (Shellwave connects over SSH instead).",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontFamily = FontFamily.Monospace,
-                )
-            }
-        }
-
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text("Source code", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    "GPLv3 requires that anyone who receives this app also be told how to get the " +
-                            "corresponding source code for the exact version they're running:",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                Text(
-                    SOURCE_REPOSITORY_URL,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontFamily = FontFamily.Monospace
-                )
-            }
-        }
-
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    modifier = Modifier.fillMaxWidth()
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    Text("Shellwave", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "Third-party notices",
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.weight(1f)
+                        "Shellwave is free software: you can redistribute it and/or modify it under the " +
+                                "terms of the GNU General Public License version 3 (GPLv3) as published by the " +
+                                "Free Software Foundation. It is distributed WITHOUT ANY WARRANTY, without even " +
+                                "the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. " +
+                                "The full licence text is reproduced below.",
+                        style = MaterialTheme.typography.bodyMedium,
                     )
-                    TextButton(onClick = {
-                        noticeExpanded = !noticeExpanded
-                    }) { Text(if (noticeExpanded) "Hide" else "Show") }
                 }
-                Text(
-                    "Per-file attribution for the vendored engine, plus every bundled font and " +
-                            "third-party library and its licence - reproduced verbatim from this " +
-                            "repository's own NOTICE file, not retyped, so this screen can never say " +
-                            "something different from it.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                if (noticeExpanded) {
+            }
+
+            // The app's strongest compliance obligation, so it gets its own card ahead of the general
+            // third-party list instead of being one more entry inside the reproduced NOTICE text.
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("Vendored terminal engine", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        noticeText,
-                        style = MaterialTheme.typography.bodySmall,
+                        "The terminal-emulation engine (module :terminal-core) is vendored, with minimal " +
+                                "changes, from the Termux project (termux/termux-app), copyright the Termux " +
+                                "project and its contributors, licensed under the GNU General Public License " +
+                                "v3.0 only - the same licence as Shellwave itself. It is pinned to upstream " +
+                                "commit $TERMUX_PINNED_COMMIT; see NOTICE below and terminal-core/VENDORING.md " +
+                                "in the source tree for the exact file list and what was changed to make it " +
+                                "compile without its original local-pty/JNI subprocess code, which this app " +
+                                "does not use (Shellwave connects over SSH instead).",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                }
+            }
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("Source code", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "GPLv3 requires that anyone who receives this app also be told how to get the " +
+                                "corresponding source code for the exact version they're running:",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        SOURCE_REPOSITORY_URL,
+                        style = MaterialTheme.typography.bodyMedium,
                         fontFamily = FontFamily.Monospace
                     )
                 }
             }
-        }
 
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    modifier = Modifier.fillMaxWidth()
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            "Third-party notices",
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextButton(onClick = {
+                            noticeExpanded = !noticeExpanded
+                        }) { Text(if (noticeExpanded) "Hide" else "Show") }
+                    }
                     Text(
-                        "Full licence text (GPLv3)",
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.weight(1f)
-                    )
-                    TextButton(onClick = {
-                        licenseExpanded = !licenseExpanded
-                    }) { Text(if (licenseExpanded) "Hide" else "Show") }
-                }
-                if (licenseExpanded) {
-                    Text(
-                        licenseText,
+                        "Per-file attribution for the vendored engine, plus every bundled font and " +
+                                "third-party library and its licence - reproduced verbatim from this " +
+                                "repository's own NOTICE file, not retyped, so this screen can never say " +
+                                "something different from it.",
                         style = MaterialTheme.typography.bodySmall,
-                        fontFamily = FontFamily.Monospace
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    if (noticeExpanded) {
+                        Text(
+                            noticeText,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                }
+            }
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            "Full licence text (GPLv3)",
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextButton(onClick = {
+                            licenseExpanded = !licenseExpanded
+                        }) { Text(if (licenseExpanded) "Hide" else "Show") }
+                    }
+                    if (licenseExpanded) {
+                        Text(
+                            licenseText,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
                 }
             }
         }

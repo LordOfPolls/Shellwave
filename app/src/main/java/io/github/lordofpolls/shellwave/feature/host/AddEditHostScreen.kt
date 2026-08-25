@@ -63,6 +63,7 @@ import io.github.lordofpolls.shellwave.ssh.resolveProxyHops
 import io.github.lordofpolls.shellwave.terminal.DEFAULT_COLOR_SCHEME
 import io.github.lordofpolls.shellwave.terminal.DEFAULT_TERMINAL_PROFILE
 import io.github.lordofpolls.shellwave.ui.design.AdvancedSection
+import io.github.lordofpolls.shellwave.ui.design.BackTopBar
 import io.github.lordofpolls.shellwave.ui.design.MachineText
 import kotlinx.coroutines.launch
 
@@ -333,329 +334,331 @@ fun AddEditHostScreen(
         }
     }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Text(
-            if (existing == null) "Add host" else "Edit host",
-            style = MaterialTheme.typography.headlineSmall
+    Column(modifier = modifier.fillMaxSize()) {
+        BackTopBar(
+            title = if (existing == null) "Add host" else "Edit host",
+            onBack = onDone,
         )
 
-        // Port lives in Advanced, pre-filled 22, so leaving it untouched is always valid.
-        OutlinedTextField(
-            value = label,
-            onValueChange = { label = it },
-            label = { Text("Label (optional)") },
-            modifier = Modifier.fillMaxWidth()
-        )
-        OutlinedTextField(
-            value = hostname,
-            onValueChange = { hostname = it },
-            label = { Text("Hostname") },
-            modifier = Modifier.fillMaxWidth()
-        )
-        // Without a declared content type a password manager sees an unlabelled field and offers
-        // nothing. Username here and Password below give it the pair it needs.
-        OutlinedTextField(
-            value = username,
-            onValueChange = { username = it },
-            label = { Text("Username") },
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .semantics { contentType = ContentType.Username },
-        )
-
-        Text("Authentication", style = MaterialTheme.typography.titleSmall)
-        if (!storedSecretPresent) {
-            Text(
-                "This host came from an imported configuration, which carries no secrets. Enter " +
-                        "its password or key below before connecting.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Port lives in Advanced, pre-filled 22, so leaving it untouched is always valid.
+            OutlinedTextField(
+                value = label,
+                onValueChange = { label = it },
+                label = { Text("Label (optional)") },
+                modifier = Modifier.fillMaxWidth()
             )
-        }
-        AuthKind.entries.forEach { kind ->
-            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                RadioButton(selected = authKind == kind, onClick = { authKind = kind })
-                Text(kind.label())
-            }
-        }
+            OutlinedTextField(
+                value = hostname,
+                onValueChange = { hostname = it },
+                label = { Text("Hostname") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            // Without a declared content type a password manager sees an unlabelled field and offers
+            // nothing. Username here and Password below give it the pair it needs.
+            OutlinedTextField(
+                value = username,
+                onValueChange = { username = it },
+                label = { Text("Username") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .semantics { contentType = ContentType.Username },
+            )
 
-        when (authKind) {
-            AuthKind.PASSWORD ->
-                OutlinedTextField(
-                    value = password,
-                    onValueChange = { password = it },
-                    label = { Text("Password") },
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .semantics { contentType = ContentType.Password },
-                )
-
-            AuthKind.IMPORT_KEY -> {
-                Button(onClick = { pickDocument.launch(arrayOf("*/*")) }) { Text("Pick key file") }
-                // PuTTY .ppk has always worked - sshj registers PuTTYKeyFile and the picker takes
-                // any MIME type - but nothing said so, and users asked for a feature already there.
-                // Ed25519 .ppk is the one exception, refused with its own message.
+            Text("Authentication", style = MaterialTheme.typography.titleSmall)
+            if (!storedSecretPresent) {
                 Text(
-                    "OpenSSH, PEM/PKCS#8 or PuTTY .ppk.",
+                    "This host came from an imported configuration, which carries no secrets. Enter " +
+                            "its password or key below before connecting.",
                     style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                OutlinedTextField(
-                    value = importedPem,
-                    onValueChange = { importedPem = it; importedPublicKeyPreview = null },
-                    label = { Text("Or paste private key") },
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 3,
-                )
-                OutlinedTextField(
-                    value = importedPassphrase,
-                    onValueChange = { importedPassphrase = it; importedPublicKeyPreview = null },
-                    label = { Text("Passphrase (if encrypted)") },
-                    visualTransformation = PasswordVisualTransformation(),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .semantics { contentType = ContentType.Password },
-                )
-                Button(
-                    onClick = {
-                        runCatching {
-                            publicKeyLineOf(
-                                importedPem,
-                                importedPassphrase.ifBlank { null })
-                        }
-                            .onSuccess { importedPublicKeyPreview = it; error = null }
-                            .onFailure { error = it.message ?: "Could not parse key" }
-                    },
-                    enabled = importedPem.isNotBlank(),
-                ) { Text("Validate key") }
-                // The parsed key line is machine truth; the "Parsed:" label in front of it is
-                // prose.
-                importedPublicKeyPreview?.let {
-                    Row(
-                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Text("Parsed:", style = MaterialTheme.typography.bodySmall)
-                        MachineText(it, style = MaterialTheme.typography.bodySmall)
-                    }
+            }
+            AuthKind.entries.forEach { kind ->
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    RadioButton(selected = authKind == kind, onClick = { authKind = kind })
+                    Text(kind.label())
                 }
             }
 
-            AuthKind.GENERATE_KEY -> {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = {
-                        generatedKey = generateKeyPair(GeneratedKeyAlgorithm.ED25519)
-                    }) { Text("Generate ed25519") }
-                    Button(onClick = {
-                        generatedKey = generateKeyPair(GeneratedKeyAlgorithm.RSA)
-                    }) { Text("Generate RSA") }
-                }
-                generatedKey?.let { key ->
-                    Text(
-                        "Public key (add this to the server's authorized_keys):",
-                        style = MaterialTheme.typography.bodySmall
+            when (authKind) {
+                AuthKind.PASSWORD ->
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = { Text("Password") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .semantics { contentType = ContentType.Password },
                     )
-                    MachineText(key.publicKeyLine, style = MaterialTheme.typography.bodySmall)
-                    TextButton(onClick = {
-                        scope.launch {
-                            clipboard.setClipEntry(
-                                androidx.compose.ui.platform.ClipEntry(
-                                    ClipData.newPlainText("public key", key.publicKeyLine)
-                                )
-                            )
+
+                AuthKind.IMPORT_KEY -> {
+                    Button(onClick = { pickDocument.launch(arrayOf("*/*")) }) { Text("Pick key file") }
+                    // PuTTY .ppk has always worked - sshj registers PuTTYKeyFile and the picker takes
+                    // any MIME type - but nothing said so, and users asked for a feature already there.
+                    // Ed25519 .ppk is the one exception, refused with its own message.
+                    Text(
+                        "OpenSSH, PEM/PKCS#8 or PuTTY .ppk.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    OutlinedTextField(
+                        value = importedPem,
+                        onValueChange = { importedPem = it; importedPublicKeyPreview = null },
+                        label = { Text("Or paste private key") },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 3,
+                    )
+                    OutlinedTextField(
+                        value = importedPassphrase,
+                        onValueChange = { importedPassphrase = it; importedPublicKeyPreview = null },
+                        label = { Text("Passphrase (if encrypted)") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .semantics { contentType = ContentType.Password },
+                    )
+                    Button(
+                        onClick = {
+                            runCatching {
+                                publicKeyLineOf(
+                                    importedPem,
+                                    importedPassphrase.ifBlank { null })
+                            }
+                                .onSuccess { importedPublicKeyPreview = it; error = null }
+                                .onFailure { error = it.message ?: "Could not parse key" }
+                        },
+                        enabled = importedPem.isNotBlank(),
+                    ) { Text("Validate key") }
+                    // The parsed key line is machine truth; the "Parsed:" label in front of it is
+                    // prose.
+                    importedPublicKeyPreview?.let {
+                        Row(
+                            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text("Parsed:", style = MaterialTheme.typography.bodySmall)
+                            MachineText(it, style = MaterialTheme.typography.bodySmall)
                         }
-                    }) {
-                        Text("Copy public key")
                     }
+                }
+
+                AuthKind.GENERATE_KEY -> {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = {
+                            generatedKey = generateKeyPair(GeneratedKeyAlgorithm.ED25519)
+                        }) { Text("Generate ed25519") }
+                        Button(onClick = {
+                            generatedKey = generateKeyPair(GeneratedKeyAlgorithm.RSA)
+                        }) { Text("Generate RSA") }
+                    }
+                    generatedKey?.let { key ->
+                        Text(
+                            "Public key (add this to the server's authorized_keys):",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        MachineText(key.publicKeyLine, style = MaterialTheme.typography.bodySmall)
+                        TextButton(onClick = {
+                            scope.launch {
+                                clipboard.setClipEntry(
+                                    androidx.compose.ui.platform.ClipEntry(
+                                        ClipData.newPlainText("public key", key.publicKeyLine)
+                                    )
+                                )
+                            }
+                        }) {
+                            Text("Copy public key")
+                        }
+                    }
+                }
+
+                AuthKind.KEYBOARD_INTERACTIVE ->
+                    Text(
+                        "The server will prompt for whatever it needs (password, TOTP code, ...) when connecting.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+            }
+
+            if (authKind != AuthKind.KEYBOARD_INTERACTIVE) {
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Checkbox(checked = requireBiometric, onCheckedChange = { requireBiometric = it })
+                    Text("Require biometric unlock to use this credential")
                 }
             }
 
-            AuthKind.KEYBOARD_INTERACTIVE ->
+            // Every var read below is `remember`'d above this call, not inside it: state has to survive
+            // collapse and expand. See this file's doc.
+            AdvancedSection(title = "Advanced") {
+                OutlinedTextField(
+                    value = port,
+                    onValueChange = { port = it },
+                    label = { Text("Port") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                OutlinedTextField(
+                    value = macAddress,
+                    // Clears the rejection this field caused, so the red line cannot outlive a fix.
+                    onValueChange = { macAddress = it; error = null },
+                    label = { Text("MAC address (optional)") },
+                    placeholder = { Text("3c:22:fb:01:02:03") },
+                    supportingText = { Text("Adds a Wake-on-LAN action to this host's menu.") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                if (existing != null) {
+                    TextButton(
+                        enabled = !detectingMac,
+                        onClick = {
+                            detectingMac = true
+                            error = null
+                            val target =
+                                existing.copy(
+                                    hostname = hostname.ifBlank { existing.hostname },
+                                    port = port.toIntOrNull() ?: existing.port,
+                                    username = username.ifBlank { existing.username },
+                                )
+                            scope.launch {
+                                try {
+                                    detectMacAddress(
+                                        scriptRunner,
+                                        "Detect MAC: ${target.username}@${target.hostname}",
+                                        target.hostname,
+                                        target.port,
+                                        target.username,
+                                        credentialVault.resolve(target.credentialId, activity),
+                                        resolveProxyHops(target, hostDao, credentialVault, activity),
+                                    ).fold({ macAddress = it }, { error = it.message })
+                                } catch (e: Exception) {
+                                    error = e.message ?: "Could not detect the MAC address"
+                                } finally {
+                                    detectingMac = false
+                                }
+                            }
+                        },
+                    ) {
+                        Text(if (detectingMac) "Asking the host..." else "Detect from host")
+                    }
+                }
+
+                Text("Resilient session", style = MaterialTheme.typography.titleSmall)
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Checkbox(checked = resilientSession, onCheckedChange = { resilientSession = it })
+                    Text("Reattach to the same shell after a reconnect (needs tmux on the server)")
+                }
                 Text(
-                    "The server will prompt for whatever it needs (password, TOTP code, ...) when connecting.",
+                    "Reconnects reattach to the same tmux session instead of starting fresh. Falls back to " +
+                            "a plain shell if the server has no tmux.",
                     style = MaterialTheme.typography.bodySmall,
                 )
-        }
 
-        if (authKind != AuthKind.KEYBOARD_INTERACTIVE) {
-            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                Checkbox(checked = requireBiometric, onCheckedChange = { requireBiometric = it })
-                Text("Require biometric unlock to use this credential")
-            }
-        }
+                // Each checkbox gates a dedicated row, reusing Settings' own field editors. Unchecked
+                // means "use the app-wide default".
+                Text("Overrides", style = MaterialTheme.typography.titleSmall)
 
-        // Every var read below is `remember`'d above this call, not inside it: state has to survive
-        // collapse and expand. See this file's doc.
-        AdvancedSection(title = "Advanced") {
-            OutlinedTextField(
-                value = port,
-                onValueChange = { port = it },
-                label = { Text("Port") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            OutlinedTextField(
-                value = macAddress,
-                // Clears the rejection this field caused, so the red line cannot outlive a fix.
-                onValueChange = { macAddress = it; error = null },
-                label = { Text("MAC address (optional)") },
-                placeholder = { Text("3c:22:fb:01:02:03") },
-                supportingText = { Text("Adds a Wake-on-LAN action to this host's menu.") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            if (existing != null) {
-                TextButton(
-                    enabled = !detectingMac,
-                    onClick = {
-                        detectingMac = true
-                        error = null
-                        val target =
-                            existing.copy(
-                                hostname = hostname.ifBlank { existing.hostname },
-                                port = port.toIntOrNull() ?: existing.port,
-                                username = username.ifBlank { existing.username },
-                            )
-                        scope.launch {
-                            try {
-                                detectMacAddress(
-                                    scriptRunner,
-                                    "Detect MAC: ${target.username}@${target.hostname}",
-                                    target.hostname,
-                                    target.port,
-                                    target.username,
-                                    credentialVault.resolve(target.credentialId, activity),
-                                    resolveProxyHops(target, hostDao, credentialVault, activity),
-                                ).fold({ macAddress = it }, { error = it.message })
-                            } catch (e: Exception) {
-                                error = e.message ?: "Could not detect the MAC address"
-                            } finally {
-                                detectingMac = false
-                            }
-                        }
-                    },
-                ) {
-                    Text(if (detectingMac) "Asking the host..." else "Detect from host")
-                }
-            }
-
-            Text("Resilient session", style = MaterialTheme.typography.titleSmall)
-            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                Checkbox(checked = resilientSession, onCheckedChange = { resilientSession = it })
-                Text("Reattach to the same shell after a reconnect (needs tmux on the server)")
-            }
-            Text(
-                "Reconnects reattach to the same tmux session instead of starting fresh. Falls back to " +
-                        "a plain shell if the server has no tmux.",
-                style = MaterialTheme.typography.bodySmall,
-            )
-
-            // Each checkbox gates a dedicated row, reusing Settings' own field editors. Unchecked
-            // means "use the app-wide default".
-            Text("Overrides", style = MaterialTheme.typography.titleSmall)
-
-            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                Checkbox(
-                    checked = terminalProfileOverride != null,
-                    onCheckedChange = { checked -> if (checked) enableProfileOverride() else disableProfileOverride() },
-                )
-                Text("Override terminal profile for this host")
-            }
-            terminalProfileOverride?.let { profile ->
-                TerminalProfileFields(
-                    profile = profile,
-                    onChange = ::saveProfileOverride
-                )
-            }
-
-            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                Checkbox(
-                    checked = colorSchemeOverride != null,
-                    onCheckedChange = { checked -> if (checked) enableSchemeOverride() else disableSchemeOverride() },
-                )
-                Text("Override colour scheme for this host")
-            }
-            colorSchemeOverride?.let { scheme ->
-                ColorSchemeFields(
-                    scheme = scheme,
-                    onChange = ::saveSchemeOverride
-                )
-            }
-
-            Text("Key bar layout", style = MaterialTheme.typography.labelLarge)
-            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                RadioButton(selected = keyBarLayoutId == null, onClick = { keyBarLayoutId = null })
-                Text("Default (Esc, Tab, arrows)")
-            }
-            keyBarLayouts.forEach { layout ->
                 Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    RadioButton(
-                        selected = keyBarLayoutId == layout.id,
-                        onClick = { keyBarLayoutId = layout.id })
-                    Text(layout.name)
+                    Checkbox(
+                        checked = terminalProfileOverride != null,
+                        onCheckedChange = { checked -> if (checked) enableProfileOverride() else disableProfileOverride() },
+                    )
+                    Text("Override terminal profile for this host")
                 }
-            }
+                terminalProfileOverride?.let { profile ->
+                    TerminalProfileFields(
+                        profile = profile,
+                        onChange = ::saveProfileOverride
+                    )
+                }
 
-            // Excludes this host itself - an immediate one-host cycle is the only case cheap to
-            // rule out.
-            Text("Proxy jump (ProxyJump)", style = MaterialTheme.typography.titleSmall)
-            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                RadioButton(
-                    selected = proxyJumpHostId == null,
-                    onClick = { proxyJumpHostId = null })
-                Text("Connect directly")
-            }
-            allHosts.filter { it.id != existing?.id }.forEach { jumpCandidate ->
                 Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    RadioButton(
-                        selected = proxyJumpHostId == jumpCandidate.id,
-                        onClick = { proxyJumpHostId = jumpCandidate.id })
-                    // A nickname is a human label; the fallback user@host:port is machine-asserted
-                    // identity.
-                    val jumpLabel = jumpCandidate.label
-                    if (jumpLabel != null) {
-                        Text(jumpLabel)
-                    } else {
-                        MachineText("${jumpCandidate.username}@${jumpCandidate.hostname}:${jumpCandidate.port}")
+                    Checkbox(
+                        checked = colorSchemeOverride != null,
+                        onCheckedChange = { checked -> if (checked) enableSchemeOverride() else disableSchemeOverride() },
+                    )
+                    Text("Override colour scheme for this host")
+                }
+                colorSchemeOverride?.let { scheme ->
+                    ColorSchemeFields(
+                        scheme = scheme,
+                        onChange = ::saveSchemeOverride
+                    )
+                }
+
+                Text("Key bar layout", style = MaterialTheme.typography.labelLarge)
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    RadioButton(selected = keyBarLayoutId == null, onClick = { keyBarLayoutId = null })
+                    Text("Default (Esc, Tab, arrows)")
+                }
+                keyBarLayouts.forEach { layout ->
+                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        RadioButton(
+                            selected = keyBarLayoutId == layout.id,
+                            onClick = { keyBarLayoutId = layout.id })
+                        Text(layout.name)
                     }
                 }
-            }
-            Text(
-                "Connects through another saved host acting as a bastion. Jump settings chain, so " +
-                        "several hops can be reached this way.",
-                style = MaterialTheme.typography.bodySmall,
-            )
 
-            if (existing != null) {
-                KeyEnrolmentSection(
-                    host = existing,
-                    credentialVault = credentialVault,
-                    hostDao = hostDao,
-                    keyEnrolment = keyEnrolment,
-                    activity = activity
+                // Excludes this host itself - an immediate one-host cycle is the only case cheap to
+                // rule out.
+                Text("Proxy jump (ProxyJump)", style = MaterialTheme.typography.titleSmall)
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    RadioButton(
+                        selected = proxyJumpHostId == null,
+                        onClick = { proxyJumpHostId = null })
+                    Text("Connect directly")
+                }
+                allHosts.filter { it.id != existing?.id }.forEach { jumpCandidate ->
+                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        RadioButton(
+                            selected = proxyJumpHostId == jumpCandidate.id,
+                            onClick = { proxyJumpHostId = jumpCandidate.id })
+                        // A nickname is a human label; the fallback user@host:port is machine-asserted
+                        // identity.
+                        val jumpLabel = jumpCandidate.label
+                        if (jumpLabel != null) {
+                            Text(jumpLabel)
+                        } else {
+                            MachineText("${jumpCandidate.username}@${jumpCandidate.hostname}:${jumpCandidate.port}")
+                        }
+                    }
+                }
+                Text(
+                    "Connects through another saved host acting as a bastion. Jump settings chain, so " +
+                            "several hops can be reached this way.",
+                    style = MaterialTheme.typography.bodySmall,
                 )
-                TunnelsSection(
-                    host = existing,
-                    portForwardDao = portForwardDao,
-                    sessionManager = sessionManager
-                )
+
+                if (existing != null) {
+                    KeyEnrolmentSection(
+                        host = existing,
+                        credentialVault = credentialVault,
+                        hostDao = hostDao,
+                        keyEnrolment = keyEnrolment,
+                        activity = activity
+                    )
+                    TunnelsSection(
+                        host = existing,
+                        portForwardDao = portForwardDao,
+                        sessionManager = sessionManager
+                    )
+                }
             }
-        }
 
-        if (error != null) Text(error!!, color = MaterialTheme.colorScheme.error)
+            if (error != null) Text(error!!, color = MaterialTheme.colorScheme.error)
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(onClick = onDone) { Text("Cancel") }
-            Button(onClick = ::save, enabled = canSave()) { Text("Save") }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = onDone) { Text("Cancel") }
+                Button(onClick = ::save, enabled = canSave()) { Text("Save") }
+            }
         }
     }
 }

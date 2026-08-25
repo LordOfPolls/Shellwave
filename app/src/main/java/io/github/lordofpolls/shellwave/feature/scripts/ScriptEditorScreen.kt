@@ -45,6 +45,7 @@ import io.github.lordofpolls.shellwave.core.db.entities.HostEntity
 import io.github.lordofpolls.shellwave.core.db.entities.ScriptEntity
 import io.github.lordofpolls.shellwave.core.prefs.AutomationPreferences
 import io.github.lordofpolls.shellwave.core.util.extractParamNames
+import io.github.lordofpolls.shellwave.ui.design.BackTopBar
 import io.github.lordofpolls.shellwave.ui.design.MachineText
 import kotlinx.coroutines.launch
 
@@ -153,124 +154,126 @@ fun ScriptEditorScreen(
         }
     }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Text(
-            if (existing == null) "Add script" else "Edit script",
-            style = MaterialTheme.typography.headlineSmall
+    Column(modifier = modifier.fillMaxSize()) {
+        BackTopBar(
+            title = if (existing == null) "Add script" else "Edit script",
+            onBack = onDone,
         )
 
-        OutlinedTextField(
-            value = name,
-            onValueChange = { name = it },
-            label = { Text("Name") },
-            modifier = Modifier.fillMaxWidth()
-        )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Name") },
+                modifier = Modifier.fillMaxWidth()
+            )
 
-        Text("Colour", style = MaterialTheme.typography.titleSmall)
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            ScriptColor.PRESETS.forEachIndexed { index, candidate ->
-                ColorSwatch(
-                    argb = candidate,
-                    description = COLOR_PRESET_NAMES.getOrElse(index) { "Colour ${index + 1}" },
-                    selected = candidate == color,
-                    onClick = { color = candidate },
-                )
-            }
-        }
-
-        Text("Mode", style = MaterialTheme.typography.titleSmall)
-        ScriptMode.entries.forEach { candidate ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                RadioButton(selected = mode == candidate, onClick = { mode = candidate })
-                Column {
-                    Text(candidate.label())
-                    Text(
-                        candidate.description(),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+            Text("Colour", style = MaterialTheme.typography.titleSmall)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                ScriptColor.PRESETS.forEachIndexed { index, candidate ->
+                    ColorSwatch(
+                        argb = candidate,
+                        description = COLOR_PRESET_NAMES.getOrElse(index) { "Colour ${index + 1}" },
+                        selected = candidate == color,
+                        onClick = { color = candidate },
                     )
                 }
             }
-        }
 
-        if (mode != ScriptMode.SEND_TO_CURRENT) {
-            Text("Target host", style = MaterialTheme.typography.titleSmall)
-            // "Ask each run" answers the same question the hosts do, so one radio group makes "no
-            // fixed host" read as a choice rather than the absence of one. First in the list.
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                RadioButton(selected = targetHostId == null, onClick = { targetHostId = null })
-                Column {
-                    Text("Ask each run")
-                    Text(
-                        "Reusable - pick a host when you run it. Not available to widgets, tiles or shortcuts.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-            hosts.forEach { host ->
+            Text("Mode", style = MaterialTheme.typography.titleSmall)
+            ScriptMode.entries.forEach { candidate ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(
-                        selected = targetHostId == host.id,
-                        onClick = { targetHostId = host.id })
-                    // A user-chosen label is human text; a bare hostname is a machine assertion.
-                    val hostLabel = host.label
-                    if (hostLabel != null) Text(hostLabel) else MachineText(host.hostname)
+                    RadioButton(selected = mode == candidate, onClick = { mode = candidate })
+                    Column {
+                        Text(candidate.label())
+                        Text(
+                            candidate.description(),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
-        }
 
-        OutlinedTextField(
-            value = snippet,
-            onValueChange = { snippet = it },
-            label = { Text("Snippet (use {{name}} for parameters)") },
-            modifier = Modifier.fillMaxWidth(),
-            minLines = 4,
-        )
-
-        if (activeParamNames.isNotEmpty()) {
-            Text("Parameters", style = MaterialTheme.typography.titleSmall)
-            activeParamNames.forEach { paramName ->
-                ParamEditorRow(
-                    param = paramDefs[paramName] ?: ScriptParam(paramName),
-                    onChange = { updated -> paramDefs[paramName] = updated },
-                )
+            if (mode != ScriptMode.SEND_TO_CURRENT) {
+                Text("Target host", style = MaterialTheme.typography.titleSmall)
+                // "Ask each run" answers the same question the hosts do, so one radio group makes "no
+                // fixed host" read as a choice rather than the absence of one. First in the list.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(selected = targetHostId == null, onClick = { targetHostId = null })
+                    Column {
+                        Text("Ask each run")
+                        Text(
+                            "Reusable - pick a host when you run it. Not available to widgets, tiles or shortcuts.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                hosts.forEach { host ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(
+                            selected = targetHostId == host.id,
+                            onClick = { targetHostId = host.id })
+                        // A user-chosen label is human text; a bare hostname is a machine assertion.
+                        val hostLabel = host.label
+                        if (hostLabel != null) Text(hostLabel) else MachineText(host.hostname)
+                    }
+                }
             }
-        }
 
-        if (mode == ScriptMode.ATTACH) {
+            OutlinedTextField(
+                value = snippet,
+                onValueChange = { snippet = it },
+                label = { Text("Snippet (use {{name}} for parameters)") },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 4,
+            )
+
+            if (activeParamNames.isNotEmpty()) {
+                Text("Parameters", style = MaterialTheme.typography.titleSmall)
+                activeParamNames.forEach { paramName ->
+                    ParamEditorRow(
+                        param = paramDefs[paramName] ?: ScriptParam(paramName),
+                        onChange = { updated -> paramDefs[paramName] = updated },
+                    )
+                }
+            }
+
+            if (mode == ScriptMode.ATTACH) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = disconnectAfter, onCheckedChange = { disconnectAfter = it })
+                    Text("Close the session once the command finishes")
+                }
+            }
+
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = disconnectAfter, onCheckedChange = { disconnectAfter = it })
-                Text("Close the session once the command finishes")
+                Checkbox(checked = confirmBeforeRun, onCheckedChange = { confirmBeforeRun = it })
+                Text("Confirm before running")
             }
-        }
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(checked = confirmBeforeRun, onCheckedChange = { confirmBeforeRun = it })
-            Text("Confirm before running")
-        }
+            // The integration addresses a script by numeric id, and an unsaved script has no id to
+            // paste into a task. Offering the toggle first would offer a capability nobody can wire up
+            // yet.
+            if (existing != null) {
+                AutomationOptIn(
+                    scriptId = existing.id,
+                    allowed = allowAutomation,
+                    onAllowedChange = { allowAutomation = it })
+            }
 
-        // The integration addresses a script by numeric id, and an unsaved script has no id to
-        // paste into a task. Offering the toggle first would offer a capability nobody can wire up
-        // yet.
-        if (existing != null) {
-            AutomationOptIn(
-                scriptId = existing.id,
-                allowed = allowAutomation,
-                onAllowedChange = { allowAutomation = it })
-        }
+            if (error != null) Text(error!!, color = MaterialTheme.colorScheme.error)
 
-        if (error != null) Text(error!!, color = MaterialTheme.colorScheme.error)
-
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(onClick = onDone) { Text("Cancel") }
-            Button(onClick = ::save, enabled = canSave()) { Text("Save") }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = onDone) { Text("Cancel") }
+                Button(onClick = ::save, enabled = canSave()) { Text("Save") }
+            }
         }
     }
 }

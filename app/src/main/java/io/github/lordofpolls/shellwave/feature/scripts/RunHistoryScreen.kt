@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import io.github.lordofpolls.shellwave.core.db.entities.ScriptRunEntity
+import io.github.lordofpolls.shellwave.ui.design.BackTopBar
 import io.github.lordofpolls.shellwave.ui.design.MachineText
 import java.text.DateFormat
 import java.util.Date
@@ -36,29 +37,25 @@ fun RunHistoryScreen(
 ) {
     var selected by remember { mutableStateOf<ScriptRunEntity?>(null) }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            TextButton(onClick = onBack) { Text("< Back") }
-            Text("$scriptName - history", style = MaterialTheme.typography.headlineSmall)
-        }
+    Column(modifier = modifier.fillMaxSize()) {
+        BackTopBar(title = "$scriptName - history", onBack = onBack)
 
-        if (runs.isEmpty()) {
-            Text("No runs yet.", style = MaterialTheme.typography.bodyMedium)
-        } else {
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(bottom = 24.dp)
-            ) {
-                items(runs, key = { it.id }) { run ->
-                    RunHistoryRow(run = run, onClick = { selected = run })
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            if (runs.isEmpty()) {
+                Text("No runs yet.", style = MaterialTheme.typography.bodyMedium)
+            } else {
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(bottom = 24.dp)
+                ) {
+                    items(runs, key = { it.id }) { run ->
+                        RunHistoryRow(run = run, onClick = { selected = run })
+                    }
                 }
             }
         }
