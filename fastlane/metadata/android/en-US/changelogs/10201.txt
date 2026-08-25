@@ -1,0 +1,2 @@
+Fixed:
+- Missing glance view on widget

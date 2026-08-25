@@ -1,6 +1,16 @@
 # Changelog
 
 
+## 1.2.1 - 2026-08-25
+
+### Fixed
+- Missing glance view on widget
+
+### Documentation
+- Privacy.md
+
+[Every commit in this release](https://github.com/LordOfPolls/Shellwave/compare/1.2.0...1.2.1)
+
 ## 1.2.0 - 2026-08-25
 
 ### New

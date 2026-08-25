@@ -40,7 +40,14 @@ Builds:
     gradle:
       - foss
 
+  - versionName: '1.2.1'
+    versionCode: 10201
+    commit: '1.2.1'
+    subdir: app
+    gradle:
+      - foss
+
 AutoUpdateMode: Version
 UpdateCheckMode: Tags
-CurrentVersion: '1.2.0'
-CurrentVersionCode: 10200
+CurrentVersion: '1.2.1'
+CurrentVersionCode: 10201
