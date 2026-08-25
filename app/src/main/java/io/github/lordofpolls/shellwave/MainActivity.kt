@@ -87,6 +87,7 @@ import io.github.lordofpolls.shellwave.feature.scripts.ScriptsScreen
 import io.github.lordofpolls.shellwave.feature.scripts.rememberScriptRunController
 import io.github.lordofpolls.shellwave.feature.session.SessionsListScreen
 import io.github.lordofpolls.shellwave.feature.session.SessionsScreen
+import io.github.lordofpolls.shellwave.feature.settings.ConfigExporter
 import io.github.lordofpolls.shellwave.feature.settings.KeyBarLayoutsScreen
 import io.github.lordofpolls.shellwave.feature.settings.LicenseScreen
 import io.github.lordofpolls.shellwave.feature.settings.SettingsScreen
@@ -219,6 +220,9 @@ class MainActivity : FragmentActivity() {
 
     @Inject
     lateinit var scriptRunner: ScriptRunner
+
+    @Inject
+    lateinit var configExporter: ConfigExporter
 
     @Inject
     lateinit var keyEnrolment: KeyEnrolment
@@ -981,6 +985,7 @@ class MainActivity : FragmentActivity() {
                                                 AutomationPreferences.regenerateToken(this@MainActivity)
                                         },
                                         onOpenKeyBarLayouts = { push("keyBarLayouts") },
+                                        onExportConfig = configExporter::writeTo,
                                         onOpenLicenses = { push("license") },
                                         supporterState = supporterState,
                                         onBecomeSupporter = { supporterBilling.launchPurchase(this@MainActivity) },

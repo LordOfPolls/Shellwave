@@ -1,6 +1,9 @@
 package io.github.lordofpolls.shellwave.feature.settings
 
 import android.content.ClipData
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -51,6 +54,7 @@ import io.github.lordofpolls.shellwave.terminal.DEFAULT_TERMINAL_PROFILE
 import io.github.lordofpolls.shellwave.ui.design.AdvancedSection
 import io.github.lordofpolls.shellwave.ui.design.MachineText
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 
 /**
  * The Settings destination, as M3 preference groups.
@@ -90,6 +94,7 @@ fun SettingsScreen(
     automationToken: String?,
     onRegenerateAutomationToken: () -> Unit,
     onOpenKeyBarLayouts: () -> Unit,
+    onExportConfig: suspend (Uri) -> Unit,
     onOpenLicenses: () -> Unit,
     supporterState: SupporterState,
     onBecomeSupporter: () -> Unit,
@@ -269,6 +274,10 @@ fun SettingsScreen(
                 SupporterRow(state = supporterState, onBecomeSupporter = onBecomeSupporter)
             }
 
+            SettingsSectionHeader("Backup")
+
+            ConfigExportRow(onExport = onExportConfig)
+
             SettingsSectionHeader("About")
 
             TextButton(onClick = onOpenLicenses) { Text("Licences") }
@@ -399,6 +408,41 @@ private fun SupporterRow(state: SupporterState, onBecomeSupporter: () -> Unit) {
         is SupporterState.Supporter -> {
             Text("You're a supporter - thank you!", style = MaterialTheme.typography.labelLarge)
         }
+    }
+}
+
+/** `CreateDocument` rather than a fixed path: no storage permission, and the user picks where it lands. */
+@Composable
+private fun ConfigExportRow(onExport: suspend (Uri) -> Unit) {
+    val scope = rememberCoroutineScope()
+    var outcome by remember { mutableStateOf<String?>(null) }
+    val launcher =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.CreateDocument("application/json"),
+        ) { uri ->
+            if (uri == null) return@rememberLauncherForActivityResult
+            outcome = null
+            scope.launch {
+                outcome =
+                    runCatching { onExport(uri) }
+                        .fold(
+                            { "Configuration exported." },
+                            { it.message ?: "Could not write the export." },
+                        )
+            }
+        }
+
+    Text(
+        "Writes your hosts, tunnels, scripts and settings to a JSON file. Passwords, private keys " +
+                "and passphrases are not included - they stay sealed in this device's keystore.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    TextButton(onClick = { launcher.launch("shellwave-config-${LocalDate.now()}.json") }) {
+        Text("Export configuration")
+    }
+    outcome?.let {
+        Text(it, style = MaterialTheme.typography.bodySmall)
     }
 }
 
