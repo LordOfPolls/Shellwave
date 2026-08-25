@@ -778,6 +778,7 @@ class MainActivity : FragmentActivity() {
                                         colorSchemeDao = colorSchemeDao,
                                         keyBarLayoutDao = keyBarLayoutDao,
                                         portForwardDao = portForwardDao,
+                                        scriptRunner = scriptRunner,
                                         sessionManager = sessionManager,
                                         onDone = { popBack() },
                                         modifier = Modifier.weight(1f),

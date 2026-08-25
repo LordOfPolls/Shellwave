@@ -53,10 +53,13 @@ import io.github.lordofpolls.shellwave.feature.settings.TerminalProfileFields
 import io.github.lordofpolls.shellwave.ssh.GeneratedKey
 import io.github.lordofpolls.shellwave.ssh.GeneratedKeyAlgorithm
 import io.github.lordofpolls.shellwave.ssh.KeyEnrolment
+import io.github.lordofpolls.shellwave.ssh.ScriptRunner
 import io.github.lordofpolls.shellwave.ssh.SessionManager
+import io.github.lordofpolls.shellwave.ssh.detectMacAddress
 import io.github.lordofpolls.shellwave.ssh.generateKeyPair
 import io.github.lordofpolls.shellwave.ssh.publicKeyLineOf
 import io.github.lordofpolls.shellwave.ssh.readKeyText
+import io.github.lordofpolls.shellwave.ssh.resolveProxyHops
 import io.github.lordofpolls.shellwave.terminal.DEFAULT_COLOR_SCHEME
 import io.github.lordofpolls.shellwave.terminal.DEFAULT_TERMINAL_PROFILE
 import io.github.lordofpolls.shellwave.ui.design.AdvancedSection
@@ -94,6 +97,7 @@ fun AddEditHostScreen(
     colorSchemeDao: ColorSchemeDao,
     keyBarLayoutDao: KeyBarLayoutDao,
     portForwardDao: PortForwardDao,
+    scriptRunner: ScriptRunner,
     sessionManager: SessionManager,
     onDone: () -> Unit,
     modifier: Modifier = Modifier,
@@ -114,6 +118,7 @@ fun AddEditHostScreen(
         )
     }
     var macAddress by remember(existing?.id) { mutableStateOf(existing?.macAddress.orEmpty()) }
+    var detectingMac by remember { mutableStateOf(false) }
 
     // Each override is its own dedicated row, shared with nothing. Null means "no override yet"; a
     // non-null value is already persisted, inserted the moment the checkbox is switched on, so its
@@ -493,6 +498,41 @@ fun AddEditHostScreen(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
+
+            if (existing != null) {
+                TextButton(
+                    enabled = !detectingMac,
+                    onClick = {
+                        detectingMac = true
+                        error = null
+                        val target =
+                            existing.copy(
+                                hostname = hostname.ifBlank { existing.hostname },
+                                port = port.toIntOrNull() ?: existing.port,
+                                username = username.ifBlank { existing.username },
+                            )
+                        scope.launch {
+                            try {
+                                detectMacAddress(
+                                    scriptRunner,
+                                    "Detect MAC: ${target.username}@${target.hostname}",
+                                    target.hostname,
+                                    target.port,
+                                    target.username,
+                                    credentialVault.resolve(target.credentialId, activity),
+                                    resolveProxyHops(target, hostDao, credentialVault, activity),
+                                ).fold({ macAddress = it }, { error = it.message })
+                            } catch (e: Exception) {
+                                error = e.message ?: "Could not detect the MAC address"
+                            } finally {
+                                detectingMac = false
+                            }
+                        }
+                    },
+                ) {
+                    Text(if (detectingMac) "Asking the host..." else "Detect from host")
+                }
+            }
 
             Text("Resilient session", style = MaterialTheme.typography.titleSmall)
             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
