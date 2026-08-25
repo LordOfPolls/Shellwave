@@ -22,3 +22,6 @@
 -dontwarn javax.naming.**
 -dontwarn javax.security.auth.login.LoginContext
 -dontwarn org.ietf.jgss.**
+-keepclassmembers class * extends androidx.work.InputMerger {
+    <init>();
+}
