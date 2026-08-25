@@ -1,6 +1,8 @@
 package io.github.lordofpolls.shellwave.feature.glance
 
 import android.content.Context
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -23,6 +25,7 @@ import dagger.hilt.android.EntryPointAccessors
 import io.github.lordofpolls.shellwave.core.prefs.WidgetPreferences
 import io.github.lordofpolls.shellwave.feature.scripts.ScriptMode
 import io.github.lordofpolls.shellwave.service.ScriptTriggerService
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 
 /**
@@ -45,18 +48,23 @@ class ScriptWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val scriptDao =
             EntryPointAccessors.fromApplication(context, WidgetEntryPoint::class.java).scriptDao()
-        val pinnedIds = WidgetPreferences.pinnedScriptIds(context)
-        val scripts =
-            scriptDao.observeAll().first()
-                .filter {
+        val pinnedScripts =
+            scriptDao.observeAll().combine(WidgetPreferences.pinnedScriptIdsFlow(context)) {
+                    scripts,
+                    pinnedIds,
+                ->
+                scripts.filter {
                     it.id in pinnedIds && it.targetHostId != null && runCatching {
                         ScriptMode.valueOf(
                             it.mode
                         )
                     }.getOrNull() == ScriptMode.CAPTURE
                 }
+            }
+        val initialScripts = pinnedScripts.first()
 
         provideContent {
+            val scripts by pinnedScripts.collectAsState(initialScripts)
             Column(
                 modifier = GlanceModifier.fillMaxWidth().background(Color(0xFF1B1B1F))
                     .padding(12.dp),

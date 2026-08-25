@@ -1,6 +1,10 @@
 package io.github.lordofpolls.shellwave.core.prefs
 
 import android.content.Context
+import android.content.SharedPreferences
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
 
 private const val PREFS_NAME = "shellwave_prefs"
 private const val KEY_PINNED_SCRIPT_IDS = "widget_pinned_script_ids"
@@ -38,5 +42,17 @@ object WidgetPreferences {
             scriptId
         )
         editor.apply()
+    }
+    
+    fun pinnedScriptIdsFlow(context: Context): Flow<Set<Long>> = callbackFlow {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == null || key == KEY_PINNED_SCRIPT_IDS) {
+                trySend(pinnedScriptIds(context))
+            }
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        send(pinnedScriptIds(context))
+        awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
     }
 }
