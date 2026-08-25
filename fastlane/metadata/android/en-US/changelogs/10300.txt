@@ -1,0 +1,7 @@
+New:
+- Toast when a background trigger starts a script
+- Put a capture run's output in its result notification
+- Scrollable, themed widget with a header that opens the app
+
+Fixed:
+- Refresh the widget when a script is pinned or unpinned

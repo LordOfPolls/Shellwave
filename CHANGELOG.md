@@ -1,6 +1,18 @@
 # Changelog
 
 
+## 1.3.0 - 2026-08-25
+
+### New
+- Toast when a background trigger starts a script
+- Put a capture run's output in its result notification
+- Scrollable, themed widget with a header that opens the app
+
+### Fixed
+- Refresh the widget when a script is pinned or unpinned
+
+[Every commit in this release](https://github.com/LordOfPolls/Shellwave/compare/1.2.2...1.3.0)
+
 ## 1.2.2 - 2026-08-25
 
 ### Fixed
