@@ -169,7 +169,7 @@ fun HomeScreen(
                 QuickConnectRow(
                     text = quickConnectText,
                     onTextChange = { quickConnectText = it },
-                    onConnect = { parseQuickConnect(quickConnectText)?.let(onQuickConnect) },
+                    onConnect = onQuickConnect,
                     modifier = Modifier.padding(top = 8.dp),
                 )
             }
@@ -354,9 +354,11 @@ private fun HostsOverflow(onImportSshConfig: () -> Unit) {
 private fun QuickConnectRow(
     text: String,
     onTextChange: (String) -> Unit,
-    onConnect: () -> Unit,
+    onConnect: (QuickConnectTarget) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val target = parseQuickConnect(text)
+
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -368,11 +370,12 @@ private fun QuickConnectRow(
             singleLine = true,
             textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = ChromeMonoFontFamily),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-            keyboardActions = KeyboardActions(onGo = { onConnect() }),
+            keyboardActions = KeyboardActions(onGo = { target?.let(onConnect) }),
             modifier = Modifier.weight(1f),
         )
         FilledTonalButton(
-            onClick = onConnect,
+            onClick = { target?.let(onConnect) },
+            enabled = target != null,
             modifier = Modifier.height(QuickConnectFieldHeight),
         ) { Text("Connect") }
     }
