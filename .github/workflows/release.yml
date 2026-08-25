@@ -1,19 +1,9 @@
-# Builds the FOSS flavour when a GitHub release is published and attaches the APK to it.
-#
-# `foss` is deliberate: it is the flavour without com.android.billingclient, so the artifact
-# published here matches what F-Droid builds from the same tag. The `play` flavour is not built
-# by CI - that one goes through Play Console.
-#
-# Signing: set the SHELLWAVE_RELEASE_KEYSTORE_BASE64 secret (base64 of the .jks) plus
-# SHELLWAVE_RELEASE_STORE_PASSWORD / _KEY_ALIAS / _KEY_PASSWORD. Without them the build still
-# runs, but app/build.gradle.kts leaves the APK unsigned rather than falling back to the debug
-# key, and the job fails before it uploads anything so an uninstallable APK never lands on a
-# release.
 name: Release (FOSS)
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
   workflow_dispatch:
 
 permissions:
@@ -23,8 +13,29 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    env:
+      GIT_CLIFF_VERSION: '2.13.1'
+
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Read the version the build declares
+        id: declared
+        run: tools/version.sh | tee -a "$GITHUB_OUTPUT"
+
+      - name: Check the tag against the declared version
+        if: github.event_name == 'push'
+        env:
+          TAG: ${{ github.ref_name }}
+          DECLARED: ${{ steps.declared.outputs.name }}
+        run: |
+          if [ "$TAG" != "$DECLARED" ]; then
+            echo "Tag $TAG does not match versionName $DECLARED in app/build.gradle.kts." >&2
+            echo "Delete the tag, run tools/prepare-release.sh $TAG, commit, and tag again." >&2
+            exit 1
+          fi
 
       - name: Set up JDK
         uses: actions/setup-java@v5
@@ -92,15 +103,44 @@ jobs:
           path: ${{ steps.apk.outputs.path }}
           if-no-files-found: error
 
-      - name: Attach the APK to the release
-        if: github.event_name == 'release'
+      - name: Write the release notes
+        if: github.event_name == 'push'
+        run: |
+          url="https://github.com/orhun/git-cliff/releases/download/v$GIT_CLIFF_VERSION"
+          url="$url/git-cliff-$GIT_CLIFF_VERSION-x86_64-unknown-linux-musl.tar.gz"
+          curl -fsSL "$url" | tar -xz -C "$RUNNER_TEMP" --strip-components=1 \
+            "git-cliff-$GIT_CLIFF_VERSION/git-cliff"
+
+          # --current is the tag at HEAD, which on a tag push is the tag being released.
+          "$RUNNER_TEMP/git-cliff" --config cliff.toml --current --strip all > "$RUNNER_TEMP/notes.md"
+
+          # The template opens each release with `## <version> - <date>`, which CHANGELOG.md needs
+          # and a release page does not: GitHub already prints the tag as the title above the body.
+          awk 'NR == 1 && /^## / { next } { print }' "$RUNNER_TEMP/notes.md" > "$RUNNER_TEMP/body.md"
+
+          echo "--- release notes ---"
+          cat "$RUNNER_TEMP/body.md"
+
+      - name: Publish the release
+        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name }}
+          TAG: ${{ github.ref_name }}
           APK: ${{ steps.apk.outputs.path }}
         run: |
           # Named after the tag: a release page full of app-foss-release.apk tells a user
           # nothing about which version they just downloaded.
           asset="$RUNNER_TEMP/shellwave-$TAG-foss.apk"
           cp "$APK" "$asset"
-          gh release upload "$TAG" "$asset" --clobber
+
+          # A re-run after a transient failure should finish the release rather than fail on the
+          # one it already created.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --notes-file "$RUNNER_TEMP/body.md"
+            gh release upload "$TAG" "$asset" --clobber
+          else
+            gh release create "$TAG" "$asset" \
+              --title "$TAG" \
+              --notes-file "$RUNNER_TEMP/body.md" \
+              --verify-tag
+          fi

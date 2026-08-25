@@ -63,6 +63,22 @@ licence screen.
 
 APKs are generated through a Github action for each release ~ download here: https://github.com/LordOfPolls/Shellwave/releases
 
+## Releasing
+
+```
+just bump 1.2.0   # the version, CHANGELOG.md, the F-Droid changelog and recipe
+just notes        # what the release page will say
+just release      # commit, tag, push - this is the step that publishes
+```
+
+Pushing the tag builds the FOSS APK and creates the GitHub release, with notes written from the
+commits that tag contains. The recipes are thin wrappers over `tools/` and `git`, so without
+`just` installed the scripts still work on their own.
+
+So commit subjects are what a release page ends up saying: `feat:`, `fix:` and `perf:` reach it,
+`style:`, `test:` and `chore:` are dropped, and `docs:`/`build:`/`ci:` land at the bottom.
+`cliff.toml` holds the mapping.
+
 ## Building
 
 Two product flavours, identical but for one dependency:

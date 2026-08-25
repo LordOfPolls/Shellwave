@@ -3,7 +3,7 @@
 # a merge request from. Kept here so it stays in step with the build it describes.
 #
 # Before submitting:
-#   - tag the release commit (v1.0) and push the tag; `commit:` below must resolve
+#   - tag the release commit (1.0) and push the tag; `commit:` below must resolve
 #   - run `fdroid lint io.github.lordofpolls.shellwave` and `fdroid build` from the fork
 #   - the buildserver needs SDK platform 37 and an AGP 9-capable JDK; if the image lags, add a
 #     `sudo:` line to the build entry to install the platform, or hold the submission until it
@@ -28,7 +28,7 @@ Repo: https://github.com/LordOfPolls/Shellwave.git
 Builds:
   - versionName: '1.0'
     versionCode: 1
-    commit: v1.0
+    commit: '1.0'
     subdir: app
     gradle:
       - foss
