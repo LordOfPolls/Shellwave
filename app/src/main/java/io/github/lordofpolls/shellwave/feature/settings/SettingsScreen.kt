@@ -95,6 +95,7 @@ fun SettingsScreen(
     onRegenerateAutomationToken: () -> Unit,
     onOpenKeyBarLayouts: () -> Unit,
     onExportConfig: suspend (Uri) -> Unit,
+    onImportConfig: suspend (Uri) -> ConfigImportSummary,
     onOpenLicenses: () -> Unit,
     supporterState: SupporterState,
     onBecomeSupporter: () -> Unit,
@@ -277,6 +278,7 @@ fun SettingsScreen(
             SettingsSectionHeader("Backup")
 
             ConfigExportRow(onExport = onExportConfig)
+            ConfigImportRow(onImport = onImportConfig)
 
             SettingsSectionHeader("About")
 
@@ -443,6 +445,76 @@ private fun ConfigExportRow(onExport: suspend (Uri) -> Unit) {
     }
     outcome?.let {
         Text(it, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+/**
+ * `OpenDocument`, plus a confirmation the export has no need of: picking a file to read looks
+ * harmless, while what follows writes rows and replaces every app-wide setting. The dialog is where
+ * that gap gets closed, and it says what an export cannot carry before the picker opens rather than
+ * after the import lands.
+ *
+ * The summary is a list of lines and not one string, because a line per skipped host is the useful
+ * shape - see [ConfigImportSummary.lines].
+ */
+@Composable
+private fun ConfigImportRow(onImport: suspend (Uri) -> ConfigImportSummary) {
+    val scope = rememberCoroutineScope()
+    var confirming by remember { mutableStateOf(false) }
+    var outcome by remember { mutableStateOf<List<String>>(emptyList()) }
+    val launcher =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri == null) return@rememberLauncherForActivityResult
+            outcome = emptyList()
+            scope.launch {
+                outcome =
+                    runCatching { onImport(uri) }
+                        .fold(
+                            { it.lines() },
+                            { listOf(it.message ?: "Could not read that file.") },
+                        )
+            }
+        }
+
+    Text(
+        "Reads a file written by Export. Hosts, tunnels, scripts and layouts are added to what you " +
+                "already have; app-wide settings are replaced. Nothing is deleted.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    TextButton(onClick = { confirming = true }) {
+        Text("Import configuration")
+    }
+    outcome.forEach {
+        Text(it, style = MaterialTheme.typography.bodySmall)
+    }
+
+    if (confirming) {
+        AlertDialog(
+            onDismissRequest = { confirming = false },
+            title = { Text("Import a configuration?") },
+            text = {
+                Text(
+                    "Everything in the file is added alongside what you already have, so hosts and " +
+                            "scripts you kept will appear twice if the file also holds them. Your " +
+                            "app-wide settings are replaced by the file's. Passwords and keys are not " +
+                            "in an export, so imported hosts need their secret entered again.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirming = false
+                    // Any type: a document provider can hand back a .json as text/plain or
+                    // application/octet-stream, and refusing those means the file is unpickable.
+                    launcher.launch(arrayOf("*/*"))
+                }) {
+                    Text("Choose file")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirming = false }) { Text("Cancel") }
+            },
+        )
     }
 }
 

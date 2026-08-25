@@ -79,7 +79,8 @@ private enum class AuthKind { PASSWORD, IMPORT_KEY, GENERATE_KEY, KEYBOARD_INTER
  *
  * [keepExistingCredential] lets Save succeed without re-pasting a key or retyping an untouched
  * password. Resealing a private key would seal an empty one, since the decrypted material is never
- * held here.
+ * held here. It does not apply to a credential with nothing sealed at all - `ConfigImporter` makes
+ * those - or Save would quietly keep a row that cannot connect.
  *
  * The state keying matters. `hostDao.observeAll()` is a Room `Flow`, so [existing] is `null` on the
  * first composition even when editing a saved host, and an unkeyed `remember {}` latches that null
@@ -195,6 +196,10 @@ fun AddEditHostScreen(
 
     var generatedKey by remember { mutableStateOf<GeneratedKey?>(null) }
 
+    // A config import creates credentials with no sealed secret, and this is the screen that fills
+    // one in. Assumed present until described, so an existing host never flashes the notice below.
+    var storedSecretPresent by remember(existing?.id) { mutableStateOf(true) }
+
     LaunchedEffect(existing?.credentialId) {
         val credentialId = existing?.credentialId ?: return@LaunchedEffect
         val summary = credentialVault.describe(credentialId) ?: return@LaunchedEffect
@@ -206,12 +211,13 @@ fun AddEditHostScreen(
             }
         authKind = kind
         originalAuthKind = kind
+        storedSecretPresent = summary.hasStoredSecret
     }
 
     // Editing, radio still on the stored credential's auth kind, nothing typed that would replace
-    // it.
+    // it - and something actually stored to keep.
     val keepExistingCredential =
-        existing != null && authKind == originalAuthKind &&
+        existing != null && authKind == originalAuthKind && storedSecretPresent &&
                 when (authKind) {
                     AuthKind.PASSWORD -> password.isEmpty()
                     AuthKind.IMPORT_KEY -> importedPem.isBlank()
@@ -364,6 +370,14 @@ fun AddEditHostScreen(
         )
 
         Text("Authentication", style = MaterialTheme.typography.titleSmall)
+        if (!storedSecretPresent) {
+            Text(
+                "This host came from an imported configuration, which carries no secrets. Enter " +
+                        "its password or key below before connecting.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         AuthKind.entries.forEach { kind ->
             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 RadioButton(selected = authKind == kind, onClick = { authKind = kind })

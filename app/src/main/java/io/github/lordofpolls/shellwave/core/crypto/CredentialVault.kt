@@ -12,6 +12,14 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
+ * `ConfigImporter` creates rows with the sealed columns empty, because the export deliberately
+ * leaves the secret behind. Keyboard-interactive has none by design and is always ready.
+ */
+private fun CredentialEntity.hasSealedSecret(): Boolean =
+    CredentialType.valueOf(type) == CredentialType.KEYBOARD_INTERACTIVE ||
+            (keystoreAlias != null && secretIv != null && secretCiphertext != null)
+
+/**
  * The one place that turns a CredentialEntity row into a live [AuthMethod] and back, so host and
  * home don't each reimplement "which alias, when does biometric run, how do the two secret fields
  * map onto a credential type". Not a repository layer over Room in general - `CredentialDao` is
@@ -28,7 +36,12 @@ constructor(
     private val keyboardInteractiveGate: KeyboardInteractiveGate,
 ) {
     /** [type]/[publicKeyText] only - no secret material, so this needs no [VaultCrypto]/biometric round trip. */
-    data class CredentialSummary(val type: CredentialType, val publicKeyText: String?)
+    data class CredentialSummary(
+        val type: CredentialType,
+        val publicKeyText: String?,
+        /** False for a row that arrived through a config import - see [hasSealedSecret]. */
+        val hasStoredSecret: Boolean,
+    )
 
     /**
      * Lets the edit-host screen know what kind of credential a host already has without decrypting it.
@@ -37,7 +50,11 @@ constructor(
      */
     suspend fun describe(credentialId: Long): CredentialSummary? {
         val credential = credentialDao.getById(credentialId) ?: return null
-        return CredentialSummary(CredentialType.valueOf(credential.type), credential.publicKeyText)
+        return CredentialSummary(
+            CredentialType.valueOf(credential.type),
+            credential.publicKeyText,
+            credential.hasSealedSecret(),
+        )
     }
 
     suspend fun storePassword(
@@ -119,6 +136,14 @@ constructor(
      */
     suspend fun resolve(credentialId: Long, activity: FragmentActivity?): AuthMethod {
         val credential = credentialDao.getById(credentialId) ?: error("No credential $credentialId")
+        // Before the `!!`s below, which a secret-less imported row would otherwise turn into a bare
+        // NPE at connect time.
+        if (!credential.hasSealedSecret()) {
+            error(
+                "This credential has no stored secret - it came from an imported configuration. " +
+                        "Edit the host and enter its password or key again.",
+            )
+        }
         return when (CredentialType.valueOf(credential.type)) {
             CredentialType.PASSWORD -> {
                 val password = decrypt(

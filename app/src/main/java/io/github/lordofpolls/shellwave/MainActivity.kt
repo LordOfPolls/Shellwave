@@ -88,6 +88,7 @@ import io.github.lordofpolls.shellwave.feature.scripts.rememberScriptRunControll
 import io.github.lordofpolls.shellwave.feature.session.SessionsListScreen
 import io.github.lordofpolls.shellwave.feature.session.SessionsScreen
 import io.github.lordofpolls.shellwave.feature.settings.ConfigExporter
+import io.github.lordofpolls.shellwave.feature.settings.ConfigImporter
 import io.github.lordofpolls.shellwave.feature.settings.KeyBarLayoutsScreen
 import io.github.lordofpolls.shellwave.feature.settings.LicenseScreen
 import io.github.lordofpolls.shellwave.feature.settings.SettingsScreen
@@ -223,6 +224,9 @@ class MainActivity : FragmentActivity() {
 
     @Inject
     lateinit var configExporter: ConfigExporter
+
+    @Inject
+    lateinit var configImporter: ConfigImporter
 
     @Inject
     lateinit var keyEnrolment: KeyEnrolment
@@ -987,6 +991,26 @@ class MainActivity : FragmentActivity() {
                                         },
                                         onOpenKeyBarLayouts = { push("keyBarLayouts") },
                                         onExportConfig = configExporter::writeTo,
+                                        onImportConfig = { uri ->
+                                            configImporter.readFrom(uri).also {
+                                                // The import writes preferences straight to disk,
+                                                // so re-mirror the ones this scope holds - see the
+                                                // note on their declarations.
+                                                dynamicColorEnabled =
+                                                    AppearancePreferences.getDynamicColor(this@MainActivity)
+                                                themeMode =
+                                                    AppearancePreferences.getThemeMode(this@MainActivity)
+                                                exactSchemeColours =
+                                                    AppearancePreferences.getExactSchemeColours(this@MainActivity)
+                                                reachabilityEnabled =
+                                                    ReachabilityPreferences.isEnabled(this@MainActivity)
+                                                reachabilityInterval =
+                                                    ReachabilityPreferences.interval(this@MainActivity)
+                                                reachabilityMetered =
+                                                    ReachabilityPreferences.allowsMetered(this@MainActivity)
+                                                reachabilityProbe.start()
+                                            }
+                                        },
                                         onOpenLicenses = { push("license") },
                                         supporterState = supporterState,
                                         onBecomeSupporter = { supporterBilling.launchPurchase(this@MainActivity) },
