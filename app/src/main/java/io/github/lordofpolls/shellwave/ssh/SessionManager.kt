@@ -13,6 +13,7 @@ import io.github.lordofpolls.shellwave.core.db.entities.ColorSchemeEntity
 import io.github.lordofpolls.shellwave.core.db.entities.PortForwardEntity
 import io.github.lordofpolls.shellwave.core.db.entities.PortForwardType
 import io.github.lordofpolls.shellwave.core.prefs.AppearancePreferences
+import io.github.lordofpolls.shellwave.core.prefs.SupportPreferences
 import io.github.lordofpolls.shellwave.service.SessionService
 import io.github.lordofpolls.shellwave.terminal.DEFAULT_COLOR_SCHEME
 import io.github.lordofpolls.shellwave.terminal.DEFAULT_TERMINAL_PROFILE
@@ -234,6 +235,7 @@ constructor(
                 size.cellHeightPx
             )
         }
+        SupportPreferences.recordUse(context)
         return id
     }
 

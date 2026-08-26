@@ -27,6 +27,10 @@ any third party.
 - **Scripts and automation triggers** you create for running commands on
   your hosts.
 - **App preferences**, such as key bar layouts and terminal bell settings.
+- **A count of connections and script runs**, used for one thing only: deciding
+  when to offer the optional one-time supporter purchase, once. It is a number
+  on your device, it is never sent anywhere, and it stops counting as soon as
+  that prompt has been answered either way.
 
 ## Data the app transmits
 

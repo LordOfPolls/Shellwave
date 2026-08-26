@@ -2,6 +2,7 @@ package io.github.lordofpolls.shellwave.ssh
 
 import android.content.Context
 import dagger.hilt.android.qualifiers.ApplicationContext
+import io.github.lordofpolls.shellwave.core.prefs.SupportPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -151,6 +152,7 @@ constructor(
         hops: List<ProxyHop> = emptyList(),
     ): CaptureResult =
         withContext(Dispatchers.IO) {
+            SupportPreferences.recordUse(context)
             val ssh = SSHClient()
             var chainResources: ProxyChainResources = ProxyChainResources(emptyList(), emptyList())
             try {

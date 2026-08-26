@@ -72,7 +72,7 @@ class PlaySupporterBilling
                             _state.value = SupporterState.Unavailable
                         }
                     }
-                    
+
                     override fun onBillingServiceDisconnected() = Unit
                 },
             )

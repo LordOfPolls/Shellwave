@@ -46,6 +46,7 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import dagger.hilt.android.AndroidEntryPoint
 import io.github.lordofpolls.shellwave.core.billing.SupporterBilling
+import io.github.lordofpolls.shellwave.core.billing.SupporterState
 import io.github.lordofpolls.shellwave.core.crypto.CredentialVault
 import io.github.lordofpolls.shellwave.core.crypto.isBiometricCancellation
 import io.github.lordofpolls.shellwave.core.db.dao.ColorSchemeDao
@@ -62,11 +63,13 @@ import io.github.lordofpolls.shellwave.core.net.sendMagicPacket
 import io.github.lordofpolls.shellwave.core.prefs.AppearancePreferences
 import io.github.lordofpolls.shellwave.core.prefs.AutomationPreferences
 import io.github.lordofpolls.shellwave.core.prefs.ReachabilityPreferences
+import io.github.lordofpolls.shellwave.core.prefs.SupportPreferences
 import io.github.lordofpolls.shellwave.core.prefs.ThemeMode
 import io.github.lordofpolls.shellwave.core.ui.HostVerificationDialog
 import io.github.lordofpolls.shellwave.core.ui.KeyboardInteractiveDialog
 import io.github.lordofpolls.shellwave.core.ui.QuickConnectPasswordDialog
 import io.github.lordofpolls.shellwave.core.ui.QuickConnectSavedHostDialog
+import io.github.lordofpolls.shellwave.core.ui.SupportPromptDialog
 import io.github.lordofpolls.shellwave.feature.glance.updateDynamicShortcuts
 import io.github.lordofpolls.shellwave.feature.home.HomeScreen
 import io.github.lordofpolls.shellwave.feature.home.QuickConnectTarget
@@ -388,6 +391,13 @@ class MainActivity : FragmentActivity() {
                 var prefillTemplateName by rememberSaveable { mutableStateOf<String?>(null) }
                 var historyScriptId by rememberSaveable { mutableStateOf(-1L) }
                 var pendingQuickConnect by remember { mutableStateOf<QuickConnectTarget?>(null) }
+                // Null means "don't ask"; a number is both the flag and the count the copy quotes.
+                var supportPromptCount by remember { mutableStateOf<Int?>(null) }
+                LaunchedEffect(supporterState) {
+                    if (supporterState is SupporterState.Purchasable && SupportPreferences.shouldPrompt(this@MainActivity)) {
+                        supportPromptCount = SupportPreferences.useCount(this@MainActivity)
+                    }
+                }
                 // Plain `remember`: a question that outlived the process that asked it would be
                 // answered blind.
                 var pendingSavedHostOffer by remember { mutableStateOf<SavedHostOffer?>(null) }
@@ -1070,6 +1080,24 @@ class MainActivity : FragmentActivity() {
                                     pendingQuickConnect = offer.target
                                 },
                                 onCancel = { pendingSavedHostOffer = null },
+                            )
+                        }
+
+                        val supportPrice = (supporterState as? SupporterState.Purchasable)?.priceLabel
+                        val supportCount = supportPromptCount
+                        if (supportCount != null && supportPrice != null && isNavAtRoot(destination, subStack)) {
+                            SupportPromptDialog(
+                                connectionCount = supportCount,
+                                priceLabel = supportPrice,
+                                onBecomeSupporter = {
+                                    supportPromptCount = null
+                                    SupportPreferences.markPromptSettled(this@MainActivity)
+                                    supporterBilling.launchPurchase(this@MainActivity)
+                                },
+                                onDismiss = {
+                                    supportPromptCount = null
+                                    SupportPreferences.markPromptSettled(this@MainActivity)
+                                },
                             )
                         }
 
