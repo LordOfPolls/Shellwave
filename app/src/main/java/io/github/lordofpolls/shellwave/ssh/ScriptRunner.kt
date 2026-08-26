@@ -6,8 +6,9 @@ import io.github.lordofpolls.shellwave.core.prefs.SupportPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.transport.verification.HostKeyVerifier
 import net.schmizz.sshj.transport.verification.OpenSSHKnownHosts
@@ -155,41 +156,57 @@ constructor(
             SupportPreferences.recordUse(context)
             val ssh = SSHClient()
             var chainResources: ProxyChainResources = ProxyChainResources(emptyList(), emptyList())
+            var timedOut = false
             try {
-                withTimeoutOrNull(CAPTURE_TIMEOUT_MS) {
-                    // hops is empty for the common no-jump case, where this is a plain connect.
-                    chainResources = connectChainAndAuthenticate(
-                        ssh,
-                        hops,
-                        hostname,
-                        port,
-                        username,
-                        authMethod,
-                        hostKeyVerifier
-                    )
-                    execAndCollect(ssh, command)
-                } ?: CaptureResult(
-                    "",
-                    "",
-                    false,
-                    false,
-                    null,
-                    error = "Timed out after ${CAPTURE_TIMEOUT_MS / 1000}s"
-                )
+                coroutineScope {
+                    // Not withTimeoutOrNull: cancellation is cooperative and never reaches the
+                    // reader blocked in stream.read(). Closing the transport is what unblocks it.
+                    val watchdog = launch {
+                        delay(CAPTURE_TIMEOUT_MS)
+                        timedOut = true
+                        runCatching { ssh.disconnect() }
+                    }
+                    try {
+                        // hops is empty for the common no-jump case, where this is a plain connect.
+                        chainResources = connectChainAndAuthenticate(
+                            ssh,
+                            hops,
+                            hostname,
+                            port,
+                            username,
+                            authMethod,
+                            hostKeyVerifier
+                        )
+                        execAndCollect(ssh, command)
+                    } finally {
+                        watchdog.cancel()
+                    }
+                }
             } catch (e: Exception) {
-                // BackgroundKnownHostsVerifier's refusal reads far better than sshj's generic
-                // "Could not verify ..." TransportException, and describeConnectFailure does the
-                // same job for sshj's misleading auth wording.
-                val refusalReason =
-                    (hostKeyVerifier as? BackgroundKnownHostsVerifier)?.refusalReason
-                CaptureResult(
-                    "",
-                    "",
-                    false,
-                    false,
-                    null,
-                    error = refusalReason ?: describeConnectFailure(e, authMethod)
-                )
+                if (timedOut) {
+                    CaptureResult(
+                        "",
+                        "",
+                        false,
+                        false,
+                        null,
+                        error = "Timed out after ${CAPTURE_TIMEOUT_MS / 1000}s"
+                    )
+                } else {
+                    // BackgroundKnownHostsVerifier's refusal reads far better than sshj's generic
+                    // "Could not verify ..." TransportException, and describeConnectFailure does the
+                    // same job for sshj's misleading auth wording.
+                    val refusalReason =
+                        (hostKeyVerifier as? BackgroundKnownHostsVerifier)?.refusalReason
+                    CaptureResult(
+                        "",
+                        "",
+                        false,
+                        false,
+                        null,
+                        error = refusalReason ?: describeConnectFailure(e, authMethod)
+                    )
+                }
             } finally {
                 runCatching { ssh.disconnect() }
                 // After ssh itself, per ProxyChainResources.disconnect's doc; no-op with no hops.
