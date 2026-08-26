@@ -1,6 +1,18 @@
 # Changelog
 
 
+## 1.4.1 - 2026-08-26
+
+### New
+- Implement one-time supporter prompt
+
+### Fixed
+- Enable auto reconnection for Play Billing client
+- Unblock a hung capture-mode command past the 120s timeout
+- Keep concurrent background script runs from killing each other
+
+[Every commit in this release](https://github.com/LordOfPolls/Shellwave/compare/1.4.0...1.4.1)
+
 ## 1.4.0 - 2026-08-26
 
 ### New

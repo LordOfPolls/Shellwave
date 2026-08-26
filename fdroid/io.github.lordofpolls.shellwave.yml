@@ -75,7 +75,14 @@ Builds:
     gradle:
       - foss
 
+  - versionName: '1.4.1'
+    versionCode: 10401
+    commit: '1.4.1'
+    subdir: app
+    gradle:
+      - foss
+
 AutoUpdateMode: Version
 UpdateCheckMode: Tags
-CurrentVersion: '1.4.0'
-CurrentVersionCode: 10400
+CurrentVersion: '1.4.1'
+CurrentVersionCode: 10401
