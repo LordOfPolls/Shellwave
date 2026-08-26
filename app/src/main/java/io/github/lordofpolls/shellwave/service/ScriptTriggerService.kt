@@ -48,6 +48,24 @@ internal const val EXTRA_SCRIPT_ID = "io.github.lordofpolls.shellwave.extra.SCRI
 private const val EXTRA_FROM_AUTOMATION = "io.github.lordofpolls.shellwave.extra.FROM_AUTOMATION"
 
 /**
+ * `stopSelf(startId)` only stops the service for the most recently delivered startId, so a fast run
+ * finishing after a slower one started used to tear down the shared scope and kill it.
+ */
+class InFlightRunCounter {
+    private val inFlight = AtomicInteger(0)
+
+    fun runStarted() {
+        inFlight.incrementAndGet()
+    }
+
+    fun runFinished(): Boolean = inFlight.decrementAndGet() == 0
+
+    fun isIdle(): Boolean = inFlight.get() == 0
+
+    fun count(): Int = inFlight.get()
+}
+
+/**
  * Every background trigger - widget button, Quick Settings tile, app shortcut - funnels its script
  * run through here. `startForegroundService` plus this service keeps the
  * widget-tap-while-the-app-is-closed case legal on Android 14+: the tap fires a `PendingIntent`,
@@ -87,6 +105,7 @@ class ScriptTriggerService : Service() {
     lateinit var scriptRunDao: ScriptRunDao
 
     private val scope = CoroutineScope(Dispatchers.Main.immediate + Job())
+    private val inFlightRuns = InFlightRunCounter()
 
     override fun onCreate() {
         super.onCreate()
@@ -106,12 +125,18 @@ class ScriptTriggerService : Service() {
             ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
         )
         if (scriptId < 0) {
-            stopSelf(startId)
+            // Never counted, so stopping is only safe while nothing else is running.
+            if (inFlightRuns.isIdle()) stopSelf()
             return START_NOT_STICKY
         }
+        inFlightRuns.runStarted()
         scope.launch {
             runTriggeredScript(scriptId, fromAutomation)
-            stopSelf(startId)
+            if (inFlightRuns.runFinished()) {
+                stopSelf()
+            } else {
+                updateRunningNotification(null)
+            }
         }
         return START_NOT_STICKY
     }
@@ -141,7 +166,7 @@ class ScriptTriggerService : Service() {
             return
         }
         // The run is going to happen, so the notification can stop being generic.
-        nameRunningNotification(script.name)
+        updateRunningNotification(script.name)
         Toast.makeText(this, "Running \"${script.name}\"\u2026", Toast.LENGTH_SHORT).show()
 
         // Non-null once the refusals above have passed - the last of them is exactly this check.
@@ -241,23 +266,30 @@ class ScriptTriggerService : Service() {
     /**
      * [scriptName] is null for the very first post, because [onStartCommand] must call
      * `startForeground` within seconds and the name costs a database read. Being visible immediately
-     * matters more, so the notification goes up generic and [nameRunningNotification] specialises it a
-     * moment later.
+     * matters more, so the notification goes up generic and [updateRunningNotification] specialises it a
+     * moment later. Also null with several runs in flight, where naming one would misrepresent the rest.
      */
-    private fun buildRunningNotification(scriptName: String? = null): Notification =
-        NotificationCompat.Builder(this, CHANNEL_ID)
+    private fun buildRunningNotification(scriptName: String? = null, runningCount: Int = 1): Notification {
+        val title = when {
+            scriptName != null -> "Running \"$scriptName\"…"
+            runningCount > 1 -> "Running $runningCount scripts…"
+            else -> "Running script…"
+        }
+        return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_shellwave)
-            .setContentTitle(if (scriptName == null) "Running script…" else "Running \"$scriptName\"…")
+            .setContentTitle(title)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
+    }
 
-    /** Re-posts the running notification with the script's name, once reading it has cost nothing extra. */
-    private fun nameRunningNotification(scriptName: String) {
-        getSystemService(NotificationManager::class.java)?.notify(
-            RUNNING_NOTIFICATION_ID,
-            buildRunningNotification(scriptName)
-        )
+    /** Concurrent runs share one notification id, so past the first the banner shows a count, not a name. */
+    private fun updateRunningNotification(scriptName: String?) {
+        val count = inFlightRuns.count()
+        val notification =
+            if (scriptName != null && count <= 1) buildRunningNotification(scriptName)
+            else buildRunningNotification(runningCount = count)
+        getSystemService(NotificationManager::class.java)?.notify(RUNNING_NOTIFICATION_ID, notification)
     }
 
     private fun createNotificationChannel() {
