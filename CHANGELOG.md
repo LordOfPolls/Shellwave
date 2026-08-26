@@ -1,6 +1,22 @@
 # Changelog
 
 
+## 1.4.0 - 2026-08-26
+
+### New
+- Import a configuration export
+- Keep the screen awake while a session is on screen
+- Hold an arrow key on the key bar to repeat it
+- Haptic feedback on key bar presses
+
+### Fixed
+- Disable quick connect on an address it cannot parse
+
+### Internal
+- A real top bar on every pushed screen
+
+[Every commit in this release](https://github.com/LordOfPolls/Shellwave/compare/1.3.1...1.4.0)
+
 ## 1.3.1 - 2026-08-25
 
 ### Internal

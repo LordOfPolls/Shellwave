@@ -1,0 +1,8 @@
+New:
+- Import a configuration export
+- Keep the screen awake while a session is on screen
+- Hold an arrow key on the key bar to repeat it
+- Haptic feedback on key bar presses
+
+Fixed:
+- Disable quick connect on an address it cannot parse
