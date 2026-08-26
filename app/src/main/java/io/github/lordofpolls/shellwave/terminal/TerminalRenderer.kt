@@ -69,8 +69,9 @@ class TerminalRenderer(textSize: Int, typeface: Typeface, lineHeightMultiplier: 
         val columns = emulator.mColumns
         val cursorCol = emulator.cursorCol
         val cursorRow = emulator.cursorRow
-        val cursorVisible = emulator.shouldCursorBeVisible() && topRow == 0
         val screen = emulator.screen
+        val top = topRow.coerceAtLeast(-screen.activeTranscriptRows)
+        val cursorVisible = emulator.shouldCursorBeVisible() && top == 0
         val palette = emulator.mColors.mCurrentColors
         val cursorShape = emulator.cursorStyle
 
@@ -85,7 +86,7 @@ class TerminalRenderer(textSize: Int, typeface: Typeface, lineHeightMultiplier: 
             val cursorX = if (row == cursorRow && cursorVisible) cursorCol else -1
 
             val lineObject =
-                screen.allocateFullLineIfNecessary(screen.externalToInternalRow(row + topRow))
+                screen.allocateFullLineIfNecessary(screen.externalToInternalRow(row + top))
             val line = lineObject.mText
             val charsUsedInLine = lineObject.spaceUsed
 
