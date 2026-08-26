@@ -59,6 +59,7 @@ class PlaySupporterBilling
             BillingClient.newBuilder(context)
                 .setListener(this)
                 .enablePendingPurchases(PendingPurchasesParams.newBuilder().enableOneTimeProducts().build())
+                .enableAutoServiceReconnection()
                 .build()
 
         init {
@@ -71,8 +72,7 @@ class PlaySupporterBilling
                             _state.value = SupporterState.Unavailable
                         }
                     }
-
-                    // Play's side dropped the connection; retried lazily on the next launchPurchase().
+                    
                     override fun onBillingServiceDisconnected() = Unit
                 },
             )
