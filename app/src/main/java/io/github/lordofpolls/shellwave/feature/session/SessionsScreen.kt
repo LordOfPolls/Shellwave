@@ -112,6 +112,7 @@ import io.github.lordofpolls.shellwave.terminal.rememberTerminalSelectionState
 import io.github.lordofpolls.shellwave.terminal.resolveTerminalTypeface
 import io.github.lordofpolls.shellwave.terminal.selectionHighlightColor
 import io.github.lordofpolls.shellwave.terminal.terminalGestures
+import io.github.lordofpolls.shellwave.ui.design.EmptyState
 import io.github.lordofpolls.shellwave.ui.design.MachineText
 import io.github.lordofpolls.shellwave.ui.design.SessionCard
 import io.github.lordofpolls.shellwave.ui.design.SessionChipModel
@@ -142,7 +143,6 @@ fun SessionsScreen(
     // still renders, falling back to the host portion of its own identity string.
     hosts: List<HostEntity> = emptyList(),
     onNewSession: () -> Unit,
-    onEmpty: () -> Unit,
     initialSessionId: Long? = null,
     // No fixed host: typed into whichever session is focused here.
     sendToCurrentScripts: List<ScriptEntity> = emptyList(),
@@ -160,9 +160,14 @@ fun SessionsScreen(
 ) {
     val summaries by sessionManager.summaries.collectAsState()
     if (summaries.isEmpty()) {
-        // TODO: an idle EmptyState would be the better answer here. Navigating away means the
-        // Sessions tab cannot be looked at, only arrived at.
-        LaunchedEffect(Unit) { onEmpty() }
+        // Was onEmpty(), which popped the screen away and made an empty Sessions tab unreachable
+        // rather than idle. Copy matches SessionsListScreen's empty state.
+        EmptyState(
+            message = "No open sessions.",
+            actionLabel = "Open Hosts",
+            onAction = onNewSession,
+            modifier = modifier.fillMaxSize(),
+        )
         return
     }
 

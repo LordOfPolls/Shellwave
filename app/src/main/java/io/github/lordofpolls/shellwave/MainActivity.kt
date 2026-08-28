@@ -76,6 +76,7 @@ import io.github.lordofpolls.shellwave.feature.home.QuickConnectTarget
 import io.github.lordofpolls.shellwave.feature.home.savedHostsMatching
 import io.github.lordofpolls.shellwave.feature.host.AddEditHostScreen
 import io.github.lordofpolls.shellwave.feature.host.ImportSshConfigScreen
+import io.github.lordofpolls.shellwave.feature.host.duplicatedHostAssets
 import io.github.lordofpolls.shellwave.feature.host.hostDeleteBlockReason
 import io.github.lordofpolls.shellwave.feature.nav.AppDestination
 import io.github.lordofpolls.shellwave.feature.nav.isNavAtRoot
@@ -734,22 +735,41 @@ class MainActivity : FragmentActivity() {
                                                 }
                                             }
                                         },
-                                        // terminalProfileId/colorSchemeId are left null instead of
-                                        // copied: those rows are created for one host, so copying
-                                        // an id would leave two hosts sharing one override that
-                                        // editing either would mutate.
+                                        // Override ids start null and are backfilled once their
+                                        // copied rows exist - see duplicatedHostAssets.
                                         onDuplicateHost = { host ->
                                             scope.launch {
-                                                hostDao.insert(
-                                                    host.copy(
-                                                        id = 0,
-                                                        label = "${host.label ?: host.hostname} (copy)",
-                                                        lastConnectedAt = null,
-                                                        createdAt = System.currentTimeMillis(),
-                                                        terminalProfileId = null,
-                                                        colorSchemeId = null,
-                                                    ),
+                                                val newHost = host.copy(
+                                                    id = 0,
+                                                    label = "${host.label ?: host.hostname} (copy)",
+                                                    lastConnectedAt = null,
+                                                    createdAt = System.currentTimeMillis(),
+                                                    terminalProfileId = null,
+                                                    colorSchemeId = null,
                                                 )
+                                                val newHostId = hostDao.insert(newHost)
+                                                val assets = duplicatedHostAssets(
+                                                    terminalProfile = host.terminalProfileId
+                                                        ?.let { terminalProfileDao.getById(it) },
+                                                    colorScheme = host.colorSchemeId
+                                                        ?.let { colorSchemeDao.getById(it) },
+                                                    portForwards = portForwardDao.getForHost(host.id),
+                                                    newHostId = newHostId,
+                                                )
+                                                val newTerminalProfileId =
+                                                    assets.terminalProfile?.let { terminalProfileDao.insert(it) }
+                                                val newColorSchemeId =
+                                                    assets.colorScheme?.let { colorSchemeDao.insert(it) }
+                                                if (newTerminalProfileId != null || newColorSchemeId != null) {
+                                                    hostDao.update(
+                                                        newHost.copy(
+                                                            id = newHostId,
+                                                            terminalProfileId = newTerminalProfileId,
+                                                            colorSchemeId = newColorSchemeId,
+                                                        ),
+                                                    )
+                                                }
+                                                assets.portForwards.forEach { portForwardDao.insert(it) }
                                             }
                                         },
                                         onWakeHost = { host ->
@@ -834,7 +854,6 @@ class MainActivity : FragmentActivity() {
                                         sessionManager = sessionManager,
                                         hosts = hosts,
                                         onNewSession = { selectDestination(AppDestination.HOSTS) },
-                                        onEmpty = { popBack() },
                                         initialSessionId = targetSessionId,
                                         sendToCurrentScripts = sendToCurrentScripts,
                                         captureScripts = captureScripts,
