@@ -14,6 +14,7 @@ import io.github.lordofpolls.shellwave.core.db.entities.PortForwardEntity
 import io.github.lordofpolls.shellwave.core.db.entities.PortForwardType
 import io.github.lordofpolls.shellwave.core.prefs.AppearancePreferences
 import io.github.lordofpolls.shellwave.core.prefs.SupportPreferences
+import io.github.lordofpolls.shellwave.service.SessionAlerts
 import io.github.lordofpolls.shellwave.service.SessionService
 import io.github.lordofpolls.shellwave.terminal.DEFAULT_COLOR_SCHEME
 import io.github.lordofpolls.shellwave.terminal.DEFAULT_TERMINAL_PROFILE
@@ -143,6 +144,7 @@ constructor(
     private val portForwardDao: PortForwardDao,
     private val hostVerificationGate: HostVerificationGate,
     private val keyboardInteractiveGate: KeyboardInteractiveGate,
+    private val sessionAlerts: SessionAlerts,
 ) {
     // Not tied to any Activity/Composition lifecycle; a coroutine launched here must keep running
     // (a reconnect backoff, a reader loop) regardless of what the UI is doing.
@@ -289,6 +291,7 @@ constructor(
      */
     fun closeSession(id: Long) {
         val entry = entries.remove(id) ?: return
+        sessionAlerts.forget(id)
         entry.backoffJob?.cancel()
         entry.connection.disconnect()
         (entry.spec.authMethod as? AuthMethod.KeyboardInteractive)?.let {
@@ -547,6 +550,8 @@ constructor(
                 // loses the CONNECTED race must not leave a connect instant behind either, or a
                 // dead session would show a running clock.
                 entry.connectedAtElapsedRealtime = SystemClock.elapsedRealtime()
+                // No-ops unless this session was reported dropped, so a first connect stays quiet.
+                sessionAlerts.reconnected(entry.id, entry.label)
             }
             // Auto-start runs on every successful (re)connect, including a reconnect after a drop.
             // Guarded like the CONNECTED promotion above: a generation bump means a newer attempt
@@ -600,10 +605,12 @@ constructor(
         if (clean) {
             entry.status = SessionStatus.DISCONNECTED
             entry.error = null
+            sessionAlerts.forget(id)
             publish()
         } else {
             entry.status = SessionStatus.RECONNECTING
             entry.error = "Connection lost - reconnecting"
+            sessionAlerts.dropped(id, entry.label)
             publish()
             // Cancel any backoff loop already in flight before starting a new one. Without this, a
             // connection that drops again mid-reconnect fires this path a second time while the

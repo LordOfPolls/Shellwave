@@ -14,6 +14,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import io.github.lordofpolls.shellwave.MainActivity
 import io.github.lordofpolls.shellwave.R
 import io.github.lordofpolls.shellwave.ssh.SessionManager
+import io.github.lordofpolls.shellwave.ssh.SessionStatus
 import io.github.lordofpolls.shellwave.ssh.SessionSummary
 import io.github.lordofpolls.shellwave.ssh.TunnelState
 import kotlinx.coroutines.CoroutineScope
@@ -37,7 +38,7 @@ private const val ACTION_DISCONNECT_ALL = "io.github.lordofpolls.shellwave.actio
  * Not a bound service: SessionManager is a Hilt `@Singleton` the Activity injects directly, so
  * there is no IPC boundary for a `Binder` to cross: this and the Activity are two observers of the
  * same in-process object. The job here is holding [Service.startForeground], which keeps the
- * process alive under memory pressure and Doze, and keeping the notification's session count and
+ * process alive under memory pressure and Doze, and keeping the notification's session state and
  * "Disconnect all" in step with `SessionManager.summaries`. It starts itself from
  * [SessionManager.openSession] and stops once nothing is left to keep alive.
  *
@@ -114,18 +115,18 @@ class SessionService : Service() {
                 Intent(this, SessionService::class.java).setAction(ACTION_DISCONNECT_ALL),
                 PendingIntent.FLAG_IMMUTABLE,
             )
-        val count = summaries.size
-        // A running count only, with no per-forward breakdown: the content line below is already
-        // one line shared across every open session, and a failed forward is surfaced where the
-        // user can act on it, in TunnelsSection's per-forward status.
-        val runningTunnels =
-            summaries.sumOf { s -> s.tunnels.count { it.state == TunnelState.RUNNING } }
-        val tunnelSuffix =
-            if (runningTunnels > 0) " · $runningTunnels tunnel${if (runningTunnels == 1) "" else "s"}" else ""
+        val sessions =
+            summaries.map { s ->
+                NotificationSession(
+                    s.label,
+                    s.status,
+                    s.tunnels.count { it.state == TunnelState.RUNNING },
+                )
+            }
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_shellwave)
-            .setContentTitle((if (count == 1) "1 session active" else "$count sessions active") + tunnelSuffix)
-            .setContentText(summaries.joinToString(", ") { it.label })
+            .setContentTitle(notificationTitle(sessions))
+            .setContentText(notificationText(sessions))
             .setContentIntent(openApp)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -137,7 +138,52 @@ class SessionService : Service() {
         val manager = getSystemService(NotificationManager::class.java)
         val channel =
             NotificationChannel(CHANNEL_ID, "SSH sessions", NotificationManager.IMPORTANCE_LOW)
-        channel.description = "Shows how many SSH sessions are connected in the background."
+        channel.description = "Shows the state of SSH sessions running in the background."
         manager.createNotificationChannel(channel)
     }
 }
+
+internal data class NotificationSession(
+    val label: String,
+    val status: SessionStatus,
+    val runningTunnels: Int,
+)
+
+
+internal fun notificationTitle(sessions: List<NotificationSession>): String {
+    if (sessions.isEmpty()) return "No sessions"
+    val total = sessions.size
+    val connected = sessions.count { it.status == SessionStatus.CONNECTED }
+    val runningTunnels = sessions.sumOf { it.runningTunnels }
+    val tunnelSuffix =
+        if (runningTunnels > 0) " · $runningTunnels tunnel${if (runningTunnels == 1) "" else "s"}" else ""
+    return when {
+        connected == total ->
+            (if (total == 1) "1 session active" else "$total sessions active") + tunnelSuffix
+        connected > 0 -> "$connected of $total sessions active$tunnelSuffix"
+        sessions.any { it.status == SessionStatus.RECONNECTING } ->
+            if (total == 1) "Reconnecting…" else "Reconnecting $total sessions…"
+        sessions.any { it.status == SessionStatus.CONNECTING } ->
+            if (total == 1) "Connecting…" else "Connecting $total sessions…"
+        sessions.all { it.status == SessionStatus.FAILED } ->
+            if (total == 1) "Connection failed" else "$total sessions failed"
+        else -> if (total == 1) "Session disconnected" else "$total sessions disconnected"
+    }
+}
+
+internal fun notificationText(sessions: List<NotificationSession>): String {
+    val uniform = sessions.distinctBy { it.status }.size <= 1
+    return sessions.joinToString(", ") { s ->
+        val note = if (uniform) null else statusNote(s.status)
+        if (note == null) s.label else "${s.label} ($note)"
+    }
+}
+
+private fun statusNote(status: SessionStatus): String? =
+    when (status) {
+        SessionStatus.CONNECTED -> null
+        SessionStatus.CONNECTING -> "connecting"
+        SessionStatus.RECONNECTING -> "reconnecting"
+        SessionStatus.DISCONNECTED -> "disconnected"
+        SessionStatus.FAILED -> "failed"
+    }
