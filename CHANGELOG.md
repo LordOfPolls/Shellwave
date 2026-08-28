@@ -1,6 +1,17 @@
 # Changelog
 
 
+## 1.4.2 - 2026-08-28
+
+### Fixed
+- Clamp scrollback viewport row to the live transcript when drawing
+- Notification reflects host being disconnected
+
+### Internal
+- Update AGP version
+
+[Every commit in this release](https://github.com/LordOfPolls/Shellwave/compare/1.4.1...1.4.2)
+
 ## 1.4.1 - 2026-08-26
 
 ### New
