@@ -32,9 +32,9 @@ import androidx.compose.ui.unit.dp
  * be hoisted above this call.
  */
 @Composable
-fun AdvancedSection(
+fun CollapsibleSection(
+    title: String,
     modifier: Modifier = Modifier,
-    title: String = "Advanced",
     content: @Composable () -> Unit,
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }

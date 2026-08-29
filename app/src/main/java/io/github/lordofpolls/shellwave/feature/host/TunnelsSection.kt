@@ -66,7 +66,6 @@ fun TunnelsSection(
     var editingId by remember { mutableStateOf<Long?>(null) }
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Port forwarding", style = MaterialTheme.typography.titleSmall)
         Text(
             if (activeSession == null) {
                 "Connect to start/stop forwards live - \"auto-start\" forwards come up on every connect."

@@ -48,7 +48,6 @@ fun KeyEnrolmentSection(
     var switched by remember { mutableStateOf(false) }
 
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text("Key enrolment", style = MaterialTheme.typography.titleSmall)
         Text(
             "Generates a key on this device, installs it in this host's authorized_keys, and replaces " +
                     "its saved credential.",

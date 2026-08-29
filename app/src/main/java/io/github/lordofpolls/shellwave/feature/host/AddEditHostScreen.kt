@@ -1,9 +1,12 @@
 package io.github.lordofpolls.shellwave.feature.host
 
 import android.content.ClipData
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,13 +15,17 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ArrowDropDown
 import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -27,10 +34,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.autofill.ContentType
+import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentType
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
@@ -49,6 +60,10 @@ import io.github.lordofpolls.shellwave.core.db.entities.HostEntity
 import io.github.lordofpolls.shellwave.core.db.entities.TerminalProfileEntity
 import io.github.lordofpolls.shellwave.core.net.parseMacAddress
 import io.github.lordofpolls.shellwave.feature.settings.ColorSchemeFields
+import io.github.lordofpolls.shellwave.feature.settings.SettingsRadioGroup
+import io.github.lordofpolls.shellwave.feature.settings.SettingsRow
+import io.github.lordofpolls.shellwave.feature.settings.SettingsSectionHeader
+import io.github.lordofpolls.shellwave.feature.settings.SettingsSwitch
 import io.github.lordofpolls.shellwave.feature.settings.TerminalProfileFields
 import io.github.lordofpolls.shellwave.ssh.GeneratedKey
 import io.github.lordofpolls.shellwave.ssh.GeneratedKeyAlgorithm
@@ -62,12 +77,17 @@ import io.github.lordofpolls.shellwave.ssh.readKeyText
 import io.github.lordofpolls.shellwave.ssh.resolveProxyHops
 import io.github.lordofpolls.shellwave.terminal.DEFAULT_COLOR_SCHEME
 import io.github.lordofpolls.shellwave.terminal.DEFAULT_TERMINAL_PROFILE
-import io.github.lordofpolls.shellwave.ui.design.AdvancedSection
 import io.github.lordofpolls.shellwave.ui.design.BackTopBar
+import io.github.lordofpolls.shellwave.ui.design.CollapsibleSection
 import io.github.lordofpolls.shellwave.ui.design.MachineText
 import kotlinx.coroutines.launch
 
 private enum class AuthKind { PASSWORD, IMPORT_KEY, GENERATE_KEY, KEYBOARD_INTERACTIVE }
+
+private enum class OverrideEditor(val title: String) {
+    TERMINAL_PROFILE("Terminal profile"),
+    COLOUR_SCHEME("Colour scheme"),
+}
 
 /**
  * Add or edit a host. Editing seals a fresh credential and repoints the host at it; the previous
@@ -86,8 +106,8 @@ private enum class AuthKind { PASSWORD, IMPORT_KEY, GENERATE_KEY, KEYBOARD_INTER
  * The state keying matters. `hostDao.observeAll()` is a Room `Flow`, so [existing] is `null` on the
  * first composition even when editing a saved host, and an unkeyed `remember {}` latches that null
  * forever - the form opens blank. That shipped twice. Every `existing`-derived value below is keyed
- * on `existing?.id` and declared in this composable's own scope, not inside [AdvancedSection]'s
- * lambda, whose content leaves composition when collapsed.
+ * on `existing?.id` and declared in this composable's own scope, not inside a section's lambda,
+ * whose content leaves composition when collapsed.
  */
 @Composable
 fun AddEditHostScreen(
@@ -113,7 +133,7 @@ fun AddEditHostScreen(
     var hostname by remember(existing?.id) { mutableStateOf(existing?.hostname.orEmpty()) }
     var port by remember(existing?.id) { mutableStateOf((existing?.port ?: 22).toString()) }
     var username by remember(existing?.id) { mutableStateOf(existing?.username.orEmpty()) }
-    var requireBiometric by remember { mutableStateOf(false) }
+    var requireBiometric by remember(existing?.id) { mutableStateOf(false) }
     var resilientSession by remember(existing?.id) {
         mutableStateOf(
             existing?.resilientSession ?: false
@@ -121,9 +141,10 @@ fun AddEditHostScreen(
     }
     var macAddress by remember(existing?.id) { mutableStateOf(existing?.macAddress.orEmpty()) }
     var detectingMac by remember { mutableStateOf(false) }
+    var overrideEditor by remember(existing?.id) { mutableStateOf<OverrideEditor?>(null) }
 
     // Each override is its own dedicated row, shared with nothing. Null means "no override yet"; a
-    // non-null value is already persisted, inserted the moment the checkbox is switched on, so its
+    // non-null value is already persisted, inserted the moment the toggle is switched on, so its
     // id is exactly what save() writes into HostEntity.
     var terminalProfileOverride by remember(existing?.id) {
         mutableStateOf<TerminalProfileEntity?>(
@@ -213,6 +234,7 @@ fun AddEditHostScreen(
         authKind = kind
         originalAuthKind = kind
         storedSecretPresent = summary.hasStoredSecret
+        requireBiometric = summary.requireBiometric
     }
 
     // Editing, radio still on the stored credential's auth kind, nothing typed that would replace
@@ -334,6 +356,33 @@ fun AddEditHostScreen(
         }
     }
 
+    val editor = overrideEditor
+    if (editor != null) {
+        BackHandler { overrideEditor = null }
+        Column(modifier = modifier.fillMaxSize()) {
+            BackTopBar(title = editor.title, onBack = { overrideEditor = null })
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
+            ) {
+                when (editor) {
+                    OverrideEditor.TERMINAL_PROFILE ->
+                        terminalProfileOverride?.let {
+                            TerminalProfileFields(profile = it, onChange = ::saveProfileOverride)
+                        }
+
+                    OverrideEditor.COLOUR_SCHEME ->
+                        colorSchemeOverride?.let {
+                            ColorSchemeFields(scheme = it, onChange = ::saveSchemeOverride)
+                        }
+                }
+            }
+        }
+        return
+    }
+
     Column(modifier = modifier.fillMaxSize()) {
         BackTopBar(
             title = if (existing == null) "Add host" else "Edit host",
@@ -347,7 +396,6 @@ fun AddEditHostScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Port lives in Advanced, pre-filled 22, so leaving it untouched is always valid.
             OutlinedTextField(
                 value = label,
                 onValueChange = { label = it },
@@ -371,7 +419,7 @@ fun AddEditHostScreen(
                     .semantics { contentType = ContentType.Username },
             )
 
-            Text("Authentication", style = MaterialTheme.typography.titleSmall)
+            SettingsSectionHeader("Authentication")
             if (!storedSecretPresent) {
                 Text(
                     "This host came from an imported configuration, which carries no secrets. Enter " +
@@ -380,11 +428,14 @@ fun AddEditHostScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            AuthKind.entries.forEach { kind ->
-                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    RadioButton(selected = authKind == kind, onClick = { authKind = kind })
-                    Text(kind.label())
-                }
+            Column {
+                SettingsRadioGroup(
+                    label = null,
+                    options = AuthKind.entries,
+                    selected = authKind,
+                    labelOf = { it.label() },
+                    onSelect = { authKind = it },
+                )
             }
 
             when (authKind) {
@@ -441,7 +492,7 @@ fun AddEditHostScreen(
                     // prose.
                     importedPublicKeyPreview?.let {
                         Row(
-                            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                            verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Text("Parsed:", style = MaterialTheme.typography.bodySmall)
@@ -468,7 +519,7 @@ fun AddEditHostScreen(
                         TextButton(onClick = {
                             scope.launch {
                                 clipboard.setClipEntry(
-                                    androidx.compose.ui.platform.ClipEntry(
+                                    ClipEntry(
                                         ClipData.newPlainText("public key", key.publicKeyLine)
                                     )
                                 )
@@ -487,23 +538,116 @@ fun AddEditHostScreen(
             }
 
             if (authKind != AuthKind.KEYBOARD_INTERACTIVE) {
-                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    Checkbox(checked = requireBiometric, onCheckedChange = { requireBiometric = it })
-                    Text("Require biometric unlock to use this credential")
-                }
+                SettingsSwitch(
+                    title = "Require biometric unlock",
+                    description =
+                        if (keepExistingCredential) {
+                            "Enter the password or key again to change this."
+                        } else {
+                            "Ask for a fingerprint before this credential is used."
+                        },
+                    checked = requireBiometric,
+                    onCheckedChange = { requireBiometric = it },
+                    enabled = !keepExistingCredential,
+                )
             }
 
-            // Every var read below is `remember`'d above this call, not inside it: state has to survive
-            // collapse and expand. See this file's doc.
-            AdvancedSection(title = "Advanced") {
+            // Every var read below is `remember`'d above this call, not inside it: state has to
+            // survive collapse and expand. See this file's doc.
+            CollapsibleSection("Connection") {
                 OutlinedTextField(
                     value = port,
                     onValueChange = { port = it },
                     label = { Text("Port") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
 
+                // Excludes this host itself - an immediate one-host cycle is the only case cheap to
+                // rule out.
+                val jumpHost = allHosts.firstOrNull { it.id == proxyJumpHostId }
+                PickerRow(
+                    title = "Proxy jump (ProxyJump)",
+                    value = {
+                        if (jumpHost == null) DimText("Connect directly") else HostChoice(jumpHost)
+                    },
+                ) { dismiss ->
+                    DropdownMenuItem(
+                        text = { Text("Connect directly") },
+                        onClick = { proxyJumpHostId = null; dismiss() },
+                    )
+                    allHosts.filter { it.id != existing?.id }.forEach { candidate ->
+                        DropdownMenuItem(
+                            text = { HostChoice(candidate) },
+                            onClick = { proxyJumpHostId = candidate.id; dismiss() },
+                        )
+                    }
+                }
+                Text(
+                    "Connects through another saved host acting as a bastion. Jump settings chain, so " +
+                            "several hops can be reached this way.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                SettingsSwitch(
+                    title = "Resilient session",
+                    description = "Reattach to the same tmux session after a reconnect. Falls back " +
+                            "to a plain shell without tmux.",
+                    checked = resilientSession,
+                    onCheckedChange = { resilientSession = it },
+                )
+            }
+
+            CollapsibleSection("Appearance") {
+                SettingsSwitch(
+                    title = "Terminal profile override",
+                    description = "Font, cursor and scrollback for this host only.",
+                    checked = terminalProfileOverride != null,
+                    onCheckedChange = { on -> if (on) enableProfileOverride() else disableProfileOverride() },
+                )
+                if (terminalProfileOverride != null) {
+                    SettingsRow(
+                        title = "Edit terminal profile",
+                        chevron = true,
+                        onClick = { overrideEditor = OverrideEditor.TERMINAL_PROFILE },
+                    )
+                }
+
+                SettingsSwitch(
+                    title = "Colour scheme override",
+                    description = "A different palette for this host only.",
+                    checked = colorSchemeOverride != null,
+                    onCheckedChange = { on -> if (on) enableSchemeOverride() else disableSchemeOverride() },
+                )
+                if (colorSchemeOverride != null) {
+                    SettingsRow(
+                        title = "Edit colour scheme",
+                        chevron = true,
+                        onClick = { overrideEditor = OverrideEditor.COLOUR_SCHEME },
+                    )
+                }
+
+                val layoutName = keyBarLayouts.firstOrNull { it.id == keyBarLayoutId }?.name
+                PickerRow(
+                    title = "Key bar layout",
+                    value = { DimText(layoutName ?: DEFAULT_KEY_BAR_LAYOUT) },
+                ) { dismiss ->
+                    DropdownMenuItem(
+                        text = { Text(DEFAULT_KEY_BAR_LAYOUT) },
+                        onClick = { keyBarLayoutId = null; dismiss() },
+                    )
+                    keyBarLayouts.forEach { layout ->
+                        DropdownMenuItem(
+                            text = { Text(layout.name) },
+                            onClick = { keyBarLayoutId = layout.id; dismiss() },
+                        )
+                    }
+                }
+            }
+
+            CollapsibleSection("Wake-on-LAN") {
                 OutlinedTextField(
                     value = macAddress,
                     // Clears the rejection this field caused, so the red line cannot outlive a fix.
@@ -549,106 +693,23 @@ fun AddEditHostScreen(
                         Text(if (detectingMac) "Asking the host..." else "Detect from host")
                     }
                 }
+            }
 
-                Text("Resilient session", style = MaterialTheme.typography.titleSmall)
-                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    Checkbox(checked = resilientSession, onCheckedChange = { resilientSession = it })
-                    Text("Reattach to the same shell after a reconnect (needs tmux on the server)")
-                }
-                Text(
-                    "Reconnects reattach to the same tmux session instead of starting fresh. Falls back to " +
-                            "a plain shell if the server has no tmux.",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-
-                // Each checkbox gates a dedicated row, reusing Settings' own field editors. Unchecked
-                // means "use the app-wide default".
-                Text("Overrides", style = MaterialTheme.typography.titleSmall)
-
-                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    Checkbox(
-                        checked = terminalProfileOverride != null,
-                        onCheckedChange = { checked -> if (checked) enableProfileOverride() else disableProfileOverride() },
-                    )
-                    Text("Override terminal profile for this host")
-                }
-                terminalProfileOverride?.let { profile ->
-                    TerminalProfileFields(
-                        profile = profile,
-                        onChange = ::saveProfileOverride
+            if (existing != null) {
+                CollapsibleSection("Port forwarding") {
+                    TunnelsSection(
+                        host = existing,
+                        portForwardDao = portForwardDao,
+                        sessionManager = sessionManager
                     )
                 }
-
-                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    Checkbox(
-                        checked = colorSchemeOverride != null,
-                        onCheckedChange = { checked -> if (checked) enableSchemeOverride() else disableSchemeOverride() },
-                    )
-                    Text("Override colour scheme for this host")
-                }
-                colorSchemeOverride?.let { scheme ->
-                    ColorSchemeFields(
-                        scheme = scheme,
-                        onChange = ::saveSchemeOverride
-                    )
-                }
-
-                Text("Key bar layout", style = MaterialTheme.typography.labelLarge)
-                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    RadioButton(selected = keyBarLayoutId == null, onClick = { keyBarLayoutId = null })
-                    Text("Default (Esc, Tab, arrows)")
-                }
-                keyBarLayouts.forEach { layout ->
-                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = keyBarLayoutId == layout.id,
-                            onClick = { keyBarLayoutId = layout.id })
-                        Text(layout.name)
-                    }
-                }
-
-                // Excludes this host itself - an immediate one-host cycle is the only case cheap to
-                // rule out.
-                Text("Proxy jump (ProxyJump)", style = MaterialTheme.typography.titleSmall)
-                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    RadioButton(
-                        selected = proxyJumpHostId == null,
-                        onClick = { proxyJumpHostId = null })
-                    Text("Connect directly")
-                }
-                allHosts.filter { it.id != existing?.id }.forEach { jumpCandidate ->
-                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = proxyJumpHostId == jumpCandidate.id,
-                            onClick = { proxyJumpHostId = jumpCandidate.id })
-                        // A nickname is a human label; the fallback user@host:port is machine-asserted
-                        // identity.
-                        val jumpLabel = jumpCandidate.label
-                        if (jumpLabel != null) {
-                            Text(jumpLabel)
-                        } else {
-                            MachineText("${jumpCandidate.username}@${jumpCandidate.hostname}:${jumpCandidate.port}")
-                        }
-                    }
-                }
-                Text(
-                    "Connects through another saved host acting as a bastion. Jump settings chain, so " +
-                            "several hops can be reached this way.",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-
-                if (existing != null) {
+                CollapsibleSection("Key enrolment") {
                     KeyEnrolmentSection(
                         host = existing,
                         credentialVault = credentialVault,
                         hostDao = hostDao,
                         keyEnrolment = keyEnrolment,
                         activity = activity
-                    )
-                    TunnelsSection(
-                        host = existing,
-                        portForwardDao = portForwardDao,
-                        sessionManager = sessionManager
                     )
                 }
             }
@@ -660,6 +721,59 @@ fun AddEditHostScreen(
                 Button(onClick = ::save, enabled = canSave()) { Text("Save") }
             }
         }
+    }
+}
+
+private const val DEFAULT_KEY_BAR_LAYOUT = "Default (Esc, Tab, arrows)"
+
+@Composable
+private fun PickerRow(
+    title: String,
+    value: @Composable () -> Unit,
+    menu: @Composable (dismiss: () -> Unit) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .minimumInteractiveComponentSize()
+                .clickable(role = Role.DropdownList) { expanded = true },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.labelLarge)
+                value()
+            }
+            Icon(
+                Icons.Outlined.ArrowDropDown,
+                contentDescription = null,
+                modifier = Modifier.clearAndSetSemantics {},
+            )
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            menu { expanded = false }
+        }
+    }
+}
+
+@Composable
+private fun DimText(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+/** A nickname is a human label; the fallback user@host:port is machine-asserted identity. */
+@Composable
+private fun HostChoice(host: HostEntity) {
+    val label = host.label
+    if (label != null) {
+        Text(label)
+    } else {
+        MachineText("${host.username}@${host.hostname}:${host.port}")
     }
 }
 

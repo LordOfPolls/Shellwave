@@ -75,6 +75,7 @@ internal fun SettingsSwitch(
     description: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean = true,
 ) {
     Row(
         modifier =
@@ -83,6 +84,7 @@ internal fun SettingsSwitch(
                 .minimumInteractiveComponentSize()
                 .toggleable(
                     value = checked,
+                    enabled = enabled,
                     role = Role.Switch,
                     onValueChange = onCheckedChange,
                 ),
@@ -96,19 +98,19 @@ internal fun SettingsSwitch(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Switch(checked = checked, onCheckedChange = null)
+        Switch(checked = checked, onCheckedChange = null, enabled = enabled)
     }
 }
 
 @Composable
 internal fun <T> SettingsRadioGroup(
-    label: String,
+    label: String?,
     options: List<T>,
     selected: T,
     labelOf: (T) -> String,
     onSelect: (T) -> Unit,
 ) {
-    Text(label, style = MaterialTheme.typography.labelLarge)
+    if (label != null) Text(label, style = MaterialTheme.typography.labelLarge)
     options.forEach { option ->
         Row(
             modifier =
