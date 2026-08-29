@@ -43,6 +43,10 @@ constructor(
         val hasStoredSecret: Boolean,
     )
 
+    data class TriggerAuth(val scriptId: Long, val token: String)
+
+    private val triggerAuthStash = TriggerAuthStash()
+
     /**
      * Lets the edit-host screen know what kind of credential a host already has without decrypting it.
      * Without this, reopening an edit screen showed the "Password" radio regardless of the host's
@@ -134,7 +138,14 @@ constructor(
      * this opportunistically re-seals it onto [VaultCrypto.ALIAS_BIOMETRIC_WINDOWED] before returning:
      * see [resealOntoWindowedAliasIfDue].
      */
-    suspend fun resolve(credentialId: Long, activity: FragmentActivity?): AuthMethod {
+    suspend fun resolve(
+        credentialId: Long,
+        activity: FragmentActivity?,
+        trigger: TriggerAuth? = null,
+    ): AuthMethod {
+        if (activity == null && trigger != null) {
+            triggerAuthStash.take(trigger.token, trigger.scriptId, credentialId)?.let { return it }
+        }
         val credential = credentialDao.getById(credentialId) ?: error("No credential $credentialId")
         // Before the `!!`s below, which a secret-less imported row would otherwise turn into a bare
         // NPE at connect time.
@@ -179,6 +190,16 @@ constructor(
                 keyboardInteractiveGate.newProvider()
             )
         }
+    }
+
+    suspend fun resolveAndStash(
+        trigger: TriggerAuth,
+        credentialId: Long,
+        activity: FragmentActivity,
+    ): AuthMethod {
+        val authMethod = resolve(credentialId, activity)
+        triggerAuthStash.put(trigger.token, trigger.scriptId, credentialId, authMethod)
+        return authMethod
     }
 
     /** Every new biometric-gated credential is sealed under the windowed alias - see VaultAliasPolicy.aliasForNewCredential. */

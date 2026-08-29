@@ -144,18 +144,21 @@ suspend fun resolveProxyChain(target: HostEntity, hostDao: HostDao): List<HostEn
  * run the same way a biometric-gated target does. Resolving a keyboard-interactive hop succeeds
  * here, since it only returns a provider, because that refusal belongs in
  * [ScriptRunner.runCaptureBackground], which checks the hops and the target together.
+ *
+ * [trigger] is forwarded unchanged into every hop's [CredentialVault.resolve], exactly like [activity].
  */
 suspend fun resolveProxyHops(
     target: HostEntity,
     hostDao: HostDao,
     credentialVault: CredentialVault,
-    activity: FragmentActivity?
+    activity: FragmentActivity?,
+    trigger: CredentialVault.TriggerAuth? = null,
 ): List<ProxyHop> =
     resolveProxyChain(target, hostDao).map { host ->
         ProxyHop(
             host.hostname,
             host.port,
             host.username,
-            credentialVault.resolve(host.credentialId, activity)
+            credentialVault.resolve(host.credentialId, activity, trigger)
         )
     }

@@ -73,6 +73,14 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".service.WidgetTrampolineActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <!-- Quick Settings tile bound to one script - see ScriptTileService.kt. -->
         <service
             android:name=".feature.glance.ScriptTileService"

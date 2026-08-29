@@ -48,6 +48,13 @@ internal const val EXTRA_SCRIPT_ID = "io.github.lordofpolls.shellwave.extra.SCRI
 private const val EXTRA_FROM_AUTOMATION = "io.github.lordofpolls.shellwave.extra.FROM_AUTOMATION"
 
 /**
+ * Set only by `WidgetTrampolineActivity`, to the single-use token it stashed this run's credentials
+ * under. Absent, every credential falls through to the ordinary `activity = null` refusal. Ignored
+ * outright under [EXTRA_FROM_AUTOMATION]: the exported path has no legitimate way to know it.
+ */
+private const val EXTRA_AUTH_TOKEN = "io.github.lordofpolls.shellwave.extra.AUTH_TOKEN"
+
+/**
  * `stopSelf(startId)` only stops the service for the most recently delivered startId, so a fast run
  * finishing after a slower one started used to tear down the shared scope and kill it.
  */
@@ -80,11 +87,16 @@ class InFlightRunCounter {
  * surface; it settles the app-wide switch and the token before marking the intent so that last
  * per-script gate applies.
  *
- * Biometric-gated credentials fail one layer down: `CredentialVault.resolve` is called with
- * `activity = null`, and the [IllegalStateException] it throws is caught below and reported like
+ * Biometric-gated credentials fail one layer down, by default: `CredentialVault.resolve` is called
+ * with `activity = null`, and the [IllegalStateException] it throws is caught below and reported like
  * any other refusal. [resolveProxyHops] resolves each jump host's credential the same way, so a
  * bastion refuses exactly as the target would, and a keyboard-interactive hop is refused before
  * anything connects.
+ *
+ * The widget is the one trigger that can avoid that refusal, and only via
+ * `WidgetTrampolineActivity`, which prompts for real and stashes the results under [EXTRA_AUTH_TOKEN].
+ * This service still never prompts and never holds an activity; it only forwards that token. See
+ * `TriggerAuthStash`'s class doc for the contract that back door keeps.
  */
 @AndroidEntryPoint
 class ScriptTriggerService : Service() {
@@ -115,6 +127,10 @@ class ScriptTriggerService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val scriptId = intent?.getLongExtra(EXTRA_SCRIPT_ID, -1L) ?: -1L
         val fromAutomation = intent?.getBooleanExtra(EXTRA_FROM_AUTOMATION, false) ?: false
+        // See EXTRA_AUTH_TOKEN's doc for why fromAutomation suppresses this even if somehow present.
+        val trigger = intent?.getStringExtra(EXTRA_AUTH_TOKEN)
+            ?.takeUnless { fromAutomation }
+            ?.let { CredentialVault.TriggerAuth(scriptId, it) }
         // startForeground() must run within seconds of the service starting, whether or not the
         // scriptId turns out to be valid; so this happens unconditionally, before the id is even
         // checked, exactly like SessionService's onCreate reasoning for the same requirement.
@@ -131,7 +147,7 @@ class ScriptTriggerService : Service() {
         }
         inFlightRuns.runStarted()
         scope.launch {
-            runTriggeredScript(scriptId, fromAutomation)
+            runTriggeredScript(scriptId, fromAutomation, trigger)
             if (inFlightRuns.runFinished()) {
                 stopSelf()
             } else {
@@ -148,7 +164,11 @@ class ScriptTriggerService : Service() {
         super.onDestroy()
     }
 
-    private suspend fun runTriggeredScript(scriptId: Long, fromAutomation: Boolean) {
+    private suspend fun runTriggeredScript(
+        scriptId: Long,
+        fromAutomation: Boolean,
+        trigger: CredentialVault.TriggerAuth?,
+    ) {
         val script = scriptDao.getById(scriptId)
         if (script == null) {
             // Same message whether a widget outlived its script or an automation task named an id
@@ -179,7 +199,7 @@ class ScriptTriggerService : Service() {
 
         val authMethod =
             try {
-                credentialVault.resolve(host.credentialId, activity = null)
+                credentialVault.resolve(host.credentialId, activity = null, trigger = trigger)
             } catch (e: Exception) {
                 notifyOutcome(
                     script.name,
@@ -193,7 +213,7 @@ class ScriptTriggerService : Service() {
         // keyboard-interactive prompt is not rejected here - runCaptureBackground checks that.
         val hops =
             try {
-                resolveProxyHops(host, hostDao, credentialVault, activity = null)
+                resolveProxyHops(host, hostDao, credentialVault, activity = null, trigger = trigger)
             } catch (e: Exception) {
                 notifyOutcome(
                     script.name,
@@ -311,16 +331,14 @@ class ScriptTriggerService : Service() {
         // at a time per process).
         private val nextResultNotificationId = AtomicInteger(RUNNING_NOTIFICATION_ID + 1)
 
-        /**
-         * The explicit intent that runs [scriptId]. Public because [ScriptWidget] hands it to
-         * `actionStartService` rather than calling [start]: a widget button's `PendingIntent` is built at
-         * layout time, so the tap has to be describable as an Intent before the process that would run
-         * [start] exists at all. See [ScriptWidget]'s doc for why that matters.
-         */
+        /** The explicit intent that runs [scriptId], shared by every `start*` variant below. */
         fun intentFor(context: Context, scriptId: Long): Intent =
             Intent(context, ScriptTriggerService::class.java).putExtra(EXTRA_SCRIPT_ID, scriptId)
 
-        /** Starts a background capture run for [scriptId] - used by the triggers that are already running code when the user acts (the QS tile). */
+        /**
+         * A background capture run with no `TriggerAuth`: the QS tile, and the trampoline's fallback for
+         * anything that fails before it can mint one, so the refusal notification is written once, here.
+         */
         fun start(context: Context, scriptId: Long) {
             ContextCompat.startForegroundService(context, intentFor(context, scriptId))
         }
@@ -338,6 +356,14 @@ class ScriptTriggerService : Service() {
             ContextCompat.startForegroundService(
                 context,
                 intentFor(context, scriptId).putExtra(EXTRA_FROM_AUTOMATION, true)
+            )
+        }
+
+        /** Called only from `WidgetTrampolineActivity`, only once every credential resolved and stashed. */
+        fun startFromTrampoline(context: Context, scriptId: Long, token: String) {
+            ContextCompat.startForegroundService(
+                context,
+                intentFor(context, scriptId).putExtra(EXTRA_AUTH_TOKEN, token)
             )
         }
     }

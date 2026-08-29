@@ -12,7 +12,7 @@ import androidx.glance.action.actionStartActivity
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
-import androidx.glance.appwidget.action.actionStartService
+import androidx.glance.appwidget.action.actionStartActivity as actionStartActivityIntent
 import androidx.glance.appwidget.lazy.LazyColumn
 import androidx.glance.appwidget.lazy.items
 import androidx.glance.appwidget.provideContent
@@ -28,26 +28,10 @@ import dagger.hilt.android.EntryPointAccessors
 import io.github.lordofpolls.shellwave.MainActivity
 import io.github.lordofpolls.shellwave.core.prefs.WidgetPreferences
 import io.github.lordofpolls.shellwave.feature.scripts.ScriptMode
-import io.github.lordofpolls.shellwave.service.ScriptTriggerService
+import io.github.lordofpolls.shellwave.service.WidgetTrampolineActivity
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 
-/**
- * One button per pinned script, a thin wrapper over ScriptTriggerService with no SSH or database
- * logic beyond which scripts and which label - the shape [ShortcutsSync] and `ScriptTileService`
- * share.
- *
- * Taps go straight to the service through `actionStartService` and not `actionRunCallback`, which
- * costs a full process warm-up first: broadcast to [ScriptWidgetReceiver], cold start, Hilt init, a
- * Glance session, an `ActionCallback` coroutine, and only then the service. With
- * `actionStartService` the `PendingIntent` names the service and is built at layout time, so the
- * foreground notification appears sooner. That is why [ScriptTriggerService.intentFor] exists - the
- * intent has to be describable before the process that would build it.
- *
- * Only capture-mode scripts with a fixed target host are shown, even if one was pinned before being
- * edited into something else. ScriptTriggerService would refuse them anyway; filtering here keeps
- * the button from promising what a tap cannot deliver.
- */
 class ScriptWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val scriptDao =
@@ -106,11 +90,11 @@ class ScriptWidget : GlanceAppWidget() {
                                     GlanceModifier.fillMaxWidth()
                                         .padding(vertical = 8.dp)
                                         .clickable(
-                                            actionStartService(
-                                                ScriptTriggerService.intentFor(
+                                            actionStartActivityIntent(
+                                                WidgetTrampolineActivity.intentFor(
                                                     context,
                                                     script.id
-                                                ), isForegroundService = true
+                                                )
                                             )
                                         ),
                             )
