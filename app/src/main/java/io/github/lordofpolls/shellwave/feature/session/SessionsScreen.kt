@@ -117,13 +117,13 @@ import io.github.lordofpolls.shellwave.ui.design.MachineText
 import io.github.lordofpolls.shellwave.ui.design.SessionCard
 import io.github.lordofpolls.shellwave.ui.design.SessionChipModel
 import io.github.lordofpolls.shellwave.ui.design.SessionChipRail
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * N concurrent sessions, with a [ListDetailPaneScaffold] beside the terminal on wide or unfolded
@@ -720,20 +720,20 @@ private fun SessionTabBody(
 
     var detectedLink by remember { mutableStateOf<TerminalLink?>(null) }
 
-    val needsRedraw = remember { AtomicBoolean(false) }
+    val redrawRequests = remember { Channel<Unit>(Channel.CONFLATED) }
     val frame = remember { mutableIntStateOf(0) }
 
     LaunchedEffect(Unit) {
-        while (isActive) {
+        for (unused in redrawRequests) {
             withFrameNanos { }
-            if (needsRedraw.getAndSet(false)) frame.intValue++
+            frame.intValue++
         }
     }
 
     // Re-runs on a fresh SshConnection identity: first connect, or a reconnect.
     LaunchedEffect(summary.connection) {
         summary.connection.outputTick.collect {
-            needsRedraw.set(true)
+            redrawRequests.trySend(Unit)
             // New output while scrolled back must not yank the view to the bottom, nor silently
             // show stale content. When the live screen scrolls, row 0 in the external coordinate
             // system moves with it, so a fixed topRow would drift to point at different history
@@ -760,7 +760,7 @@ private fun SessionTabBody(
     LaunchedEffect(summary.connection, summary.status) {
         if (summary.status == SessionStatus.CONNECTED) {
             terminalEmulator = summary.connection.emulatorOrNull
-            needsRedraw.set(true)
+            redrawRequests.trySend(Unit)
         } else if (summary.status == SessionStatus.CONNECTING) {
             // Fresh connection and emulator: drop the old buffer and anything pointing into it.
             terminalEmulator = null
@@ -782,7 +782,7 @@ private fun SessionTabBody(
             delay(530)
             visible = !visible
             emulator.setCursorBlinkState(visible)
-            needsRedraw.set(true)
+            redrawRequests.trySend(Unit)
         }
     }
 
