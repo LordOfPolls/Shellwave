@@ -1,6 +1,25 @@
 # Changelog
 
 
+## 1.5.0 - 2026-08-29
+
+### New
+- Let a widget tap unlock a biometric-gated host
+- Move terminal settings to a dedicated screen
+- Report whether a credential is biometric-gated
+- Reorganise hosts form
+
+### Fixed
+- Deep-copy duplicated hosts and give Sessions an idle empty state
+
+### Performance
+- Stop polling every vsync frame for idle terminal sessions
+
+### Internal
+- Drop unused connectionCount from SupportPromptDialog
+
+[Every commit in this release](https://github.com/LordOfPolls/Shellwave/compare/1.4.2...1.5.0)
+
 ## 1.4.2 - 2026-08-28
 
 ### Fixed
