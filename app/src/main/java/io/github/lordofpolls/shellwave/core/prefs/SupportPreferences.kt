@@ -18,9 +18,6 @@ object SupportPreferences {
         prefs.edit().putInt(KEY_USE_COUNT, prefs.getInt(KEY_USE_COUNT, 0) + 1).apply()
     }
 
-    /** Only meaningful while [shouldPrompt] is true - it stops moving once the prompt is settled. */
-    fun useCount(context: Context): Int = prefs(context).getInt(KEY_USE_COUNT, 0)
-
     fun shouldPrompt(context: Context): Boolean {
         val prefs = prefs(context)
         return !prefs.getBoolean(KEY_PROMPT_SETTLED, false) &&

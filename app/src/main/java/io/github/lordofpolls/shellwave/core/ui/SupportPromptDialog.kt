@@ -15,7 +15,6 @@ import androidx.compose.ui.Modifier
  */
 @Composable
 fun SupportPromptDialog(
-    connectionCount: Int,
     priceLabel: String,
     onBecomeSupporter: () -> Unit,
     onDismiss: () -> Unit,

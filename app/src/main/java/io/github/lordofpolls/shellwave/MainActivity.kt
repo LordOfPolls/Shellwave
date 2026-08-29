@@ -392,11 +392,10 @@ class MainActivity : FragmentActivity() {
                 var prefillTemplateName by rememberSaveable { mutableStateOf<String?>(null) }
                 var historyScriptId by rememberSaveable { mutableStateOf(-1L) }
                 var pendingQuickConnect by remember { mutableStateOf<QuickConnectTarget?>(null) }
-                // Null means "don't ask"; a number is both the flag and the count the copy quotes.
-                var supportPromptCount by remember { mutableStateOf<Int?>(null) }
+                var showSupportPrompt by remember { mutableStateOf(false) }
                 LaunchedEffect(supporterState) {
                     if (supporterState is SupporterState.Purchasable && SupportPreferences.shouldPrompt(this@MainActivity)) {
-                        supportPromptCount = SupportPreferences.useCount(this@MainActivity)
+                        showSupportPrompt = true
                     }
                 }
                 // Plain `remember`: a question that outlived the process that asked it would be
@@ -1103,18 +1102,16 @@ class MainActivity : FragmentActivity() {
                         }
 
                         val supportPrice = (supporterState as? SupporterState.Purchasable)?.priceLabel
-                        val supportCount = supportPromptCount
-                        if (supportCount != null && supportPrice != null && isNavAtRoot(destination, subStack)) {
+                        if (showSupportPrompt && supportPrice != null && isNavAtRoot(destination, subStack)) {
                             SupportPromptDialog(
-                                connectionCount = supportCount,
                                 priceLabel = supportPrice,
                                 onBecomeSupporter = {
-                                    supportPromptCount = null
+                                    showSupportPrompt = false
                                     SupportPreferences.markPromptSettled(this@MainActivity)
                                     supporterBilling.launchPurchase(this@MainActivity)
                                 },
                                 onDismiss = {
-                                    supportPromptCount = null
+                                    showSupportPrompt = false
                                     SupportPreferences.markPromptSettled(this@MainActivity)
                                 },
                             )
