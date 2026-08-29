@@ -41,6 +41,7 @@ constructor(
         val publicKeyText: String?,
         /** False for a row that arrived through a config import - see [hasSealedSecret]. */
         val hasStoredSecret: Boolean,
+        val requireBiometric: Boolean,
     )
 
     data class TriggerAuth(val scriptId: Long, val token: String)
@@ -58,6 +59,7 @@ constructor(
             CredentialType.valueOf(credential.type),
             credential.publicKeyText,
             credential.hasSealedSecret(),
+            VaultAliasPolicy.isBiometricAlias(credential.keystoreAlias),
         )
     }
 
