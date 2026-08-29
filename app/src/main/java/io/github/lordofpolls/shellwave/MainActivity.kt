@@ -96,6 +96,7 @@ import io.github.lordofpolls.shellwave.feature.settings.ConfigImporter
 import io.github.lordofpolls.shellwave.feature.settings.KeyBarLayoutsScreen
 import io.github.lordofpolls.shellwave.feature.settings.LicenseScreen
 import io.github.lordofpolls.shellwave.feature.settings.SettingsScreen
+import io.github.lordofpolls.shellwave.feature.settings.TerminalSettingsScreen
 import io.github.lordofpolls.shellwave.ssh.AuthMethod
 import io.github.lordofpolls.shellwave.ssh.ConnectionSpec
 import io.github.lordofpolls.shellwave.ssh.HostVerificationGate
@@ -141,6 +142,8 @@ private sealed class Screen {
     data class ScriptHistory(val scriptId: Long) : Screen()
 
     data object Settings : Screen()
+
+    data object TerminalSettings : Screen()
 
     data object KeyBarLayouts : Screen()
 
@@ -417,6 +420,7 @@ class MainActivity : FragmentActivity() {
                         "addEditScript" -> Screen.AddEditScript(editingScriptId.takeIf { it >= 0 })
                         "scriptHistory" -> Screen.ScriptHistory(historyScriptId)
                         "keyBarLayouts" -> Screen.KeyBarLayouts
+                        "terminalSettings" -> Screen.TerminalSettings
                         "license" -> Screen.License
                         "importSshConfig" -> Screen.ImportSshConfig
                         "terminal" -> Screen.Terminal
@@ -947,8 +951,6 @@ class MainActivity : FragmentActivity() {
 
                                 is Screen.Settings -> {
                                     SettingsScreen(
-                                        terminalProfileDao = terminalProfileDao,
-                                        colorSchemeDao = colorSchemeDao,
                                         dynamicColorEnabled = dynamicColorEnabled,
                                         onDynamicColorChange = {
                                             dynamicColorEnabled = it
@@ -1017,7 +1019,7 @@ class MainActivity : FragmentActivity() {
                                             automationToken =
                                                 AutomationPreferences.regenerateToken(this@MainActivity)
                                         },
-                                        onOpenKeyBarLayouts = { push("keyBarLayouts") },
+                                        onOpenTerminalSettings = { push("terminalSettings") },
                                         onExportConfig = configExporter::writeTo,
                                         onImportConfig = { uri ->
                                             configImporter.readFrom(uri).also {
@@ -1042,6 +1044,16 @@ class MainActivity : FragmentActivity() {
                                         onOpenLicenses = { push("license") },
                                         supporterState = supporterState,
                                         onBecomeSupporter = { supporterBilling.launchPurchase(this@MainActivity) },
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                }
+
+                                is Screen.TerminalSettings -> {
+                                    TerminalSettingsScreen(
+                                        terminalProfileDao = terminalProfileDao,
+                                        colorSchemeDao = colorSchemeDao,
+                                        onOpenKeyBarLayouts = { push("keyBarLayouts") },
+                                        onBack = { popBack() },
                                         modifier = Modifier.weight(1f),
                                     )
                                 }

@@ -10,72 +10,49 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import io.github.lordofpolls.shellwave.BuildConfig
 import io.github.lordofpolls.shellwave.core.billing.SupporterState
-import io.github.lordofpolls.shellwave.core.db.dao.ColorSchemeDao
-import io.github.lordofpolls.shellwave.core.db.dao.TerminalProfileDao
-import io.github.lordofpolls.shellwave.core.db.entities.ColorSchemeEntity
-import io.github.lordofpolls.shellwave.core.db.entities.TerminalProfileEntity
 import io.github.lordofpolls.shellwave.core.prefs.ReachabilityInterval
 import io.github.lordofpolls.shellwave.core.prefs.ThemeMode
 import io.github.lordofpolls.shellwave.service.ACTION_RUN_SCRIPT
 import io.github.lordofpolls.shellwave.service.EXTRA_SCRIPT_ID
 import io.github.lordofpolls.shellwave.service.EXTRA_TOKEN
-import io.github.lordofpolls.shellwave.terminal.DEFAULT_COLOR_SCHEME
-import io.github.lordofpolls.shellwave.terminal.DEFAULT_TERMINAL_PROFILE
-import io.github.lordofpolls.shellwave.ui.design.AdvancedSection
 import io.github.lordofpolls.shellwave.ui.design.MachineText
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
 /**
- * The Settings destination, as M3 preference groups.
+ * The Settings destination, as M3 preference groups built from [SettingsRow] and friends.
  *
  * Sections and not cards: a `titleSmall` header already groups its items, and a `Card` would spend
  * height drawing a container around that.
  *
- * Disclosure is per item. Terminal stays visible with each of its two field editors behind its own
- * [AdvancedSection] - font size, cursor style and sixteen ANSI hex values are real settings nobody
- * opens twice - because one "Advanced" group holding both would hide the Terminal heading. There is
- * no Security group: host key trust is per host and biometric gating is per credential, so it would
- * be empty.
- *
- * [profile]/[scheme] and the `LaunchedEffect`s loading them sit in this composable's own scope,
- * since a collapsed [AdvancedSection] drops its content from composition.
+ * There is no Security group: host key trust is per host and biometric gating is per credential, so
+ * it would be empty.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
-    terminalProfileDao: TerminalProfileDao,
-    colorSchemeDao: ColorSchemeDao,
     dynamicColorEnabled: Boolean,
     onDynamicColorChange: (Boolean) -> Unit,
     themeMode: ThemeMode,
@@ -93,7 +70,7 @@ fun SettingsScreen(
     /** Null until the switch has been turned on for the first time, which is what mints one. */
     automationToken: String?,
     onRegenerateAutomationToken: () -> Unit,
-    onOpenKeyBarLayouts: () -> Unit,
+    onOpenTerminalSettings: () -> Unit,
     onExportConfig: suspend (Uri) -> Unit,
     onImportConfig: suspend (Uri) -> ConfigImportSummary,
     onOpenLicenses: () -> Unit,
@@ -101,43 +78,6 @@ fun SettingsScreen(
     onBecomeSupporter: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val scope = rememberCoroutineScope()
-
-    var profile by remember { mutableStateOf(DEFAULT_TERMINAL_PROFILE) }
-    LaunchedEffect(Unit) {
-        terminalProfileDao.getDefault()?.let { profile = it }
-    }
-
-    // Insert on first edit, update the same row thereafter. Applied optimistically to local state.
-    fun save(updated: TerminalProfileEntity) {
-        profile = updated
-        scope.launch {
-            if (updated.id == 0L) {
-                profile = updated.copy(id = terminalProfileDao.insert(updated))
-            } else {
-                terminalProfileDao.update(updated)
-            }
-        }
-    }
-
-    // Writing is all this screen does: MainActivity's observeDefault() collector calls
-    // SessionManager.applyDefaultColorScheme so an edit reaches an already-open session.
-    var scheme by remember { mutableStateOf(DEFAULT_COLOR_SCHEME) }
-    LaunchedEffect(Unit) {
-        colorSchemeDao.getDefault()?.let { scheme = it }
-    }
-
-    fun saveScheme(updated: ColorSchemeEntity) {
-        scheme = updated
-        scope.launch {
-            if (updated.id == 0L) {
-                scheme = updated.copy(id = colorSchemeDao.insert(updated))
-            } else {
-                colorSchemeDao.update(updated)
-            }
-        }
-    }
-
     Scaffold(
         modifier = modifier,
         // MainActivity's Scaffold already applied the system bar insets without consuming them.
@@ -159,30 +99,13 @@ fun SettingsScreen(
         ) {
             SettingsSectionHeader("Appearance", first = true)
 
-            Text("Theme", style = MaterialTheme.typography.labelLarge)
-            ThemeMode.entries.forEach { mode ->
-                Row(
-                    // The whole row is the radio. With `onClick` on the RadioButton and the name in
-                    // a sibling Text, TalkBack sees a radio button with no name and a label
-                    // attached to nothing. `selectable` with `Role.RadioButton` merges them into
-                    // one named node. minimumInteractiveComponentSize is needed because the row
-                    // became the control: RadioButton applies it to itself, `Modifier.selectable`
-                    // does not, and without it the target shrinks from 48dp to 32dp.
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .minimumInteractiveComponentSize()
-                            .selectable(
-                                selected = themeMode == mode,
-                                role = Role.RadioButton,
-                                onClick = { onThemeModeChange(mode) },
-                            ),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    RadioButton(selected = themeMode == mode, onClick = null)
-                    Text(mode.name.lowercase().replaceFirstChar { it.uppercase() })
-                }
-            }
+            SettingsRadioGroup(
+                label = "Theme",
+                options = ThemeMode.entries,
+                selected = themeMode,
+                labelOf = { it.name.lowercase().replaceFirstChar(Char::uppercase) },
+                onSelect = onThemeModeChange,
+            )
 
             SettingsSwitch(
                 title = "Dynamic colour (Material You)",
@@ -200,6 +123,13 @@ fun SettingsScreen(
                 onCheckedChange = onExactSchemeColoursChange,
             )
 
+            SettingsRow(
+                title = "Terminal",
+                description = "Font, cursor, scrollback, colour scheme and key bar layouts.",
+                chevron = true,
+                onClick = onOpenTerminalSettings,
+            )
+
             SettingsSectionHeader("Hosts")
 
             SettingsSwitch(
@@ -212,25 +142,13 @@ fun SettingsScreen(
             )
 
             if (reachabilityEnabled) {
-                Text("How often", style = MaterialTheme.typography.labelLarge)
-                ReachabilityInterval.entries.forEach { candidate ->
-                    Row(
-                        // Same whole-row-is-the-radio treatment as the theme group above.
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .minimumInteractiveComponentSize()
-                                .selectable(
-                                    selected = reachabilityInterval == candidate,
-                                    role = Role.RadioButton,
-                                    onClick = { onReachabilityIntervalChange(candidate) },
-                                ),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        RadioButton(selected = reachabilityInterval == candidate, onClick = null)
-                        Text(candidate.label)
-                    }
-                }
+                SettingsRadioGroup(
+                    label = "How often",
+                    options = ReachabilityInterval.entries,
+                    selected = reachabilityInterval,
+                    labelOf = { it.label },
+                    onSelect = onReachabilityIntervalChange,
+                )
 
                 SettingsSwitch(
                     title = "Allow on mobile data",
@@ -255,48 +173,27 @@ fun SettingsScreen(
                 onRegenerate = onRegenerateAutomationToken,
             )
 
-            SettingsSectionHeader("Terminal")
+            SettingsSectionHeader("Backup")
 
-            AdvancedSection(title = "Terminal profile") {
-                TerminalProfileFields(profile = profile, onChange = ::save)
-            }
-            AdvancedSection(title = "Colour scheme") {
-                ColorSchemeFields(scheme = scheme, onChange = ::saveScheme)
-            }
-            Text(
-                "Key bar layouts (custom keys, macros, one or two rows) can be assigned per host.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            TextButton(onClick = onOpenKeyBarLayouts) { Text("Manage key bar layouts") }
+            ConfigExportRow(onExport = onExportConfig)
+            ConfigImportRow(onImport = onImportConfig)
 
             if (supporterState != SupporterState.Unavailable) {
                 SettingsSectionHeader("Support")
                 SupporterRow(state = supporterState, onBecomeSupporter = onBecomeSupporter)
             }
 
-            SettingsSectionHeader("Backup")
-
-            ConfigExportRow(onExport = onExportConfig)
-            ConfigImportRow(onImport = onImportConfig)
-
             SettingsSectionHeader("About")
 
-            TextButton(onClick = onOpenLicenses) { Text("Licences") }
+            SettingsRow(
+                title = "Version",
+                description = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+            )
+            SettingsRow(title = "Licences", chevron = true, onClick = onOpenLicenses)
 
             Spacer(modifier = Modifier.padding(bottom = 8.dp))
         }
     }
-}
-
-/** A section is a plain `titleSmall` header above its items. */
-@Composable
-private fun SettingsSectionHeader(title: String, first: Boolean = false) {
-    Text(
-        title,
-        style = MaterialTheme.typography.titleSmall,
-        modifier = Modifier.padding(top = if (first) 8.dp else 24.dp, bottom = 4.dp),
-    )
 }
 
 /**
@@ -396,20 +293,16 @@ private fun SupporterRow(state: SupporterState, onBecomeSupporter: () -> Unit) {
     when (state) {
         is SupporterState.Loading, is SupporterState.Unavailable -> Unit
 
-        is SupporterState.Purchasable -> {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    "A one-time purchase that unlocks nothing - just a way to say thanks.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                TextButton(onClick = onBecomeSupporter) { Text("Become a supporter · ${state.priceLabel}") }
-            }
-        }
+        is SupporterState.Purchasable -> SettingsRow(
+            title = "Become a supporter · ${state.priceLabel}",
+            description = "A one-time purchase that unlocks nothing - just a way to say thanks.",
+            onClick = onBecomeSupporter,
+        )
 
-        is SupporterState.Supporter -> {
-            Text("You're a supporter - thank you!", style = MaterialTheme.typography.labelLarge)
-        }
+        is SupporterState.Supporter -> SettingsRow(
+            title = "You're a supporter",
+            description = "Thank you!",
+        )
     }
 }
 
@@ -434,15 +327,12 @@ private fun ConfigExportRow(onExport: suspend (Uri) -> Unit) {
             }
         }
 
-    Text(
-        "Writes your hosts, tunnels, scripts and settings to a JSON file. Passwords, private keys " +
-                "and passphrases are not included - they stay sealed in this device's keystore.",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    SettingsRow(
+        title = "Export configuration",
+        description = "Writes your hosts, tunnels, scripts and settings to a JSON file. Passwords, " +
+                "private keys and passphrases are not included - they stay sealed in this device's keystore.",
+        onClick = { launcher.launch("shellwave-config-${LocalDate.now()}.json") },
     )
-    TextButton(onClick = { launcher.launch("shellwave-config-${LocalDate.now()}.json") }) {
-        Text("Export configuration")
-    }
     outcome?.let {
         Text(it, style = MaterialTheme.typography.bodySmall)
     }
@@ -476,15 +366,12 @@ private fun ConfigImportRow(onImport: suspend (Uri) -> ConfigImportSummary) {
             }
         }
 
-    Text(
-        "Reads a file written by Export. Hosts, tunnels, scripts and layouts are added to what you " +
-                "already have; app-wide settings are replaced. Nothing is deleted.",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    SettingsRow(
+        title = "Import configuration",
+        description = "Reads a file written by Export. Hosts, tunnels, scripts and layouts are added " +
+                "to what you already have; app-wide settings are replaced. Nothing is deleted.",
+        onClick = { confirming = true },
     )
-    TextButton(onClick = { confirming = true }) {
-        Text("Import configuration")
-    }
     outcome.forEach {
         Text(it, style = MaterialTheme.typography.bodySmall)
     }
@@ -515,39 +402,5 @@ private fun ConfigImportRow(onImport: suspend (Uri) -> ConfigImportSummary) {
                 TextButton(onClick = { confirming = false }) { Text("Cancel") }
             },
         )
-    }
-}
-
-/** The description is what keeps a row like "Exact scheme colours" from being author-only jargon. */
-@Composable
-private fun SettingsSwitch(
-    title: String,
-    description: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
-) {
-    Row(
-        // Same row-is-the-control treatment as the theme radios. `Role.Switch` makes TalkBack
-        // announce it as a switch instead of a generic toggle.
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .minimumInteractiveComponentSize()
-                .toggleable(
-                    value = checked,
-                    role = Role.Switch,
-                    onValueChange = onCheckedChange,
-                ),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.labelLarge)
-            Text(
-                description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        Switch(checked = checked, onCheckedChange = null)
     }
 }
