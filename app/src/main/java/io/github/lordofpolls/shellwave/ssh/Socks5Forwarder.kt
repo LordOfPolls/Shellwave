@@ -21,6 +21,9 @@ import java.util.concurrent.ConcurrentHashMap
 private const val LOG_TAG = "Socks5Forwarder"
 private const val PUMP_BUFFER_SIZE = 8192
 
+// Bounds a client that stalls mid-handshake; cleared before the relay phase.
+internal const val HANDSHAKE_TIMEOUT_MS = 5000
+
 private const val SOCKS_VERSION = 5
 private const val METHOD_NO_AUTH: Byte = 0x00
 private const val METHOD_NO_ACCEPTABLE: Byte = 0xFF.toByte()
@@ -95,6 +98,7 @@ internal class Socks5Forwarder(
     }
 
     private suspend fun handleClient(socket: Socket) {
+        socket.soTimeout = HANDSHAKE_TIMEOUT_MS
         val input = DataInputStream(socket.getInputStream())
         val output = socket.getOutputStream()
         if (!negotiateNoAuth(input, output)) return
@@ -108,6 +112,8 @@ internal class Socks5Forwarder(
             }
         try {
             writeReply(output, REPLY_SUCCEEDED)
+            // Handshake is done - an idle SSH session or long-poll must not be cut off.
+            socket.soTimeout = 0
             pumpBothDirections(socket, channel)
         } finally {
             runCatching { channel.close() }
