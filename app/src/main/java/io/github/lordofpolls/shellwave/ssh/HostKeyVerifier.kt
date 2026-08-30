@@ -1,5 +1,6 @@
 package io.github.lordofpolls.shellwave.ssh
 
+import android.util.Log
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -105,6 +106,12 @@ class HostVerificationGate @Inject constructor() {
     }
 }
 
+// One verifier per connection attempt, each with its own snapshot of the file; the rewrite in
+// revokeLocked() must not race another session's append.
+private val knownHostsLock = Any()
+
+private const val TAG = "TofuKnownHostsVerifier"
+
 /**
  * Unknown host raises a TOFU dialog; a matching host with a different key raises the hard-block
  * dialog through the same gate. Acceptance either way appends the entry, so the next connection
@@ -112,7 +119,7 @@ class HostVerificationGate @Inject constructor() {
  *
  * The sole host key verifier in the app. There is no `PromiscuousVerifier` anywhere.
  */
-class TofuKnownHostsVerifier(
+open class TofuKnownHostsVerifier(
     file: File,
     private val gate: HostVerificationGate,
     private val sessionId: Long,
@@ -129,7 +136,7 @@ class TofuKnownHostsVerifier(
             sha256Fingerprint(key),
             isMismatch = false
         )
-        if (accepted) persist(hostname, key)
+        if (accepted) persist(hostname, key, revokeSuperseded = false)
         return accepted
     }
 
@@ -143,12 +150,57 @@ class TofuKnownHostsVerifier(
             sha256Fingerprint(key),
             isMismatch = true
         )
-        if (accepted) persist(hostname, key)
+        if (accepted) persist(hostname, key, revokeSuperseded = true)
         return accepted
     }
 
-    private fun persist(hostname: String, key: PublicKey) {
-        runCatching { write(HostEntry(null, hostname, KeyType.fromKey(key), key)) }
+    /**
+     * [revokeSuperseded] only on the changed-key path: sshj's `verify` accepts if ANY entry for the
+     * host matches, so appending without dropping the old one keeps trusting the key whose possible
+     * compromise is why it rotated. TOFU has no prior entry to revoke.
+     *
+     * Only the same [KeyType] is dropped - a mismatch only fires for the type that failed to verify,
+     * and SSH negotiates one algorithm per connection, so other types were never implicated.
+     */
+    private fun persist(hostname: String, key: PublicKey, revokeSuperseded: Boolean) {
+        runCatching {
+            synchronized(knownHostsLock) {
+                if (revokeSuperseded) revokeLocked(hostname, KeyType.fromKey(key))
+                val entry = HostEntry(null, hostname, KeyType.fromKey(key), key)
+                // sshj's write(KnownHostEntry) only appends to the file, not to `entries` - without
+                // this, a rekey on this same connection would still see the host as unverifiable.
+                write(entry)
+                entries().add(entry)
+            }
+        }.onFailure { Log.w(TAG, "failed to persist known_hosts entry for $hostname", it) }
+    }
+
+    /**
+     * Temp-file-then-rename, so a death mid-write leaves the old file or the new one, never half of
+     * both. Re-reads entries from disk rather than this instance's own [entries]: that snapshot can
+     * be stale by now. `appliesTo(type, host)` alone also matches `@revoked`/`@cert-authority` rows,
+     * dropping which would re-trust a blacklisted key or break a CA - so only plain rows are kept.
+     * Also drops matches from `entries()` itself, or a rekey on this same connection would still
+     * accept the just-revoked key. Only [persist] calls this, already holding [knownHostsLock].
+     */
+    private fun revokeLocked(hostname: String, type: KeyType) {
+        fun isStale(entry: KnownHostEntry) =
+            entry.appliesTo(type, hostname) &&
+                !entry.line.startsWith("@revoked ") &&
+                !entry.line.startsWith("@cert-authority ")
+
+        entries().removeAll(::isStale)
+
+        val current = OpenSSHKnownHosts(getFile()).entries()
+        val stale = current.filter(::isStale)
+        if (stale.isEmpty()) return
+        val toKeep = current - stale.toSet()
+        val tmp = File.createTempFile("known_hosts", ".tmp", getFile().parentFile)
+        tmp.bufferedWriter().use { w -> toKeep.forEach { w.write(it.line); w.newLine() } }
+        if (!tmp.renameTo(getFile())) {
+            tmp.delete()
+            error("Could not rewrite known_hosts to drop superseded entry for $hostname")
+        }
     }
 
     /** Call once the attempt this was built for ends, for any reason. */
