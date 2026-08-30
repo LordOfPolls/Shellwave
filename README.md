@@ -5,10 +5,25 @@
 </h1>
 
 <p align="center">
-  An SSH client for Android, using the terminal emulator from
-  <a href="https://github.com/termux/termux-app">Termux</a> for VT rendering.
+  An SSH client for Android
+  <br>
+  Built because every mobile SSH client makes you choose between convenient and trustworthy,
+  and that's a stupid choice.
   <br>
   Requires Android 12 (API 31) or later. GPLv3.
+</p>
+
+<p align="center">
+  <a href="https://github.com/LordOfPolls/Shellwave/releases">
+    <img src="https://img.shields.io/github/v/release/LordOfPolls/Shellwave?label=Release" alt="Latest release">
+  </a>
+  <a href="https://github.com/LordOfPolls/Shellwave/actions/workflows/release.yml">
+    <img src="https://github.com/LordOfPolls/Shellwave/actions/workflows/release.yml/badge.svg" alt="Release build status">
+  </a>
+  <img src="https://img.shields.io/badge/Android-12%2B-3ddc84?logo=android&logoColor=white" alt="Android 12 or later">
+  <a href="LICENSE">
+    <img src="https://img.shields.io/github/license/LordOfPolls/Shellwave?label=Licence" alt="Licence">
+  </a>
 </p>
 
 ## Screenshots
@@ -30,54 +45,34 @@ terminal the full width.
 
 ## Features
 
-- 256-colour and truecolour output, wide characters, alternate screen.
-- Password, private key (imported or generated on device), and keyboard-interactive auth.
+- Dropped connections reconnect on their own, without re-prompting for a password; optional
+  `tmux`-backed sessions reattach with scrollback intact.
 - Host key verification on first connect, with the fingerprint shown. A changed key blocks the
-  connection.
+  connection; there is no accept-all mode, and a background run never answers a prompt for you.
 - Credentials encrypted with the Android Keystore, hardware-backed where available, with an
   optional biometric unlock per credential.
 - Key enrolment: generate a key, install it in the host's `authorized_keys`, replace the saved
-  credential.
+  credential. The private key never leaves the device.
+- Password, private key (imported or generated on device), and keyboard-interactive auth.
 - Local and remote port forwarding, SOCKS5, ProxyJump chaining, `~/.ssh/config` import.
-- SFTP upload and download.
 - Saved scripts, run from the app, a widget, an app shortcut, a Quick Settings tile, or another app.
-- Optional `tmux`-backed sessions that reattach after a reconnect.
+- SFTP upload and download.
 - Per-host terminal profile, colour scheme and key bar layout, each overriding a global default.
-- No analytics
+- 256-colour and truecolour output, wide characters, alternate screen.
+- No analytics, no telemetry, no crash reporting. It talks to the hosts you give it, and nothing
+  else.
 
-## Terminal engine
+## Install
 
-`:terminal-core` contains twelve files from termux-app's `terminal-emulator` module, ten of them
-byte-identical to upstream. `TerminalRenderer.kt` in `:app` is a Kotlin port of upstream's
-`TerminalRenderer.java`. The package is left as `com.termux.terminal` so the vendored files stay a
-mergeable diff.
+Every release ships a signed APK, built by GitHub Actions from the tag - an unsigned build
+never reaches the release page:
 
-`terminal-core/VENDORING.md` records the upstream commit, the file list and the edits made. The
-engine's pty/JNI subprocess code is not used; sessions are remote shells over SSH.
+**[Download the latest release](https://github.com/LordOfPolls/Shellwave/releases/latest)**
 
-Third-party attribution lives in `NOTICE`, which a Gradle task copies into `res/raw` for the in-app
-licence screen.
-
-
-## Downloading 
-
-APKs are generated through a Github action for each release ~ download here: https://github.com/LordOfPolls/Shellwave/releases
-
-## Releasing
-
-```
-just bump 1.2.0   # the version, CHANGELOG.md, the F-Droid changelog and recipe
-just notes        # what the release page will say
-just release      # commit, tag, push - this is the step that publishes
-```
-
-Pushing the tag builds the FOSS APK and creates the GitHub release, with notes written from the
-commits that tag contains. The recipes are thin wrappers over `tools/` and `git`, so without
-`just` installed the scripts still work on their own.
-
-So commit subjects are what a release page ends up saying: `feat:`, `fix:` and `perf:` reach it,
-`style:`, `test:` and `chore:` are dropped, and `docs:`/`build:`/`ci:` land at the bottom.
-`cliff.toml` holds the mapping.
+> [!NOTE]
+> Forwarded ports and the SOCKS5 proxy bind to loopback unless you say otherwise. Binding wider is
+> a choice you have to make on purpose, which is rather the point. The coffee shop Wi-Fi does not
+> need a route into your homelab.
 
 ## Building
 
@@ -89,8 +84,35 @@ Two product flavours, identical but for one dependency:
 ```
 
 `SupporterBilling` is an interface in `:app`'s main source set with one implementation per
-flavour, so only `play` links `com.android.billingclient`. 
+flavour, so only `play` links `com.android.billingclient`.
 On `foss` the Support section of Settings does not exist.
+
+Debug builds, unit tests and lint:
+
+```
+./gradlew assembleFossDebug
+./gradlew testFossDebugUnitTest
+./gradlew lintFossDebug
+```
+
+The Room migration and Keystore tests are instrumented, so they want a real device or emulator -
+which is to say the two things you least want quietly broken are the two that take the most effort
+to check.
+
+## Terminal engine
+
+Writing a VT parser from scratch is a fine way to lose a year, so this one is borrowed.
+
+`:terminal-core` contains twelve files from termux-app's `terminal-emulator` module, ten of them
+byte-identical to upstream. `TerminalRenderer.kt` in `:app` is a Kotlin port of upstream's
+`TerminalRenderer.java`. The package is left as `com.termux.terminal` so the vendored files stay a
+mergeable diff.
+
+`terminal-core/VENDORING.md` records the upstream commit, the file list and the edits made. The
+engine's pty/JNI subprocess code is not used; sessions are remote shells over SSH.
+
+Third-party attribution lives in `NOTICE`, which a Gradle task copies into `res/raw` for the in-app
+licence screen.
 
 ## Licence
 

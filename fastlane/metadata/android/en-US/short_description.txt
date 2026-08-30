@@ -1,1 +1,1 @@
-A real SSH terminal for Android — 256 colours, foldable support, no compromises
+An SSH client that doesn't make you choose between convenient and trustworthy
