@@ -7,6 +7,8 @@ import androidx.room.withTransaction
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.github.lordofpolls.shellwave.core.crypto.CredentialType
 import io.github.lordofpolls.shellwave.core.db.ShellwaveDatabase
+import io.github.lordofpolls.shellwave.core.db.dao.ColorSchemeDao
+import io.github.lordofpolls.shellwave.core.db.dao.TerminalProfileDao
 import io.github.lordofpolls.shellwave.core.db.entities.ColorSchemeEntity
 import io.github.lordofpolls.shellwave.core.db.entities.CredentialEntity
 import io.github.lordofpolls.shellwave.core.db.entities.HostEntity
@@ -290,8 +292,8 @@ constructor(
     }
 
     private suspend fun insertRows(parsed: ParsedConfig, notes: MutableList<String>): InsertedRows {
-        val profileIds = importTerminalProfiles(parsed.terminalProfiles)
-        val schemeIds = importColorSchemes(parsed.colorSchemes)
+        val profileIds = importTerminalProfiles(parsed.terminalProfiles, db.terminalProfileDao())
+        val schemeIds = importColorSchemes(parsed.colorSchemes, db.colorSchemeDao())
         val layoutIds =
             parsed.keyBarLayouts.associate { it.id to db.keyBarLayoutDao().insert(it.copy(id = 0)) }
         val credentialIds =
@@ -369,34 +371,6 @@ constructor(
         )
     }
 
-    private suspend fun importTerminalProfiles(
-        profiles: List<TerminalProfileEntity>
-    ): Map<Long, Long> {
-        val existingDefault = db.terminalProfileDao().getDefault()
-        return profiles.sortedBy { it.id }.mapIndexed { index, profile ->
-            profile.id to
-                if (index == 0 && existingDefault != null) {
-                    db.terminalProfileDao().update(profile.copy(id = existingDefault.id))
-                    existingDefault.id
-                } else {
-                    db.terminalProfileDao().insert(profile.copy(id = 0))
-                }
-        }.toMap()
-    }
-
-    private suspend fun importColorSchemes(schemes: List<ColorSchemeEntity>): Map<Long, Long> {
-        val existingDefault = db.colorSchemeDao().getDefault()
-        return schemes.sortedBy { it.id }.mapIndexed { index, scheme ->
-            scheme.id to
-                if (index == 0 && existingDefault != null) {
-                    db.colorSchemeDao().update(scheme.copy(id = existingDefault.id))
-                    existingDefault.id
-                } else {
-                    db.colorSchemeDao().insert(scheme.copy(id = 0))
-                }
-        }.toMap()
-    }
-
     private fun applySettings(
         settings: ImportedSettings,
         scriptIds: Map<Long, Long>,
@@ -431,3 +405,13 @@ constructor(
 }
 
 private fun HostEntity.importName(): String = label ?: "$username@$hostname"
+
+internal suspend fun importTerminalProfiles(
+    profiles: List<TerminalProfileEntity>,
+    dao: TerminalProfileDao,
+): Map<Long, Long> = profiles.associate { it.id to dao.insert(it.copy(id = 0)) }
+
+internal suspend fun importColorSchemes(
+    schemes: List<ColorSchemeEntity>,
+    dao: ColorSchemeDao,
+): Map<Long, Long> = schemes.associate { it.id to dao.insert(it.copy(id = 0)) }
