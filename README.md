@@ -95,6 +95,9 @@ Debug builds, unit tests and lint:
 ./gradlew lintFossDebug
 ```
 
+Run `just hooks` once to wire up a pre-commit hook that runs the same invariant checks as CI,
+plus a secret scan of your staged changes if `gitleaks` is installed.
+
 The Room migration and Keystore tests are instrumented, so they want a real device or emulator -
 which is to say the two things you least want quietly broken are the two that take the most effort
 to check.

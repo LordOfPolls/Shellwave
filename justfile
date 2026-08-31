@@ -15,6 +15,10 @@ release_branch := "master"
 default:
     @just --list
 
+# Install the pre-commit hook that runs the invariant checks and gitleaks
+hooks:
+    ln -sf ../../tools/pre-commit.sh .git/hooks/pre-commit
+
 # Set the version and rewrite changelogs
 bump VERSION:
     @tools/prepare-release.sh {{ VERSION }}
