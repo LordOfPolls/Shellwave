@@ -18,3 +18,4 @@ keystore.properties
 docs/
 /scripts/
 *.der
+.kotlin/
