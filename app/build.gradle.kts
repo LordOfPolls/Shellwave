@@ -157,6 +157,14 @@ android {
         }
     }
 
+    lint {
+        baseline = file("lint-baseline.xml")
+        warningsAsErrors = true
+        // Keyed on $HOME/dependency-version paths that don't exist on a CI runner and drift
+        // whenever upstream publishes - not worth pinning in a baseline.
+        disable += setOf("AndroidGradlePluginVersion", "GradleDependency", "NewerVersionAvailable")
+    }
+
     packaging {
         resources {
             excludes += setOf(
