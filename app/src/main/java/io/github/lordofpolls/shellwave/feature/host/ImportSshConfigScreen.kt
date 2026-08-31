@@ -1,5 +1,6 @@
 package io.github.lordofpolls.shellwave.feature.host
 
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -30,7 +31,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -105,7 +105,7 @@ fun ImportSshConfigScreen(
     onDone: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val activity = LocalContext.current as FragmentActivity
+    val activity = LocalActivity.current as FragmentActivity
     val scope = rememberCoroutineScope()
 
     var readError by remember { mutableStateOf<String?>(null) }
@@ -317,7 +317,7 @@ private fun ImportEntryCard(
     allEntries: List<ImportEntryState>,
     existingCredentials: List<CredentialEntity>
 ) {
-    val activity = LocalContext.current as FragmentActivity
+    val activity = LocalActivity.current as FragmentActivity
     val pickKeyFile =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null) {

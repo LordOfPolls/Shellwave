@@ -1,6 +1,7 @@
 package io.github.lordofpolls.shellwave.feature.host
 
 import android.content.ClipData
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -39,7 +40,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentType
@@ -124,7 +124,7 @@ fun AddEditHostScreen(
     onDone: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val activity = LocalContext.current as FragmentActivity
+    val activity = LocalActivity.current as FragmentActivity
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboard.current
 
