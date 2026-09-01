@@ -62,6 +62,7 @@ import io.github.lordofpolls.shellwave.core.db.entities.ScriptEntity
 import io.github.lordofpolls.shellwave.core.db.entities.TerminalProfileEntity
 import io.github.lordofpolls.shellwave.core.prefs.BellPreferences
 import io.github.lordofpolls.shellwave.core.prefs.SessionLayoutPreferences
+import io.github.lordofpolls.shellwave.core.prefs.rememberPrefState
 import io.github.lordofpolls.shellwave.core.ui.FoldPosture
 import io.github.lordofpolls.shellwave.core.ui.rememberFoldPosture
 import io.github.lordofpolls.shellwave.ssh.SessionManager
@@ -177,25 +178,16 @@ fun SessionsScreen(
         )
     }
 
-    // BellPreferences has no change-notification Flow; acceptable because the only writer is this
-    // same control.
     val bellContext = LocalContext.current
-    var bellMode by remember { mutableStateOf(BellPreferences.get(bellContext)) }
+    val bellMode by rememberPrefState { BellPreferences.get(it) }
 
     // WindowInfoTracker reports per-Activity window metrics. Degrades to Flat rather than crashing
     // without one, e.g. in a @Preview.
     val activity = LocalActivity.current
     val posture = if (activity != null) rememberFoldPosture(activity).value else FoldPosture.Flat
 
-    // Read once and written by this same toggle, so no live-collected Flow is needed.
     val layoutContext = LocalContext.current
-    var fullWidthTerminal by remember {
-        mutableStateOf(
-            SessionLayoutPreferences.getFullWidthTerminal(
-                layoutContext
-            )
-        )
-    }
+    val fullWidthTerminal by rememberPrefState { SessionLayoutPreferences.getFullWidthTerminal(it) }
 
     // On a narrow window there is no second pane to collapse, so the full-width toggle must be
     // absent rather than present-but-inert.
@@ -237,10 +229,7 @@ fun SessionsScreen(
                     // what a user needs when one is stuck.
                     connection = current?.connection?.takeIf { current.status == SessionStatus.CONNECTED },
                     bellMode = bellMode,
-                    onBellMode = { mode ->
-                        bellMode = mode
-                        BellPreferences.set(bellContext, mode)
-                    },
+                    onBellMode = { mode -> BellPreferences.set(bellContext, mode) },
                     onDownload = { connection -> fileTransferController.requestDownload(connection) },
                     onUpload = { connection -> fileTransferController.requestUpload(connection) },
                     onRunScript = if (runnableHere.isEmpty()) null else ({
@@ -285,8 +274,7 @@ fun SessionsScreen(
             isWide = isWide,
             fullWidthTerminal = fullWidthTerminal,
             onToggleFullWidth = {
-                fullWidthTerminal = !fullWidthTerminal
-                SessionLayoutPreferences.setFullWidthTerminal(layoutContext, fullWidthTerminal)
+                SessionLayoutPreferences.setFullWidthTerminal(layoutContext, !fullWidthTerminal)
             },
             navigator = navigator,
             selectedId = selectedId,

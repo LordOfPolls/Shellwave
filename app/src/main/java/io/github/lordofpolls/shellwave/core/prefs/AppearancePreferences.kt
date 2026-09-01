@@ -5,6 +5,10 @@ import android.content.Context
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
 private const val PREFS_NAME = "shellwave_prefs"
+
+internal fun sharedPrefs(context: Context) =
+    context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
 private const val KEY_THEME_MODE = "theme_mode"
 private const val KEY_DYNAMIC_COLOR = "dynamic_color"
 private const val KEY_EXACT_SCHEME_COLOURS = "exact_scheme_colours"

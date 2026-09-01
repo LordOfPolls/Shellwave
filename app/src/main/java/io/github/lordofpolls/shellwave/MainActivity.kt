@@ -64,6 +64,7 @@ import io.github.lordofpolls.shellwave.core.prefs.AppearancePreferences
 import io.github.lordofpolls.shellwave.core.prefs.AutomationPreferences
 import io.github.lordofpolls.shellwave.core.prefs.ReachabilityPreferences
 import io.github.lordofpolls.shellwave.core.prefs.SupportPreferences
+import io.github.lordofpolls.shellwave.core.prefs.rememberPrefState
 import io.github.lordofpolls.shellwave.core.prefs.ThemeMode
 import io.github.lordofpolls.shellwave.core.ui.HostVerificationDialog
 import io.github.lordofpolls.shellwave.core.ui.KeyboardInteractiveDialog
@@ -286,53 +287,21 @@ class MainActivity : FragmentActivity() {
         if (!notificationsGranted.value) requestNotificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
 
         setContent {
-            // SharedPreferences has no change notification, so anything SettingsScreen can edit
-            // that also feeds ShellwaveTheme is mirrored into Compose state here. Disk stays the
-            // source of truth.
-            var dynamicColorEnabled by remember {
-                mutableStateOf(
-                    AppearancePreferences.getDynamicColor(
-                        this@MainActivity
-                    )
-                )
-            }
-            var themeMode by remember { mutableStateOf(AppearancePreferences.getThemeMode(this@MainActivity)) }
-            var exactSchemeColours by remember {
-                mutableStateOf(
-                    AppearancePreferences.getExactSchemeColours(
-                        this@MainActivity
-                    )
-                )
-            }
+            // Disk stays the source of truth; rememberPrefState re-reads on any change.
+            val dynamicColorEnabled by rememberPrefState { AppearancePreferences.getDynamicColor(it) }
+            val themeMode by rememberPrefState { AppearancePreferences.getThemeMode(it) }
+            val exactSchemeColours by rememberPrefState { AppearancePreferences.getExactSchemeColours(it) }
 
             // These three exist only to render the Settings controls and gate the indicator: each
             // setter writes the pref and calls start(), and the probe re-reads all of them on
             // restart.
-            var reachabilityEnabled by remember {
-                mutableStateOf(
-                    ReachabilityPreferences.isEnabled(
-                        this@MainActivity
-                    )
-                )
-            }
-            var reachabilityInterval by remember {
-                mutableStateOf(
-                    ReachabilityPreferences.interval(
-                        this@MainActivity
-                    )
-                )
-            }
-            var reachabilityMetered by remember {
-                mutableStateOf(
-                    ReachabilityPreferences.allowsMetered(
-                        this@MainActivity
-                    )
-                )
-            }
+            val reachabilityEnabled by rememberPrefState { ReachabilityPreferences.isEnabled(it) }
+            val reachabilityInterval by rememberPrefState { ReachabilityPreferences.interval(it) }
+            val reachabilityMetered by rememberPrefState { ReachabilityPreferences.allowsMetered(it) }
             val reachability by reachabilityProbe.states.collectAsState()
 
-            var automationEnabled by remember { mutableStateOf(AutomationPreferences.isEnabled(this@MainActivity)) }
-            var automationToken by remember { mutableStateOf(AutomationPreferences.token(this@MainActivity)) }
+            val automationEnabled by rememberPrefState { AutomationPreferences.isEnabled(it) }
+            val automationToken by rememberPrefState { AutomationPreferences.token(it) }
 
             val supporterState by supporterBilling.state.collectAsState()
 
@@ -886,7 +855,6 @@ class MainActivity : FragmentActivity() {
                                     SettingsScreen(
                                         dynamicColorEnabled = dynamicColorEnabled,
                                         onDynamicColorChange = {
-                                            dynamicColorEnabled = it
                                             AppearancePreferences.setDynamicColor(
                                                 this@MainActivity,
                                                 it
@@ -894,7 +862,6 @@ class MainActivity : FragmentActivity() {
                                         },
                                         themeMode = themeMode,
                                         onThemeModeChange = {
-                                            themeMode = it
                                             AppearancePreferences.setThemeMode(
                                                 this@MainActivity,
                                                 it
@@ -902,7 +869,6 @@ class MainActivity : FragmentActivity() {
                                         },
                                         exactSchemeColours = exactSchemeColours,
                                         onExactSchemeColoursChange = {
-                                            exactSchemeColours = it
                                             AppearancePreferences.setExactSchemeColours(
                                                 this@MainActivity,
                                                 it
@@ -912,7 +878,6 @@ class MainActivity : FragmentActivity() {
                                         // re-reads all three.
                                         reachabilityEnabled = reachabilityEnabled,
                                         onReachabilityEnabledChange = {
-                                            reachabilityEnabled = it
                                             ReachabilityPreferences.setEnabled(
                                                 this@MainActivity,
                                                 it
@@ -921,7 +886,6 @@ class MainActivity : FragmentActivity() {
                                         },
                                         reachabilityInterval = reachabilityInterval,
                                         onReachabilityIntervalChange = {
-                                            reachabilityInterval = it
                                             ReachabilityPreferences.setInterval(
                                                 this@MainActivity,
                                                 it
@@ -930,7 +894,6 @@ class MainActivity : FragmentActivity() {
                                         },
                                         reachabilityMetered = reachabilityMetered,
                                         onReachabilityMeteredChange = {
-                                            reachabilityMetered = it
                                             ReachabilityPreferences.setAllowsMetered(
                                                 this@MainActivity,
                                                 it
@@ -939,38 +902,18 @@ class MainActivity : FragmentActivity() {
                                         },
                                         automationEnabled = automationEnabled,
                                         onAutomationEnabledChange = {
-                                            automationEnabled = it
                                             AutomationPreferences.setEnabled(this@MainActivity, it)
-                                            // Enabling mints the first token, so re-read rather
-                                            // than assume unchanged, or the switch turns on and the
-                                            // token area stays empty.
-                                            automationToken =
-                                                AutomationPreferences.token(this@MainActivity)
                                         },
                                         automationToken = automationToken,
                                         onRegenerateAutomationToken = {
-                                            automationToken =
-                                                AutomationPreferences.regenerateToken(this@MainActivity)
+                                            AutomationPreferences.regenerateToken(this@MainActivity)
                                         },
                                         onOpenTerminalSettings = { push("terminalSettings") },
                                         onExportConfig = configExporter::writeTo,
                                         onImportConfig = { uri ->
                                             configImporter.readFrom(uri).also {
-                                                // The import writes preferences straight to disk,
-                                                // so re-mirror the ones this scope holds - see the
-                                                // note on their declarations.
-                                                dynamicColorEnabled =
-                                                    AppearancePreferences.getDynamicColor(this@MainActivity)
-                                                themeMode =
-                                                    AppearancePreferences.getThemeMode(this@MainActivity)
-                                                exactSchemeColours =
-                                                    AppearancePreferences.getExactSchemeColours(this@MainActivity)
-                                                reachabilityEnabled =
-                                                    ReachabilityPreferences.isEnabled(this@MainActivity)
-                                                reachabilityInterval =
-                                                    ReachabilityPreferences.interval(this@MainActivity)
-                                                reachabilityMetered =
-                                                    ReachabilityPreferences.allowsMetered(this@MainActivity)
+                                                // rememberPrefState already reflects the imported
+                                                // values; only the probe needs a deliberate kick.
                                                 reachabilityProbe.start()
                                             }
                                         },
