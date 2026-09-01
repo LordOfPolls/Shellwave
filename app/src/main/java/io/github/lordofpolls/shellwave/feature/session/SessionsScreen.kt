@@ -17,31 +17,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Download
-import androidx.compose.material.icons.outlined.MoreVert
-import androidx.compose.material.icons.outlined.Notifications
-import androidx.compose.material.icons.outlined.PlayArrow
-import androidx.compose.material.icons.outlined.Upload
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
-import androidx.compose.material3.adaptive.layout.AnimatedPane
-import androidx.compose.material3.adaptive.layout.ListDetailPaneScaffold
 import androidx.compose.material3.adaptive.layout.ListDetailPaneScaffoldRole
 import androidx.compose.material3.adaptive.navigation.rememberListDetailPaneScaffoldNavigator
 import androidx.compose.runtime.Composable
@@ -60,13 +42,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.contentDescription
@@ -82,15 +60,12 @@ import io.github.lordofpolls.shellwave.core.db.entities.HostEntity
 import io.github.lordofpolls.shellwave.core.db.entities.KeyBarLayoutEntity
 import io.github.lordofpolls.shellwave.core.db.entities.ScriptEntity
 import io.github.lordofpolls.shellwave.core.db.entities.TerminalProfileEntity
-import io.github.lordofpolls.shellwave.core.prefs.BellMode
 import io.github.lordofpolls.shellwave.core.prefs.BellPreferences
 import io.github.lordofpolls.shellwave.core.prefs.SessionLayoutPreferences
 import io.github.lordofpolls.shellwave.core.ui.FoldPosture
 import io.github.lordofpolls.shellwave.core.ui.rememberFoldPosture
-import io.github.lordofpolls.shellwave.feature.scripts.ScriptMode
 import io.github.lordofpolls.shellwave.ssh.SessionManager
 import io.github.lordofpolls.shellwave.ssh.SessionStatus
-import io.github.lordofpolls.shellwave.ssh.SessionSummary
 import io.github.lordofpolls.shellwave.ssh.SshConnection
 import io.github.lordofpolls.shellwave.ssh.TerminalSize
 import io.github.lordofpolls.shellwave.terminal.DEFAULT_KEY_BAR_KEYS
@@ -114,7 +89,6 @@ import io.github.lordofpolls.shellwave.terminal.selectionHighlightColor
 import io.github.lordofpolls.shellwave.terminal.terminalGestures
 import io.github.lordofpolls.shellwave.ui.design.EmptyState
 import io.github.lordofpolls.shellwave.ui.design.MachineText
-import io.github.lordofpolls.shellwave.ui.design.SessionCard
 import io.github.lordofpolls.shellwave.ui.design.SessionChipModel
 import io.github.lordofpolls.shellwave.ui.design.SessionChipRail
 import kotlinx.coroutines.channels.Channel
@@ -306,332 +280,32 @@ fun SessionsScreen(
             )
         }
 
-        Box(modifier = Modifier
-            .weight(1f)
-            .fillMaxSize()) {
-            val tabletop = posture as? FoldPosture.Tabletop
-            if (tabletop != null) {
-                // A vertical split ListDetailPaneScaffold has no concept of, so this bypasses it.
-                TabletopSessionLayout(
-                    hingeBoundsPx = tabletop.hingeBoundsPx,
-                    sessionId = selectedId,
-                    sessionManager = sessionManager,
-                    terminalProfile = terminalProfile,
-                    terminalProfileDao = terminalProfileDao,
-                    keyBarLayoutDao = keyBarLayoutDao,
-                    fileTransferController = fileTransferController,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            } else if (isWide && fullWidthTerminal) {
-                // Bypasses the scaffold rather than talking it into a Detail-only pane while
-                // `isWide` stays true. Reachable only while `isWide`, so a narrow window cannot get
-                // stuck.
-                SessionTabBody(
-                    sessionId = selectedId,
-                    sessionManager = sessionManager,
-                    terminalProfile = terminalProfile,
-                    terminalProfileDao = terminalProfileDao,
-                    keyBarLayoutDao = keyBarLayoutDao,
-                    fileTransferController = fileTransferController,
-                    modifier = Modifier.fillMaxSize()
-                )
-            } else {
-                ListDetailPaneScaffold(
-                    directive = navigator.scaffoldDirective,
-                    scaffoldState = navigator.scaffoldState,
-                    listPane = {
-                        AnimatedPane {
-                            SessionListPane(
-                                summaries = summaries,
-                                hosts = hosts,
-                                selectedId = selectedId,
-                                onSelect = ::selectSession,
-                                onReconnect = sessionManager::reconnectNow,
-                                onClose = sessionManager::closeSession,
-                                modifier = Modifier.fillMaxSize(),
-                            )
-                        }
-                    },
-                    detailPane = {
-                        AnimatedPane {
-                            SessionTabBody(
-                                sessionId = selectedId,
-                                sessionManager = sessionManager,
-                                terminalProfile = terminalProfile,
-                                terminalProfileDao = terminalProfileDao,
-                                keyBarLayoutDao = keyBarLayoutDao,
-                                fileTransferController = fileTransferController,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        }
-                    },
-                )
-            }
-
-            // Anchored to the terminal area, the thing whose shape it changes, instead of adding to
-            // either already-crowded strip.
-            if (isWide && tabletop == null) {
-                LayoutToggleButton(
-                    fullWidth = fullWidthTerminal,
-                    onToggle = {
-                        fullWidthTerminal = !fullWidthTerminal
-                        SessionLayoutPreferences.setFullWidthTerminal(
-                            layoutContext,
-                            fullWidthTerminal
-                        )
-                    },
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(12.dp),
-                )
-            }
-        }
+        SessionsSplitLayout(
+            posture = posture,
+            isWide = isWide,
+            fullWidthTerminal = fullWidthTerminal,
+            onToggleFullWidth = {
+                fullWidthTerminal = !fullWidthTerminal
+                SessionLayoutPreferences.setFullWidthTerminal(layoutContext, fullWidthTerminal)
+            },
+            navigator = navigator,
+            selectedId = selectedId,
+            onSelect = ::selectSession,
+            summaries = summaries,
+            hosts = hosts,
+            sessionManager = sessionManager,
+            terminalProfile = terminalProfile,
+            terminalProfileDao = terminalProfileDao,
+            keyBarLayoutDao = keyBarLayoutDao,
+            fileTransferController = fileTransferController,
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxSize(),
+        )
     }
 
     // Once for the screen: an AlertDialog overlays everything wherever it is composed.
     FileTransferDialogs(fileTransferController)
-}
-
-/**
- * The full-width/split toggle, and the one control still floating over the terminal. Folding it
- * into the rail's overflow would put a layout control for the screen inside a menu about the
- * session. Renders only where there are two panes to choose between.
- */
-@Composable
-private fun LayoutToggleButton(
-    fullWidth: Boolean,
-    onToggle: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        onClick = onToggle,
-        modifier = modifier,
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-        shadowElevation = 4.dp,
-    ) {
-        Text(
-            if (fullWidth) "◧ Split view" else "▭ Full width",
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-            style = MaterialTheme.typography.labelLarge,
-        )
-    }
-}
-
-/**
- * The list pane, hidden on a narrow window where the chip rail is the only switcher. Width-based
- * collapse is [androidx.compose.material3.adaptive.layout.PaneScaffoldDirective]'s call, not this
- * file's.
- *
- * Each row is a [SessionCard], the same component the Sessions destination uses, so there is one
- * anatomy to keep correct. [onReconnect]/[onClose] are per-card, so an unselected
- * `FAILED`/`DISCONNECTED` session needn't be switched to first just to reconnect or close it.
- */
-@Composable
-private fun SessionListPane(
-    summaries: List<SessionSummary>,
-    hosts: List<HostEntity>,
-    selectedId: Long,
-    onSelect: (Long) -> Unit,
-    onReconnect: (Long) -> Unit,
-    onClose: (Long) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        summaries.forEach { summary ->
-            SessionCard(
-                name = sessionDisplayName(summary.hostId, summary.label, hosts),
-                summary = summary,
-                selected = summary.id == selectedId,
-                onClick = { onSelect(summary.id) },
-                onReconnect = { onReconnect(summary.id) },
-                onClose = { onClose(summary.id) },
-            )
-        }
-    }
-}
-
-/**
- * Stops the terminal at the hinge's top edge and pushes the key bar below its bottom edge, instead
- * of the ordinary `weight(1f)` split. [hingeBoundsPx] is in window coordinates and this composable
- * is not necessarily at the window's top edge, so it measures its own position with
- * [onGloballyPositioned] and subtracts before using them.
- */
-@Composable
-private fun TabletopSessionLayout(
-    hingeBoundsPx: Rect,
-    sessionId: Long,
-    sessionManager: SessionManager,
-    terminalProfile: TerminalProfileEntity?,
-    terminalProfileDao: TerminalProfileDao,
-    keyBarLayoutDao: KeyBarLayoutDao,
-    fileTransferController: FileTransferController,
-    modifier: Modifier = Modifier,
-) {
-    val density = LocalDensity.current
-    var originInWindowPx by remember { mutableStateOf(Offset.Zero) }
-
-    Box(modifier = modifier.onGloballyPositioned { coords ->
-        originInWindowPx = coords.positionInWindow()
-    }) {
-        val localHingeTopPx = (hingeBoundsPx.top - originInWindowPx.y).coerceAtLeast(0f)
-        val localHingeBottomPx =
-            (hingeBoundsPx.bottom - originInWindowPx.y).coerceAtLeast(localHingeTopPx)
-        val terminalHeight = with(density) { localHingeTopPx.toDp() }
-        val hingeGap = with(density) { (localHingeBottomPx - localHingeTopPx).toDp() }
-
-        if (terminalHeight > 0.dp) {
-            SessionTabBody(
-                sessionId = sessionId,
-                sessionManager = sessionManager,
-                terminalProfile = terminalProfile,
-                terminalProfileDao = terminalProfileDao,
-                keyBarLayoutDao = keyBarLayoutDao,
-                fileTransferController = fileTransferController,
-                terminalHeight = terminalHeight,
-                preKeyBarGap = hingeGap,
-                modifier = Modifier.fillMaxSize(),
-            )
-        } else {
-            // Hinge at or above this layout's own top edge, e.g. mid fold-transition before the
-            // first onGloballyPositioned lands. Fall back to the weighted split rather than hand
-            // SessionTabBody a zero or negative height.
-            SessionTabBody(
-                sessionId = sessionId,
-                sessionManager = sessionManager,
-                terminalProfile = terminalProfile,
-                terminalProfileDao = terminalProfileDao,
-                keyBarLayoutDao = keyBarLayoutDao,
-                fileTransferController = fileTransferController,
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
-    }
-}
-
-/**
- * The terminal's overflow, pinned at the chip rail's right edge, and the only thing in that strip
- * besides the chips. It replaced four rows of chrome for actions touched once a session or less.
- *
- * Reconnect stayed on the Sessions overview, where a session that is not connected is managed:
- * offering it inside the terminal of a session with no terminal to show would be an action on a
- * surface that cannot display its own result.
- *
- * [connection] is non-null only while the selected session is `CONNECTED`, gating the three actions
- * that need a live channel. [onClose] is not gated - closing a session stuck mid-connect is exactly
- * when it is needed.
- *
- * Bell is a nested single-choice group carrying its value in the parent item's label, so the mode
- * reads without opening the submenu, which is the one thing the permanent toggle did well.
- */
-@Composable
-private fun TerminalOverflowMenu(
-    connection: SshConnection?,
-    bellMode: BellMode,
-    onBellMode: (BellMode) -> Unit,
-    onDownload: (SshConnection) -> Unit,
-    onUpload: (SshConnection) -> Unit,
-    onRunScript: (() -> Unit)?,
-    onClose: (() -> Unit)?,
-) {
-    var expanded by remember { mutableStateOf(false) }
-    var showingBell by remember { mutableStateOf(false) }
-
-    Box {
-        IconButton(
-            onClick = {
-                showingBell = false
-                expanded = true
-            },
-        ) {
-            Icon(Icons.Outlined.MoreVert, contentDescription = "Session options")
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            if (showingBell) {
-                DropdownMenuItem(
-                    text = { Text("Back") },
-                    leadingIcon = {
-                        Icon(
-                            Icons.AutoMirrored.Outlined.ArrowBack,
-                            contentDescription = null
-                        )
-                    },
-                    onClick = { showingBell = false },
-                )
-                BellMode.entries.forEach { mode ->
-                    DropdownMenuItem(
-                        text = { Text(BellPreferences.modeName(mode)) },
-                        // RadioButton carries the selected state to TalkBack as state; colour alone
-                        // would not.
-                        leadingIcon = { RadioButton(selected = mode == bellMode, onClick = null) },
-                        onClick = {
-                            onBellMode(mode)
-                            showingBell = false
-                        },
-                    )
-                }
-            } else {
-                if (connection != null) {
-                    DropdownMenuItem(
-                        text = { Text("Download file") },
-                        leadingIcon = { Icon(Icons.Outlined.Download, contentDescription = null) },
-                        onClick = {
-                            expanded = false
-                            onDownload(connection)
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Upload file") },
-                        leadingIcon = { Icon(Icons.Outlined.Upload, contentDescription = null) },
-                        onClick = {
-                            expanded = false
-                            onUpload(connection)
-                        },
-                    )
-                    if (onRunScript != null) {
-                        DropdownMenuItem(
-                            text = { Text("Run script here") },
-                            leadingIcon = {
-                                Icon(
-                                    Icons.Outlined.PlayArrow,
-                                    contentDescription = null
-                                )
-                            },
-                            onClick = {
-                                expanded = false
-                                onRunScript()
-                            },
-                        )
-                    }
-                }
-                DropdownMenuItem(
-                    text = { Text(BellPreferences.label(bellMode)) },
-                    leadingIcon = { Icon(Icons.Outlined.Notifications, contentDescription = null) },
-                    trailingIcon = {
-                        Icon(
-                            Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                            contentDescription = null
-                        )
-                    },
-                    onClick = { showingBell = true },
-                )
-                if (onClose != null) {
-                    DropdownMenuItem(
-                        text = { Text("Close session") },
-                        leadingIcon = { Icon(Icons.Outlined.Close, contentDescription = null) },
-                        onClick = {
-                            expanded = false
-                            onClose()
-                        },
-                    )
-                }
-            }
-        }
-    }
 }
 
 /**
@@ -646,7 +320,7 @@ private fun TerminalOverflowMenu(
 // whether the IME is up to decide between showing and hiding it, and there is no stable equivalent.
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun SessionTabBody(
+internal fun SessionTabBody(
     sessionId: Long,
     sessionManager: SessionManager,
     terminalProfileDao: TerminalProfileDao,
@@ -1135,46 +809,5 @@ private fun LinkActionDialog(
                 TextButton(onClick = onDismiss) { Text("Cancel") }
             }
         },
-    )
-}
-
-/**
- * "Run script here". Both modes that can act on an open session are offered, so each row carries a
- * second line saying which one it is. The difference is invisible from the script's name and is not
- * cosmetic: a send-to-current script is typed into the live shell, inheriting the working directory
- * and everything else the prompt is sitting in, and scrolls past in the terminal; a capture script
- * gets its own `exec` channel on the same connection, starting fresh at `~` with no shell state,
- * and comes back in a result sheet that is kept in run history. Picking the wrong one is only
- * obvious afterwards, so the label goes on the row.
- */
-@Composable
-private fun ScriptPickerDialog(
-    scripts: List<ScriptEntity>,
-    onPick: (ScriptEntity) -> Unit,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Run a script here") },
-        text = {
-            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                scripts.forEach { script ->
-                    TextButton(onClick = { onPick(script) }, modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            Text(script.name)
-                            Text(
-                                if (runCatching { ScriptMode.valueOf(script.mode) }.getOrNull() == ScriptMode.CAPTURE) {
-                                    "Runs separately, output captured"
-                                } else {
-                                    "Typed into this session"
-                                },
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }
