@@ -76,8 +76,8 @@ import io.github.lordofpolls.shellwave.feature.home.QuickConnectTarget
 import io.github.lordofpolls.shellwave.feature.home.savedHostsMatching
 import io.github.lordofpolls.shellwave.feature.host.AddEditHostScreen
 import io.github.lordofpolls.shellwave.feature.host.ImportSshConfigScreen
-import io.github.lordofpolls.shellwave.feature.host.duplicatedHostAssets
-import io.github.lordofpolls.shellwave.feature.host.hostDeleteBlockReason
+import io.github.lordofpolls.shellwave.feature.host.deleteHostWithCleanup
+import io.github.lordofpolls.shellwave.feature.host.duplicateHost
 import io.github.lordofpolls.shellwave.feature.nav.AppDestination
 import io.github.lordofpolls.shellwave.feature.nav.isNavAtRoot
 import io.github.lordofpolls.shellwave.feature.nav.popNav
@@ -693,66 +693,19 @@ class MainActivity : FragmentActivity() {
                                         },
                                         onDeleteHost = { host ->
                                             scope.launch {
-                                                // Pre-check the RESTRICT FK; see
-                                                // hostDeleteBlockReason for why this is a block and
-                                                // not a repair.
-                                                val blockReason = hostDeleteBlockReason(
-                                                    host,
-                                                    hostDao.getProxyJumpDependents(host.id)
-                                                )
-                                                if (blockReason != null) {
-                                                    scriptRunController.reportError(blockReason)
-                                                    return@launch
-                                                }
-                                                hostDao.delete(host)
-                                                // ~/.ssh/config import can attach one credential to
-                                                // several hosts, so this row is not always this
-                                                // host's alone to delete.
-                                                if (hostDao.countOtherHostsUsingCredential(
-                                                        host.credentialId,
-                                                        host.id
-                                                    ) == 0
-                                                ) {
-                                                    credentialDao.getById(host.credentialId)
-                                                        ?.let { credentialDao.delete(it) }
-                                                }
+                                                deleteHostWithCleanup(host, hostDao, credentialDao)
+                                                    ?.let { scriptRunController.reportError(it) }
                                             }
                                         },
-                                        // Override ids start null and are backfilled once their
-                                        // copied rows exist - see duplicatedHostAssets.
                                         onDuplicateHost = { host ->
                                             scope.launch {
-                                                val newHost = host.copy(
-                                                    id = 0,
-                                                    label = "${host.label ?: host.hostname} (copy)",
-                                                    lastConnectedAt = null,
-                                                    createdAt = System.currentTimeMillis(),
-                                                    terminalProfileId = null,
-                                                    colorSchemeId = null,
+                                                duplicateHost(
+                                                    host,
+                                                    hostDao,
+                                                    terminalProfileDao,
+                                                    colorSchemeDao,
+                                                    portForwardDao,
                                                 )
-                                                val newHostId = hostDao.insert(newHost)
-                                                val assets = duplicatedHostAssets(
-                                                    terminalProfile = host.terminalProfileId
-                                                        ?.let { terminalProfileDao.getById(it) },
-                                                    colorScheme = host.colorSchemeId
-                                                        ?.let { colorSchemeDao.getById(it) },
-                                                    portForwards = portForwardDao.getForHost(host.id),
-                                                    newHostId = newHostId,
-                                                )
-                                                val newTerminalProfileId =
-                                                    assets.terminalProfile?.let { terminalProfileDao.insert(it) }
-                                                val newColorSchemeId =
-                                                    assets.colorScheme?.let { colorSchemeDao.insert(it) }
-                                                if (newTerminalProfileId != null || newColorSchemeId != null) {
-                                                    hostDao.update(
-                                                        newHost.copy(
-                                                            id = newHostId,
-                                                            terminalProfileId = newTerminalProfileId,
-                                                            colorSchemeId = newColorSchemeId,
-                                                        ),
-                                                    )
-                                                }
-                                                assets.portForwards.forEach { portForwardDao.insert(it) }
                                             }
                                         },
                                         onWakeHost = { host ->
