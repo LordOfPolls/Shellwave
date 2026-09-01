@@ -47,6 +47,7 @@ import io.github.lordofpolls.shellwave.core.prefs.AutomationPreferences
 import io.github.lordofpolls.shellwave.core.util.extractParamNames
 import io.github.lordofpolls.shellwave.ui.design.BackTopBar
 import io.github.lordofpolls.shellwave.ui.design.MachineText
+import io.github.lordofpolls.shellwave.ui.design.rememberFormState
 import kotlinx.coroutines.launch
 
 /**
@@ -77,41 +78,19 @@ fun ScriptEditorScreen(
     // Keyed on existing?.id, never plain remember - see AddEditHostScreen. `prefill` joins the key
     // because it can move without existing?.id moving: picking a second template hands this screen
     // different values while existing?.id stays null, and the first template's text would latch.
-    var name by remember(existing?.id, prefill) { mutableStateOf(initial?.name.orEmpty()) }
-    var color by remember(existing?.id, prefill) {
-        mutableStateOf(
-            initial?.color ?: ScriptColor.DEFAULT
-        )
+    var name by rememberFormState(existing?.id to prefill) { initial?.name.orEmpty() }
+    var color by rememberFormState(existing?.id to prefill) { initial?.color ?: ScriptColor.DEFAULT }
+    var targetHostId by rememberFormState(existing?.id to prefill) { initial?.targetHostId }
+    var snippet by rememberFormState(existing?.id to prefill) { initial?.snippet.orEmpty() }
+    var mode by rememberFormState(existing?.id to prefill) {
+        runCatching { ScriptMode.valueOf(initial?.mode ?: "") }.getOrDefault(ScriptMode.ATTACH)
     }
-    var targetHostId by remember(existing?.id, prefill) { mutableStateOf(initial?.targetHostId) }
-    var snippet by remember(existing?.id, prefill) { mutableStateOf(initial?.snippet.orEmpty()) }
-    var mode by remember(existing?.id, prefill) {
-        mutableStateOf(runCatching {
-            ScriptMode.valueOf(
-                initial?.mode ?: ""
-            )
-        }.getOrDefault(ScriptMode.ATTACH))
-    }
-    var disconnectAfter by remember(existing?.id, prefill) {
-        mutableStateOf(
-            initial?.disconnectAfter ?: false
-        )
-    }
-    var confirmBeforeRun by remember(
-        existing?.id,
-        prefill
-    ) { mutableStateOf(initial?.confirmBeforeRun ?: false) }
-    var allowAutomation by remember(existing?.id, prefill) {
-        mutableStateOf(
-            initial?.allowAutomation ?: false
-        )
-    }
+    var disconnectAfter by rememberFormState(existing?.id to prefill) { initial?.disconnectAfter ?: false }
+    var confirmBeforeRun by rememberFormState(existing?.id to prefill) { initial?.confirmBeforeRun ?: false }
+    var allowAutomation by rememberFormState(existing?.id to prefill) { initial?.allowAutomation ?: false }
     var error by remember { mutableStateOf<String?>(null) }
 
-    val paramDefs = remember(
-        existing?.id,
-        prefill
-    ) {
+    val paramDefs = remember(existing?.id, prefill) {
         mutableStateMapOf<String, ScriptParam>().apply {
             decodeParams(initial?.paramsJson.orEmpty()).forEach {
                 put(

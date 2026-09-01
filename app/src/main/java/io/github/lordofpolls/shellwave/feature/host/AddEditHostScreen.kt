@@ -80,6 +80,7 @@ import io.github.lordofpolls.shellwave.terminal.DEFAULT_TERMINAL_PROFILE
 import io.github.lordofpolls.shellwave.ui.design.BackTopBar
 import io.github.lordofpolls.shellwave.ui.design.CollapsibleSection
 import io.github.lordofpolls.shellwave.ui.design.MachineText
+import io.github.lordofpolls.shellwave.ui.design.rememberFormState
 import kotlinx.coroutines.launch
 
 private enum class AuthKind { PASSWORD, IMPORT_KEY, GENERATE_KEY, KEYBOARD_INTERACTIVE }
@@ -129,36 +130,28 @@ fun AddEditHostScreen(
     val clipboard = LocalClipboard.current
 
     // Keyed on existing?.id, never plain remember - see this screen's doc.
-    var label by remember(existing?.id) { mutableStateOf(existing?.label.orEmpty()) }
-    var hostname by remember(existing?.id) { mutableStateOf(existing?.hostname.orEmpty()) }
-    var port by remember(existing?.id) { mutableStateOf((existing?.port ?: 22).toString()) }
-    var username by remember(existing?.id) { mutableStateOf(existing?.username.orEmpty()) }
-    var requireBiometric by remember(existing?.id) { mutableStateOf(false) }
-    var resilientSession by remember(existing?.id) {
-        mutableStateOf(
-            existing?.resilientSession ?: false
-        )
-    }
-    var macAddress by remember(existing?.id) { mutableStateOf(existing?.macAddress.orEmpty()) }
+    var label by rememberFormState(existing?.id) { existing?.label.orEmpty() }
+    var hostname by rememberFormState(existing?.id) { existing?.hostname.orEmpty() }
+    var port by rememberFormState(existing?.id) { (existing?.port ?: 22).toString() }
+    var username by rememberFormState(existing?.id) { existing?.username.orEmpty() }
+    var requireBiometric by rememberFormState(existing?.id) { false }
+    var resilientSession by rememberFormState(existing?.id) { existing?.resilientSession ?: false }
+    var macAddress by rememberFormState(existing?.id) { existing?.macAddress.orEmpty() }
     var detectingMac by remember { mutableStateOf(false) }
-    var overrideEditor by remember(existing?.id) { mutableStateOf<OverrideEditor?>(null) }
+    var overrideEditor by rememberFormState<OverrideEditor?>(existing?.id) { null }
 
     // Each override is its own dedicated row, shared with nothing. Null means "no override yet"; a
     // non-null value is already persisted, inserted the moment the toggle is switched on, so its
     // id is exactly what save() writes into HostEntity.
-    var terminalProfileOverride by remember(existing?.id) {
-        mutableStateOf<TerminalProfileEntity?>(
-            null
-        )
-    }
-    var colorSchemeOverride by remember(existing?.id) { mutableStateOf<ColorSchemeEntity?>(null) }
+    var terminalProfileOverride by rememberFormState<TerminalProfileEntity?>(existing?.id) { null }
+    var colorSchemeOverride by rememberFormState<ColorSchemeEntity?>(existing?.id) { null }
     // The key bar points at one of the shared named layouts - a plain id, and no row this screen
     // owns.
-    var keyBarLayoutId by remember(existing?.id) { mutableStateOf(existing?.keyBarLayoutId) }
+    var keyBarLayoutId by rememberFormState(existing?.id) { existing?.keyBarLayoutId }
     // Null means "connect directly". Cycle prevention stops at excluding this host itself: a
     // multi-hop cycle can only be seen by walking the whole chain, which resolveProxyChain already
     // does at connect time with a clear error.
-    var proxyJumpHostId by remember(existing?.id) { mutableStateOf(existing?.proxyJumpHostId) }
+    var proxyJumpHostId by rememberFormState(existing?.id) { existing?.proxyJumpHostId }
     val allHosts by hostDao.observeAll().collectAsState(initial = emptyList())
 
     LaunchedEffect(existing?.id, existing?.terminalProfileId) {
@@ -220,7 +213,7 @@ fun AddEditHostScreen(
 
     // A config import creates credentials with no sealed secret, and this is the screen that fills
     // one in. Assumed present until described, so an existing host never flashes the notice below.
-    var storedSecretPresent by remember(existing?.id) { mutableStateOf(true) }
+    var storedSecretPresent by rememberFormState(existing?.id) { true }
 
     LaunchedEffect(existing?.credentialId) {
         val credentialId = existing?.credentialId ?: return@LaunchedEffect
