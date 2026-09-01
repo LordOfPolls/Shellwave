@@ -14,15 +14,13 @@ import io.github.lordofpolls.shellwave.core.db.dao.ScriptRunDao
 import io.github.lordofpolls.shellwave.core.db.entities.ScriptEntity
 import io.github.lordofpolls.shellwave.core.db.entities.ScriptRunEntity
 import io.github.lordofpolls.shellwave.core.util.substituteParams
-import io.github.lordofpolls.shellwave.ssh.AuthMethod
 import io.github.lordofpolls.shellwave.ssh.CaptureResult
 import io.github.lordofpolls.shellwave.ssh.ConnectionSpec
-import io.github.lordofpolls.shellwave.ssh.ProxyHop
 import io.github.lordofpolls.shellwave.ssh.ScriptRunner
 import io.github.lordofpolls.shellwave.ssh.SessionManager
 import io.github.lordofpolls.shellwave.ssh.SessionStatus
 import io.github.lordofpolls.shellwave.ssh.SshConnection
-import io.github.lordofpolls.shellwave.ssh.resolveProxyHops
+import io.github.lordofpolls.shellwave.ssh.resolveConnectionSpec
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
@@ -188,11 +186,9 @@ internal constructor(
                 return
             }
             captureUiState = CaptureRunUiState(script.name, running = true)
-            val authMethod: AuthMethod
-            val hops: List<ProxyHop>
+            val spec: ConnectionSpec
             try {
-                authMethod = credentialVault.resolve(host.credentialId, activity)
-                hops = resolveProxyHops(host, hostDao, credentialVault, activity)
+                spec = resolveConnectionSpec(host, hostDao, credentialVault, activity)
             } catch (e: Exception) {
                 captureUiState = null
                 if (!e.isBiometricCancellation()) error =
@@ -207,9 +203,9 @@ internal constructor(
                 host.hostname,
                 host.port,
                 host.username,
-                authMethod,
+                spec.authMethod,
                 command,
-                hops
+                spec.proxyHops
             )
         }
         val finishedAt = System.currentTimeMillis()
@@ -252,25 +248,14 @@ internal constructor(
             error = "The host this script targets no longer exists"
             return
         }
-        val authMethod: AuthMethod
-        val hops: List<ProxyHop>
+        val spec: ConnectionSpec
         try {
-            authMethod = credentialVault.resolve(host.credentialId, activity)
-            hops = resolveProxyHops(host, hostDao, credentialVault, activity)
+            spec = resolveConnectionSpec(host, hostDao, credentialVault, activity)
         } catch (e: Exception) {
             if (!e.isBiometricCancellation()) error =
                 e.message ?: "Could not unlock this host's saved credential"
             return
         }
-        val spec = ConnectionSpec(
-            host.hostname,
-            host.port,
-            host.username,
-            authMethod,
-            host.id,
-            host.resilientSession,
-            hops
-        )
         val sessionId = sessionManager.openSession(spec)
         onSessionOpened(sessionId)
         val command = substituteParams(script.snippet, values)

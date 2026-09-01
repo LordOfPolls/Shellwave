@@ -27,7 +27,7 @@ private fun CredentialEntity.hasSealedSecret(): Boolean =
  * [VaultCrypto], [BiometricGate] and [KeyboardInteractiveGate].
  */
 @Singleton
-class CredentialVault
+open class CredentialVault
 @Inject
 constructor(
     private val vaultCrypto: VaultCrypto,
@@ -140,7 +140,7 @@ constructor(
      * this opportunistically re-seals it onto [VaultCrypto.ALIAS_BIOMETRIC_WINDOWED] before returning:
      * see [resealOntoWindowedAliasIfDue].
      */
-    suspend fun resolve(
+    open suspend fun resolve(
         credentialId: Long,
         activity: FragmentActivity?,
         trigger: TriggerAuth? = null,

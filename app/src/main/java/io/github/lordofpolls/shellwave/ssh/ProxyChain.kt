@@ -162,3 +162,23 @@ suspend fun resolveProxyHops(
             credentialVault.resolve(host.credentialId, activity, trigger)
         )
     }
+
+suspend fun resolveConnectionSpec(
+    host: HostEntity,
+    hostDao: HostDao,
+    credentialVault: CredentialVault,
+    activity: FragmentActivity?,
+    trigger: CredentialVault.TriggerAuth? = null,
+): ConnectionSpec {
+    val authMethod = credentialVault.resolve(host.credentialId, activity, trigger)
+    val hops = resolveProxyHops(host, hostDao, credentialVault, activity, trigger)
+    return ConnectionSpec(
+        host.hostname,
+        host.port,
+        host.username,
+        authMethod,
+        hostId = host.id,
+        resilientSession = host.resilientSession,
+        proxyHops = hops,
+    )
+}

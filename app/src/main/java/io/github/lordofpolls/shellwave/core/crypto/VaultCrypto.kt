@@ -75,7 +75,8 @@ private const val GCM_TAG_BITS = 128
 @Singleton
 class VaultCrypto @Inject constructor() {
 
-    private val keyStore: KeyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+    // Lazy so JVM tests can construct this without an AndroidKeyStore; only loading a key needs one.
+    private val keyStore: KeyStore by lazy { KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) } }
 
     /**
      * Generates the key for [alias] if it doesn't already exist in the Keystore. Idempotent. [alias]

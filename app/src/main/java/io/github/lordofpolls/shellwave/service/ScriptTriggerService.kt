@@ -26,7 +26,7 @@ import io.github.lordofpolls.shellwave.feature.scripts.mark
 import io.github.lordofpolls.shellwave.feature.scripts.runOutcomeMessage
 import io.github.lordofpolls.shellwave.service.ScriptTriggerService.Companion.start
 import io.github.lordofpolls.shellwave.ssh.ScriptRunner
-import io.github.lordofpolls.shellwave.ssh.resolveProxyHops
+import io.github.lordofpolls.shellwave.ssh.resolveConnectionSpec
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -89,7 +89,7 @@ class InFlightRunCounter {
  *
  * Biometric-gated credentials fail one layer down, by default: `CredentialVault.resolve` is called
  * with `activity = null`, and the [IllegalStateException] it throws is caught below and reported like
- * any other refusal. [resolveProxyHops] resolves each jump host's credential the same way, so a
+ * any other refusal. [resolveConnectionSpec] resolves each jump host's credential the same way, so a
  * bastion refuses exactly as the target would, and a keyboard-interactive hop is refused before
  * anything connects.
  *
@@ -197,27 +197,17 @@ class ScriptTriggerService : Service() {
             return
         }
 
-        val authMethod =
+        // A cycle, a dangling jump host, or a hop needing a biometric prompt all surface as a clear
+        // notification and not this service hanging or crashing. A hop needing a
+        // keyboard-interactive prompt is not rejected here - runCaptureBackground checks that.
+        val spec =
             try {
-                credentialVault.resolve(host.credentialId, activity = null, trigger = trigger)
+                resolveConnectionSpec(host, hostDao, credentialVault, activity = null, trigger = trigger)
             } catch (e: Exception) {
                 notifyOutcome(
                     script.name,
                     e.message
-                        ?: "Could not unlock this host's saved credential without opening the app."
-                )
-                return
-            }
-        // A cycle, a dangling jump host, or a hop needing a biometric prompt all surface as a clear
-        // notification and not this service hanging or crashing. A hop needing a
-        // keyboard-interactive prompt is not rejected here - runCaptureBackground checks that.
-        val hops =
-            try {
-                resolveProxyHops(host, hostDao, credentialVault, activity = null, trigger = trigger)
-            } catch (e: Exception) {
-                notifyOutcome(
-                    script.name,
-                    e.message ?: "Could not resolve this host's proxy jump chain."
+                        ?: "Could not unlock this host's saved credential or resolve its proxy jump chain without opening the app."
                 )
                 return
             }
@@ -229,9 +219,9 @@ class ScriptTriggerService : Service() {
             host.hostname,
             host.port,
             host.username,
-            authMethod,
+            spec.authMethod,
             command,
-            hops
+            spec.proxyHops
         )
         val finishedAt = System.currentTimeMillis()
 

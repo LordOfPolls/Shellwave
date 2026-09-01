@@ -105,7 +105,7 @@ import io.github.lordofpolls.shellwave.ssh.KeyboardInteractiveGate
 import io.github.lordofpolls.shellwave.ssh.ScriptRunner
 import io.github.lordofpolls.shellwave.ssh.SessionManager
 import io.github.lordofpolls.shellwave.ssh.SessionStatus
-import io.github.lordofpolls.shellwave.ssh.resolveProxyHops
+import io.github.lordofpolls.shellwave.ssh.resolveConnectionSpec
 import io.github.lordofpolls.shellwave.terminal.DEFAULT_COLOR_SCHEME
 import io.github.lordofpolls.shellwave.ui.design.ShellwaveTheme
 import kotlinx.coroutines.flow.first
@@ -466,21 +466,13 @@ class MainActivity : FragmentActivity() {
                 fun connectSaved(host: HostEntity) {
                     scope.launch {
                         try {
-                            val authMethod =
-                                credentialVault.resolve(host.credentialId, this@MainActivity)
-                            val hops =
-                                resolveProxyHops(host, hostDao, credentialVault, this@MainActivity)
-                            openSession(
-                                ConnectionSpec(
-                                    host.hostname,
-                                    host.port,
-                                    host.username,
-                                    authMethod,
-                                    host.id,
-                                    host.resilientSession,
-                                    hops
-                                )
+                            val spec = resolveConnectionSpec(
+                                host,
+                                hostDao,
+                                credentialVault,
+                                this@MainActivity
                             )
+                            openSession(spec)
                         } catch (e: Exception) {
                             // Same rationale as the openHostRequested LaunchedEffect above.
                             if (!e.isBiometricCancellation()) scriptRunController.reportError(
@@ -618,25 +610,13 @@ class MainActivity : FragmentActivity() {
                         val host = hostDao.getById(openHostRequestedState)
                         if (host != null) {
                             try {
-                                val authMethod =
-                                    credentialVault.resolve(host.credentialId, this@MainActivity)
-                                val hops = resolveProxyHops(
+                                val spec = resolveConnectionSpec(
                                     host,
                                     hostDao,
                                     credentialVault,
                                     this@MainActivity
                                 )
-                                openSession(
-                                    ConnectionSpec(
-                                        host.hostname,
-                                        host.port,
-                                        host.username,
-                                        authMethod,
-                                        host.id,
-                                        host.resilientSession,
-                                        hops
-                                    )
-                                )
+                                openSession(spec)
                             } catch (e: Exception) {
                                 // A cancelled biometric prompt is the user changing their mind;
                                 // only a genuine failure (lockout, no credential) gets surfaced.
