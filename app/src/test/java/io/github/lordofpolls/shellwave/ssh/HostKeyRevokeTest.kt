@@ -3,6 +3,7 @@ package io.github.lordofpolls.shellwave.ssh
 import net.schmizz.sshj.common.KeyType
 import net.schmizz.sshj.transport.verification.OpenSSHKnownHosts.HostEntry
 import net.schmizz.sshj.transport.verification.OpenSSHKnownHosts.Marker
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -37,11 +38,7 @@ class HostKeyRevokeTest {
     ) {
         val thread = Thread(action)
         thread.start()
-        val deadline = System.currentTimeMillis() + 5_000
-        while (gate.pending.value.isEmpty()) {
-            check(System.currentTimeMillis() < deadline) { "timed out waiting for a pending request" }
-            Thread.sleep(1)
-        }
+        waitForPending(gate)
         gate.pending.value.values.first().decide(accept)
         thread.join(5_000)
     }
@@ -170,5 +167,95 @@ class HostKeyRevokeTest {
             oldKeyAccepted = verifier.verify("hosta", 22, oldKey)
         }
         assertFalse("the old key must no longer verify silently", oldKeyAccepted)
+    }
+
+    /** Blocks the caller until [gate] has a pending request, without deciding it. */
+    private fun waitForPending(gate: HostVerificationGate) {
+        val deadline = System.currentTimeMillis() + 5_000
+        while (gate.pending.value.isEmpty()) {
+            check(System.currentTimeMillis() < deadline) { "timed out waiting for a pending request" }
+            Thread.sleep(1)
+        }
+    }
+
+    @Test
+    fun `an unknown host blocks on the gate and is not written until a decision`() {
+        val file = File.createTempFile("known_hosts", "").apply { deleteOnExit() }
+        val key = ed25519Key()
+        val gate = HostVerificationGate()
+        val verifier = TestVerifier(file, gate)
+
+        var result: Boolean? = null
+        val thread = Thread { result = verifier.unverifiable("hosta", key) }
+        thread.start()
+        waitForPending(gate)
+
+        assertTrue(
+            "must not write known_hosts before a decision is made",
+            file.readText().isBlank(),
+        )
+
+        gate.pending.value.values.first().decide(true)
+        thread.join(5_000)
+
+        assertTrue("an accepted unknown host must return true", result == true)
+        assertTrue(
+            "must write known_hosts once accepted",
+            file.readText().contains(HostEntry(null, "hosta", KeyType.ED25519, key).line),
+        )
+    }
+
+    @Test
+    fun `cancel on the gate resolves a pending decision to reject`() {
+        val file = File.createTempFile("known_hosts", "").apply { deleteOnExit() }
+        val key = ed25519Key()
+        val gate = HostVerificationGate()
+        val verifier = TestVerifier(file, gate)
+
+        var result: Boolean? = null
+        val thread = Thread { result = verifier.unverifiable("hosta", key) }
+        thread.start()
+        waitForPending(gate)
+
+        gate.cancel(verifier)
+        thread.join(5_000)
+
+        assertEquals("a cancelled attempt must reject the host key", false, result)
+        assertTrue("a rejected key must never be written", file.readText().isBlank())
+        assertTrue("cancel must clear the pending request", gate.pending.value.isEmpty())
+    }
+
+    /**
+     * Stands in for sshj's own connect timeout firing with the dialog still up (see
+     * HostVerificationGate's class doc): the pending decision is cancelled, not answered, and the
+     * changed key must not be accepted on the strength of that alone.
+     */
+    @Test
+    fun `a changed key is never accepted without an explicit decision`() {
+        val file = File.createTempFile("known_hosts", "").apply { deleteOnExit() }
+        val oldKey = ed25519Key()
+        file.writeText(HostEntry(null, "hosta", KeyType.ED25519, oldKey).line + "\n")
+        val newKey = ed25519Key()
+        val gate = HostVerificationGate()
+        val verifier = TestVerifier(file, gate)
+
+        var result: Boolean? = null
+        val thread = Thread { result = verifier.changed("hosta", newKey) }
+        thread.start()
+        waitForPending(gate)
+
+        gate.cancel(verifier)
+        thread.join(5_000)
+
+        assertEquals("a timed-out/cancelled key change must reject, not accept", false, result)
+        val lines = file.readLines()
+        assertTrue(
+            "the superseded key must survive - nothing was ever accepted",
+            lines.contains(HostEntry(null, "hosta", KeyType.ED25519, oldKey).line),
+        )
+        assertFalse(
+            "the new key must never be written",
+            lines.contains(HostEntry(null, "hosta", KeyType.ED25519, newKey).line),
+        )
     }
 }
