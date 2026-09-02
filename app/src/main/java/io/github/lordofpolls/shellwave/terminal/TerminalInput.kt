@@ -46,10 +46,9 @@ private val PLACEHOLDER_VALUE = TextFieldValue(PLACEHOLDER, TextRange(1))
  * custom-drawn canvas with no semantics of its own, so this field is the only node a screen reader
  * lands on, and without a label its "text" is [PLACEHOLDER], which TalkBack announces as "space".
  *
- * It names the surface; it does not read the screen. TODO: a screen reader user currently gets no
- * access to terminal output at all. Publishing the buffer naively is worse than nothing - anything
- * animated (htop, vim, a build log) becomes a stream of announcements no one can follow - so this
- * wants throttling and a scrollable-region model.
+ * [screenText] is the visible screen content, already rate-limited by the caller so fast output
+ * (a build log, `yes`) doesn't turn into a flood of announcements - this composable just publishes
+ * whatever it's given.
  */
 @Composable
 fun TerminalInputCapture(
@@ -57,6 +56,7 @@ fun TerminalInputCapture(
     onText: (String) -> Unit,
     onBackspace: () -> Unit,
     accessibilityLabel: String,
+    screenText: String,
     modifier: Modifier = Modifier,
 ) {
     var value by remember { mutableStateOf(PLACEHOLDER_VALUE) }
@@ -105,7 +105,10 @@ fun TerminalInputCapture(
             // SetText action are what make the IME reachable at all.
             modifier = modifier
                 .focusRequester(focusRequester)
-                .semantics { contentDescription = accessibilityLabel },
+                .semantics {
+                    contentDescription =
+                        if (screenText.isEmpty()) accessibilityLabel else "$accessibilityLabel\n$screenText"
+                },
             textStyle = TextStyle(color = Color.Transparent),
             cursorBrush = SolidColor(Color.Transparent),
             keyboardOptions =

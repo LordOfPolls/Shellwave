@@ -97,6 +97,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -392,6 +393,18 @@ internal fun SessionTabBody(
         }
     }
 
+    // Rate-limited to one announcement per 400ms so a screen reader isn't flooded per tick - sample
+    // over debounce because a build log with no pause would otherwise never let debounce emit.
+    var screenText by remember { mutableStateOf("") }
+    LaunchedEffect(summary.connection) {
+        summary.connection.outputTick.sample(400).collect {
+            val emulator = terminalEmulator
+            screenText =
+                emulator?.screen?.getSelectedText(0, 0, emulator.mColumns, emulator.mRows)
+                    ?.trimEnd() ?: ""
+        }
+    }
+
     // Re-runs on a fresh SshConnection identity: first connect, or a reconnect.
     LaunchedEffect(summary.connection) {
         summary.connection.outputTick.collect {
@@ -674,6 +687,7 @@ internal fun SessionTabBody(
                 // Named per session with the label the chip rail shows, so announcement and screen
                 // agree.
                 accessibilityLabel = "Terminal, ${summary.label}",
+                screenText = screenText,
                 modifier = Modifier.matchParentSize(),
             )
             if (topRow < 0) {
