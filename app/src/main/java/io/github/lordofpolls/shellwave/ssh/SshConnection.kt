@@ -83,7 +83,7 @@ internal const val RESILIENT_SESSION_BOOTSTRAP =
  * `clean = true` for a normal EOF, `clean = false` for an `IOException`, covering network loss and
  * sshj's keepalive giving up. It is suppressed when [disconnect] came first.
  */
-class SshConnection(
+open class SshConnection(
     private val scope: CoroutineScope,
     private val context: Context,
     private val onDisconnected: (clean: Boolean) -> Unit = {},
@@ -193,8 +193,11 @@ class SshConnection(
      * run as a different exec target, which keeps [shell] a Session.Shell with `changeWindowDimensions`
      * - [Session.Command] has no such method. It also puts the line in the scrollback as though typed,
      * so the fallback to a plain shell is visible.
+     *
+     * `open`, with [disconnect]/[stopAllForwards]: SessionManagerTest substitutes a fake that never
+     * touches a real socket, since driving these for real would need a live SSH server.
      */
-    suspend fun connect(
+    open suspend fun connect(
         host: String,
         port: Int,
         username: String,
@@ -405,7 +408,7 @@ class SshConnection(
      * socket is never closed: the app drops the session from its UI while the server keeps the TCP
      * connection and its shell alive indefinitely.
      */
-    fun disconnect() {
+    open fun disconnect() {
         closing.set(true)
         readerJob?.cancel()
         scope.launch(Dispatchers.IO) {
@@ -551,7 +554,7 @@ class SshConnection(
      * another hop. [RemotePortForwarder.cancel] on a dead transport is expected to throw; the point
      * here is only to forget about it locally.
      */
-    fun stopAllForwards() {
+    open fun stopAllForwards() {
         localForwarders.keys.toList()
             .forEach { id -> localForwarders.remove(id)?.let { runCatching { it.close() } } }
         remoteForwards.keys.toList().forEach { id ->

@@ -3,6 +3,7 @@ package io.github.lordofpolls.shellwave.ssh
 import android.content.Context
 import android.content.Intent
 import android.os.SystemClock
+import androidx.annotation.VisibleForTesting
 import androidx.core.content.ContextCompat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.github.lordofpolls.shellwave.core.db.dao.ColorSchemeDao
@@ -153,6 +154,10 @@ constructor(
     private val nextId = AtomicLong(1)
     private val entries = ConcurrentHashMap<Long, Entry>()
 
+    /** Hilt's generated factory cannot omit a defaulted constructor arg, so the test seam is a settable var. */
+    @VisibleForTesting
+    internal var connectionFactory: (Long) -> SshConnection = ::newConnection
+
     private val _summaries = MutableStateFlow<List<SessionSummary>>(emptyList())
     val summaries: StateFlow<List<SessionSummary>> = _summaries
 
@@ -213,7 +218,7 @@ constructor(
      */
     fun openSession(spec: ConnectionSpec): Long {
         val id = nextId.getAndIncrement()
-        val connection = newConnection(id)
+        val connection = connectionFactory(id)
         // Always includes the port, non-default or otherwise: two sessions to the same host on
         // different ports are otherwise distinguishable only by status glyph, which the list pane
         // makes worse by showing several sessions side by side.
@@ -276,7 +281,7 @@ constructor(
         entry.backoffJob?.cancel()
         entry.connection.stopAllForwards() // release bound ports before disconnect()'s async teardown gets to it - see this method's doc
         entry.connection.disconnect() // the old, dead connection - freshen up before retrying it
-        entry.connection = newConnection(entry.id)
+        entry.connection = connectionFactory(entry.id)
         managerScope.launch { attemptConnect(entry) }
     }
 
@@ -628,7 +633,7 @@ constructor(
             if (entries[entry.id] !== entry) return // closed, or replaced by a manual reconnect
             if (entry.status != SessionStatus.RECONNECTING) return
             entry.connection.disconnect() // the old, dead connection - freshen up before retrying it
-            entry.connection = newConnection(entry.id)
+            entry.connection = connectionFactory(entry.id)
             attemptConnect(entry)
             if (entry.status == SessionStatus.CONNECTED) return
             if (entries[entry.id] !== entry) return

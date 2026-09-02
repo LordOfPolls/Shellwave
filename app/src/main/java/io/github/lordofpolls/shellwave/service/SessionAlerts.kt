@@ -33,7 +33,7 @@ private const val RECOVERY_TIMEOUT_MS = 15_000L
  * it isn't, where a banner over the user's own terminal would be noise.
  */
 @Singleton
-class SessionAlerts @Inject constructor(@ApplicationContext private val context: Context) {
+open class SessionAlerts @Inject constructor(@ApplicationContext private val context: Context) {
 
     // Toast and ProcessLifecycleOwner are both main-thread-only; callers are on whatever thread
     // noticed the drop.
@@ -41,7 +41,10 @@ class SessionAlerts @Inject constructor(@ApplicationContext private val context:
 
     private val alerted = ConcurrentHashMap.newKeySet<Long>()
 
-    fun dropped(sessionId: Long, label: String) {
+    // open: SessionManagerTest substitutes a no-op subclass, since these post real notifications
+    // through Dispatchers.Main, which has no JVM-test-friendly implementation in this codebase (no
+    // Robolectric, no kotlinx-coroutines-test).
+    open fun dropped(sessionId: Long, label: String) {
         if (!alerted.add(sessionId)) return
         alert(
             sessionId,
@@ -51,7 +54,7 @@ class SessionAlerts @Inject constructor(@ApplicationContext private val context:
         )
     }
 
-    fun reconnected(sessionId: Long, label: String) {
+    open fun reconnected(sessionId: Long, label: String) {
         if (!alerted.remove(sessionId)) return
         alert(
             sessionId,
@@ -61,7 +64,7 @@ class SessionAlerts @Inject constructor(@ApplicationContext private val context:
         )
     }
 
-    fun forget(sessionId: Long) {
+    open fun forget(sessionId: Long) {
         alerted.remove(sessionId)
         scope.launch {
             context.getSystemService(NotificationManager::class.java)
