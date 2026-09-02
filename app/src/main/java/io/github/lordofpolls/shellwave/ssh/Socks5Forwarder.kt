@@ -65,6 +65,10 @@ internal class Socks5Forwarder(
     private val ssh: SSHClient,
     private val serverSocket: ServerSocket,
     private val scope: CoroutineScope,
+    // Overridden in tests: the real path needs a live SSH session.
+    private val openChannel: (String, Int) -> DirectConnection = { host, port ->
+        ssh.newDirectConnection(host, port).also { it.open() }
+    },
 ) {
     private val activeSockets = ConcurrentHashMap.newKeySet<Socket>()
 
@@ -105,7 +109,7 @@ internal class Socks5Forwarder(
         val target = readConnectRequest(input, output) ?: return
         val channel =
             try {
-                ssh.newDirectConnection(target.host, target.port).also { it.open() }
+                openChannel(target.host, target.port)
             } catch (e: IOException) {
                 writeReply(output, mapOpenFailure(e))
                 return
