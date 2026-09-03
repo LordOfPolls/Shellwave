@@ -19,7 +19,10 @@ internal data class PendingDownload(val connection: SshConnection, val remotePat
 internal data class PendingUpload(
     val connection: SshConnection,
     val source: Uri,
-    val sourceName: String
+    val sourceName: String,
+    // Set when upload was requested from a directory the caller already knows, e.g. the SFTP
+    // browser's current folder, so the destination prompt starts there instead of a bare filename.
+    val initialDirectory: String? = null,
 )
 
 internal data class TransferProgress(
@@ -127,20 +130,26 @@ internal class FileTransferController internal constructor(private val scope: Co
         pendingDownload = null
     }
 
-    fun requestUpload(connection: SshConnection) {
+    private var uploadInitialDirectory: String? = null
+
+    fun requestUpload(connection: SshConnection, initialDirectory: String? = null) {
         uploadSourcePrompt = connection
+        uploadInitialDirectory = initialDirectory
     }
 
     fun dismissUploadSourcePrompt() {
         uploadSourcePrompt = null
+        uploadInitialDirectory = null
     }
 
     /** Reads and clears [uploadSourcePrompt] itself, so the picker's result callback only has to pass what the picker returned. */
     fun uploadSourcePicked(source: Uri?, sourceName: String) {
         val connection = uploadSourcePrompt
+        val initialDirectory = uploadInitialDirectory
         uploadSourcePrompt = null
+        uploadInitialDirectory = null
         if (connection == null || source == null) return // cancelled the SAF picker
-        uploadDestinationPrompt = PendingUpload(connection, source, sourceName)
+        uploadDestinationPrompt = PendingUpload(connection, source, sourceName, initialDirectory)
     }
 
     fun dismissUploadDestinationPrompt() {

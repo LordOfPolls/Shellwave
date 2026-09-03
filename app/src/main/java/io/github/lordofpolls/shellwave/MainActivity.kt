@@ -92,6 +92,7 @@ import io.github.lordofpolls.shellwave.feature.scripts.ScriptsScreen
 import io.github.lordofpolls.shellwave.feature.scripts.rememberScriptRunController
 import io.github.lordofpolls.shellwave.feature.session.SessionsListScreen
 import io.github.lordofpolls.shellwave.feature.session.SessionsScreen
+import io.github.lordofpolls.shellwave.feature.session.SftpBrowserScreen
 import io.github.lordofpolls.shellwave.feature.settings.ConfigExporter
 import io.github.lordofpolls.shellwave.feature.settings.ConfigImporter
 import io.github.lordofpolls.shellwave.feature.settings.KeyBarLayoutsScreen
@@ -156,6 +157,8 @@ private sealed class Screen {
     data object License : Screen()
 
     data object ImportSshConfig : Screen()
+
+    data class SftpBrowser(val sessionId: Long) : Screen()
 }
 
 /**
@@ -385,6 +388,7 @@ class MainActivity : FragmentActivity() {
                 // Set when a specific session is tapped, rather than always landing on the first
                 // one.
                 var targetSessionId by rememberSaveable { mutableStateOf<Long?>(null) }
+                var browsingSessionId by rememberSaveable { mutableStateOf<Long?>(null) }
                 val scope = rememberCoroutineScope()
 
                 val summaries by sessionManager.summaries.collectAsState()
@@ -398,6 +402,7 @@ class MainActivity : FragmentActivity() {
                         "terminalSettings" -> Screen.TerminalSettings
                         "license" -> Screen.License
                         "importSshConfig" -> Screen.ImportSshConfig
+                        "sftpBrowser" -> browsingSessionId?.let { Screen.SftpBrowser(it) } ?: Screen.Terminal
                         "terminal" -> Screen.Terminal
                         else ->
                             when (destination) {
@@ -774,6 +779,10 @@ class MainActivity : FragmentActivity() {
                                                 connection
                                             )
                                         },
+                                        onBrowseFiles = { sessionId, _ ->
+                                            browsingSessionId = sessionId
+                                            push("sftpBrowser")
+                                        },
                                         terminalProfile = terminalProfile,
                                         terminalProfileDao = terminalProfileDao,
                                         keyBarLayoutDao = keyBarLayoutDao,
@@ -939,6 +948,22 @@ class MainActivity : FragmentActivity() {
                                         onBack = { popBack() },
                                         modifier = Modifier.weight(1f),
                                     )
+                                }
+
+                                is Screen.SftpBrowser -> {
+                                    val connection =
+                                        summaries.firstOrNull { it.id == current.sessionId }?.connection
+                                    if (connection == null) {
+                                        // The session closed while this screen was open - nothing
+                                        // left to browse.
+                                        LaunchedEffect(Unit) { popBack() }
+                                    } else {
+                                        SftpBrowserScreen(
+                                            connection = connection,
+                                            onBack = { popBack() },
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                    }
                                 }
 
                                 is Screen.KeyBarLayouts -> {

@@ -1,13 +1,20 @@
 package io.github.lordofpolls.shellwave.ssh
 
 /**
- * No size, mtime or permissions: a picker, not an SFTP browser, and every extra field is a column
- * someone would then want to sort by.
- *
  * [isDirectory] is resolved rather than a raw file type - a symlink cannot be classified without
  * following it.
+ *
+ * [size] and [mtime] (seconds since epoch) default to -1, meaning "the server's attributes did not
+ * include this field" - a real SFTP outcome, not just an unset default - so callers never mistake
+ * it for a guessed zero.
  */
-data class RemoteEntry(val name: String, val path: String, val isDirectory: Boolean)
+data class RemoteEntry(
+    val name: String,
+    val path: String,
+    val isDirectory: Boolean,
+    val size: Long = -1L,
+    val mtime: Long = -1L,
+)
 
 /**
  * The picker asks for `.` or a typed `~/logs`, and only the server knows what those resolve to.

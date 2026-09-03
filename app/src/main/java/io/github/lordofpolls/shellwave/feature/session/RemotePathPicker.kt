@@ -158,7 +158,7 @@ internal fun RemotePathPickerDialog(
 
 /** Buttons, since they are the only way back up more than one level in a single tap. */
 @Composable
-private fun Breadcrumb(path: String, onNavigate: (String) -> Unit) {
+internal fun Breadcrumb(path: String, onNavigate: (String) -> Unit) {
     Row(
         modifier = Modifier.horizontalScroll(rememberScrollState()),
         verticalAlignment = Alignment.CenterVertically,

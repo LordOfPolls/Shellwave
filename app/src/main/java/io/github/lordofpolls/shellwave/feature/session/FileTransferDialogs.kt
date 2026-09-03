@@ -91,7 +91,8 @@ internal fun FileTransferDialogs(
             title = "Upload \"${pending.sourceName}\"",
             label = "Remote destination path",
             confirmLabel = "Upload",
-            initialValue = pending.sourceName,
+            initialValue = pending.initialDirectory?.let { remoteChildPath(it, pending.sourceName) }
+                ?: pending.sourceName,
             connection = pending.connection,
             pickerMode = RemotePickerMode.DIRECTORY,
             onConfirm = controller::confirmUploadDestination,

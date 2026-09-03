@@ -6,6 +6,7 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.PlayArrow
@@ -47,6 +48,7 @@ internal fun TerminalOverflowMenu(
     onBellMode: (BellMode) -> Unit,
     onDownload: (SshConnection) -> Unit,
     onUpload: (SshConnection) -> Unit,
+    onBrowseFiles: (SshConnection) -> Unit,
     onRunScript: (() -> Unit)?,
     onClose: (() -> Unit)?,
 ) {
@@ -102,6 +104,14 @@ internal fun TerminalOverflowMenu(
                         onClick = {
                             expanded = false
                             onUpload(connection)
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Browse files") },
+                        leadingIcon = { Icon(Icons.Outlined.Folder, contentDescription = null) },
+                        onClick = {
+                            expanded = false
+                            onBrowseFiles(connection)
                         },
                     )
                     if (onRunScript != null) {

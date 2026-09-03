@@ -33,6 +33,7 @@ import net.schmizz.sshj.connection.channel.direct.Parameters
 import net.schmizz.sshj.connection.channel.direct.Session
 import net.schmizz.sshj.connection.channel.forwarded.RemotePortForwarder
 import net.schmizz.sshj.connection.channel.forwarded.SocketForwardingConnectListener
+import net.schmizz.sshj.sftp.FileAttributes
 import net.schmizz.sshj.sftp.FileMode
 import net.schmizz.sshj.transport.verification.HostKeyVerifier
 import net.schmizz.sshj.xfer.FileTransfer
@@ -604,6 +605,9 @@ open class SshConnection(
                     .use { sftp -> Result.success(sftp.statExistence(remotePath) != null) }
             } catch (e: IOException) {
                 Result.failure(e)
+            } catch (e: IllegalStateException) {
+                // sshj throws this, not an IOException, when the transport has already dropped.
+                Result.failure(e)
             }
         }
 
@@ -636,11 +640,17 @@ open class SshConnection(
                                         info.path
                                     ).type == FileMode.Type.DIRECTORY
                                 }.getOrDefault(false)),
+                                size = info.attributes.size.takeIf { info.attributes.has(FileAttributes.Flag.SIZE) }
+                                    ?: -1L,
+                                mtime = info.attributes.mtime.takeIf { info.attributes.has(FileAttributes.Flag.ACMODTIME) }
+                                    ?: -1L,
                             )
                         }
                     Result.success(RemoteListing(resolved, entries))
                 }
             } catch (e: IOException) {
+                Result.failure(e)
+            } catch (e: IllegalStateException) {
                 Result.failure(e)
             }
         }
@@ -795,4 +805,55 @@ open class SshConnection(
     fun cancelActiveTransfer() {
         activeTransfer?.let { runCatching { it.close() } }
     }
+
+    /** SFTP-only, like [listRemoteDirectory]: there is no rename over SCP to fall back to. */
+    suspend fun renameRemote(fromPath: String, toPath: String): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            try {
+                ssh.newSFTPClient().use { it.rename(fromPath, toPath) }
+                Result.success(Unit)
+            } catch (e: IOException) {
+                Result.failure(e)
+            } catch (e: IllegalStateException) {
+                Result.failure(e)
+            }
+        }
+
+    /** A directory here fails with the server's own error rather than silently doing nothing. */
+    suspend fun removeRemoteFile(path: String): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            try {
+                ssh.newSFTPClient().use { it.rm(path) }
+                Result.success(Unit)
+            } catch (e: IOException) {
+                Result.failure(e)
+            } catch (e: IllegalStateException) {
+                Result.failure(e)
+            }
+        }
+
+    /** SFTP's `rmdir` refuses a non-empty directory; that refusal surfaces as-is rather than recursing. */
+    suspend fun removeRemoteDir(path: String): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            try {
+                ssh.newSFTPClient().use { it.rmdir(path) }
+                Result.success(Unit)
+            } catch (e: IOException) {
+                Result.failure(e)
+            } catch (e: IllegalStateException) {
+                Result.failure(e)
+            }
+        }
+
+    suspend fun makeRemoteDir(path: String): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            try {
+                ssh.newSFTPClient().use { it.mkdir(path) }
+                Result.success(Unit)
+            } catch (e: IOException) {
+                Result.failure(e)
+            } catch (e: IllegalStateException) {
+                Result.failure(e)
+            }
+        }
 }

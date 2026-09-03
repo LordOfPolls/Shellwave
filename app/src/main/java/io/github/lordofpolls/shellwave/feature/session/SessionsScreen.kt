@@ -126,6 +126,10 @@ fun SessionsScreen(
     // selected session's host. See [runnableHere].
     captureScripts: List<ScriptEntity> = emptyList(),
     onRunScript: (ScriptEntity, SshConnection) -> Unit = { _, _ -> },
+    // The session id travels alongside the connection: MainActivity resolves it back to a
+    // connection itself once the browser screen is pushed, since a session can close (and its
+    // SshConnection with it) while that screen is open.
+    onBrowseFiles: (sessionId: Long, connection: SshConnection) -> Unit = { _, _ -> },
     // Null before any profile row has ever been saved, in which case DEFAULT_TERMINAL_PROFILE
     // applies. A host with its own override uses that instead, resolved per-session in
     // `SessionTabBody` - so this default stays live while an override, once resolved, does not.
@@ -233,6 +237,9 @@ fun SessionsScreen(
                     onBellMode = { mode -> BellPreferences.set(bellContext, mode) },
                     onDownload = { connection -> fileTransferController.requestDownload(connection) },
                     onUpload = { connection -> fileTransferController.requestUpload(connection) },
+                    onBrowseFiles = { connection ->
+                        current?.let { onBrowseFiles(it.id, connection) }
+                    },
                     onRunScript = if (runnableHere.isEmpty()) null else ({
                         scriptPickerOpen = true
                     }),
