@@ -40,6 +40,7 @@ import net.schmizz.sshj.xfer.FileTransfer
 import net.schmizz.sshj.xfer.TransferListener
 import java.io.Closeable
 import java.io.IOException
+import java.io.OutputStream
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.util.concurrent.ConcurrentHashMap
@@ -145,6 +146,42 @@ open class SshConnection(
     // to know when to redraw, coalesced to its own frame cadence: see feature/session.
     private val _outputTick = MutableStateFlow(0)
     val outputTick: StateFlow<Int> = _outputTick
+
+    // Optional session log: every byte the reader loop feeds the emulator also goes here, raw. Set
+    // via [startLogging], cleared on a write failure ([SessionLogSink] reports that once) or by
+    // [closeLogging].
+    @Volatile
+    private var logSink: SessionLogSink? = null
+
+    private val _isLogging = MutableStateFlow(false)
+    val isLogging: StateFlow<Boolean> = _isLogging
+
+    /** [onFailure] fires at most once, the moment a write to [out] fails; logging is off by then. */
+    fun startLogging(out: OutputStream, onFailure: () -> Unit) {
+        closeLogging()
+        logSink = SessionLogSink(out) {
+            logSink = null
+            _isLogging.value = false
+            onFailure()
+        }
+        _isLogging.value = true
+    }
+
+    fun stopLogging() = closeLogging()
+
+    /**
+     * Idempotent, and the one place every session-end path routes through: [disconnect] calls it
+     * directly for an explicit close, and the reader loop's `finally` calls it again for a drop it
+     * detects itself - a clean EOF or an IOException - which never goes through [disconnect] at
+     * all (see [SessionManager.handleDisconnected]'s clean-exit branch). A log must not outlive the
+     * session it belongs to either way.
+     */
+    private fun closeLogging() {
+        val sink = logSink ?: return
+        logSink = null
+        _isLogging.value = false
+        scope.launch(Dispatchers.IO) { sink.close() }
+    }
 
     // Set once, before emulator construction, by connect()'s cursorStyle parameter. Like scrollback
     // depth, TerminalEmulator only queries this callback at construction (and on reset()), so
@@ -266,12 +303,19 @@ open class SshConnection(
                         // withContext suspends until the Main-thread append completes, so reusing
                         // `buffer` next iteration is safe.
                         withContext(Dispatchers.Main) { emulator.append(buffer, read) }
+                        logSink?.write(buffer, 0, read)
                         _outputTick.value++
                     }
                     if (!closing.get()) onDisconnected(true)
                 } catch (e: IOException) {
                     Log.i(LOG_TAG, "reader stopped: ${e.message}")
                     if (!closing.get()) onDisconnected(false)
+                } finally {
+                    // Every path the reader loop can leave by - clean EOF, a socket IOException, or
+                    // being cancelled out from under a blocked read by disconnect() - funnels
+                    // through here, so this is the one place logging is guaranteed to stop with the
+                    // session, not just on an explicit disconnect().
+                    closeLogging()
                 }
             }
         }
@@ -412,6 +456,10 @@ open class SshConnection(
     open fun disconnect() {
         closing.set(true)
         readerJob?.cancel()
+        // Eager, for a prompt "Stop logging"-on-close; the reader loop's own `finally` closes it
+        // too (idempotent) for the case a blocked read doesn't unblock until ssh.disconnect() below
+        // actually tears down the socket.
+        closeLogging()
         scope.launch(Dispatchers.IO) {
             stopAllForwards()
             runCatching { shell?.close() }

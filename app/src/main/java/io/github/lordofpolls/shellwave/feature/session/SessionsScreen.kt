@@ -79,9 +79,13 @@ import io.github.lordofpolls.shellwave.terminal.TerminalCanvas
 import io.github.lordofpolls.shellwave.terminal.TerminalFontFamily
 import io.github.lordofpolls.shellwave.terminal.TerminalInputCapture
 import io.github.lordofpolls.shellwave.terminal.TerminalLink
+import io.github.lordofpolls.shellwave.terminal.TerminalMatch
 import io.github.lordofpolls.shellwave.terminal.TerminalSelectionOverlay
+import io.github.lordofpolls.shellwave.terminal.collectTerminalRows
 import io.github.lordofpolls.shellwave.terminal.ctrlCode
 import io.github.lordofpolls.shellwave.terminal.decodeKeyBarKeys
+import io.github.lordofpolls.shellwave.terminal.externalRowAt
+import io.github.lordofpolls.shellwave.terminal.findMatches
 import io.github.lordofpolls.shellwave.terminal.hardwareKeyCode
 import io.github.lordofpolls.shellwave.terminal.linkAt
 import io.github.lordofpolls.shellwave.terminal.rememberTerminalSelectionState
@@ -92,14 +96,17 @@ import io.github.lordofpolls.shellwave.ui.design.EmptyState
 import io.github.lordofpolls.shellwave.ui.design.MachineText
 import io.github.lordofpolls.shellwave.ui.design.SessionChipModel
 import io.github.lordofpolls.shellwave.ui.design.SessionChipRail
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * N concurrent sessions, with a [ListDetailPaneScaffold] beside the terminal on wide or unfolded
@@ -162,12 +169,17 @@ fun SessionsScreen(
 
     // Threaded down so the path-tap dialog's "Download" reaches it too, beyond the menu actions.
     val fileTransferController = rememberFileTransferController()
+    val loggingController = rememberSessionLoggingController()
 
     // Driven by the navigator's own destination; a second piece of state could drift from it.
     // Falls back to the first session once a target is known to exist, so a freshly-opened screen
     // - or one whose selected session just closed - never shows an empty detail pane.
     val selectedId = navigator.currentDestination?.contentKey
         ?: summaries.firstOrNull { it.id == initialSessionId }?.id ?: summaries.first().id
+
+    // Keyed on the selected session, not shared screen-wide: switching tabs must not leave the
+    // bar open over a session that was never searched.
+    val searchController = rememberTerminalSearchController(selectedId)
 
     fun selectSession(id: Long) {
         scope.launch { navigator.navigateTo(ListDetailPaneScaffoldRole.Detail, id) }
@@ -229,10 +241,20 @@ fun SessionsScreen(
             onClose = sessionManager::closeSession,
             onNewSession = onNewSession,
             overflow = {
+                // Close is the exception: closing a session that never connected is exactly
+                // what a user needs when one is stuck.
+                val overflowConnection =
+                    current?.connection?.takeIf { current.status == SessionStatus.CONNECTED }
+                // current.connection, not the CONNECTED-gated overflowConnection: "Stop logging"
+                // must stay reachable through a drop or reconnect, not just while the channel that
+                // started it is still up. Memoized per session id, not a fresh fallback flow on
+                // every recomposition.
+                val loggingFlow = remember(current?.id) {
+                    current?.connection?.isLogging ?: MutableStateFlow(false)
+                }
+                val isLogging by loggingFlow.collectAsState()
                 TerminalOverflowMenu(
-                    // Close is the exception: closing a session that never connected is exactly
-                    // what a user needs when one is stuck.
-                    connection = current?.connection?.takeIf { current.status == SessionStatus.CONNECTED },
+                    connection = overflowConnection,
                     bellMode = bellMode,
                     onBellMode = { mode -> BellPreferences.set(bellContext, mode) },
                     onDownload = { connection -> fileTransferController.requestDownload(connection) },
@@ -244,6 +266,10 @@ fun SessionsScreen(
                         scriptPickerOpen = true
                     }),
                     onClose = current?.let { { sessionManager.closeSession(it.id) } },
+                    onSearch = searchController::show,
+                    isLogging = isLogging,
+                    onStartLogging = loggingController::requestStart,
+                    onStopLogging = { current?.connection?.stopLogging() },
                 )
             },
         )
@@ -294,6 +320,7 @@ fun SessionsScreen(
             terminalProfileDao = terminalProfileDao,
             keyBarLayoutDao = keyBarLayoutDao,
             fileTransferController = fileTransferController,
+            searchController = searchController,
             modifier = Modifier
                 .weight(1f)
                 .fillMaxSize(),
@@ -302,6 +329,7 @@ fun SessionsScreen(
 
     // Once for the screen: an AlertDialog overlays everything wherever it is composed.
     FileTransferDialogs(fileTransferController)
+    SessionLoggingEffects(loggingController)
 }
 
 /**
@@ -322,10 +350,14 @@ internal fun SessionTabBody(
     terminalProfileDao: TerminalProfileDao,
     keyBarLayoutDao: KeyBarLayoutDao,
     fileTransferController: FileTransferController,
+    searchController: TerminalSearchController,
     modifier: Modifier = Modifier,
     terminalProfile: TerminalProfileEntity? = null,
     terminalHeight: Dp? = null,
     preKeyBarGap: Dp = 0.dp,
+    showLayoutToggle: Boolean = false,
+    fullWidthTerminal: Boolean = false,
+    onToggleFullWidth: () -> Unit = {},
 ) {
     val summaries by sessionManager.summaries.collectAsState()
     val summary = summaries.firstOrNull { it.id == sessionId } ?: return
@@ -377,6 +409,21 @@ internal fun SessionTabBody(
     // rounding to zero every frame.
     var topRow by remember { mutableStateOf(0) }
     var scrollDragRemainderPx by remember { mutableStateOf(0f) }
+
+    var searchQuery by remember(sessionId) { mutableStateOf("") }
+    var searchMatches by remember(sessionId) { mutableStateOf(emptyList<TerminalMatch>()) }
+    var searchMatchIndex by remember(sessionId) { mutableIntStateOf(0) }
+
+    fun jumpToSearchMatch(index: Int) {
+        val matches = searchMatches
+        val emulator = terminalEmulator
+        if (matches.isEmpty() || emulator == null) return
+        val clamped = ((index % matches.size) + matches.size) % matches.size
+        searchMatchIndex = clamped
+        val maxScrollback = emulator.screen.activeTranscriptRows
+        topRow = externalRowAt(emulator, matches[clamped].row).coerceIn(-maxScrollback, 0)
+    }
+
     var fontSizeSp by remember { mutableStateOf(DEFAULT_TERMINAL_TEXT_SIZE_SP) }
     // Keyed on the row's id alone, so a later settings edit doesn't stomp an in-progress
     // pinch-to-resize.
@@ -392,6 +439,37 @@ internal fun SessionTabBody(
 
     val redrawRequests = remember { Channel<Unit>(Channel.CONFLATED) }
     val frame = remember { mutableIntStateOf(0) }
+
+    // A fresh query or opening the bar jumps to the first match - the one case where scrolling
+    // the view is wanted.
+    LaunchedEffect(searchController.open, searchQuery) {
+        val emulator = terminalEmulator
+        val matches =
+            if (searchController.open && emulator != null && searchQuery.isNotEmpty()) {
+                findMatches(collectTerminalRows(emulator), searchQuery)
+            } else {
+                emptyList()
+            }
+        searchMatches = matches
+        if (matches.isNotEmpty()) jumpToSearchMatch(0) else searchMatchIndex = 0
+    }
+
+    // Live output re-runs the search sampled - not debounced, for the same reason screenText
+    // below is: a build log with no pause would never let debounce emit. Only refreshes the
+    // match list, never touches topRow, or output the user isn't scrolled back to look at would
+    // keep yanking the view to a stale match. collectTerminalRows touches the emulator and must
+    // stay on Main (see SshConnection's threading note); only the string search itself moves off
+    // it.
+    LaunchedEffect(sessionId) {
+        snapshotFlow { frame.intValue }.sample(300).collect {
+            if (!searchController.open || searchQuery.isEmpty()) return@collect
+            val emulator = terminalEmulator ?: return@collect
+            val rows = collectTerminalRows(emulator)
+            val matches = withContext(Dispatchers.Default) { findMatches(rows, searchQuery) }
+            searchMatches = matches
+            searchMatchIndex = searchMatchIndex.coerceIn(0, (matches.size - 1).coerceAtLeast(0))
+        }
+    }
 
     LaunchedEffect(Unit) {
         for (unused in redrawRequests) {
@@ -584,9 +662,20 @@ internal fun SessionTabBody(
 
     // imePadding lives on KeyBar itself below, not on this Column - see that call site.
     Column(modifier = modifier) {
+        if (searchController.open) {
+            TerminalSearchBar(
+                query = searchQuery,
+                onQueryChange = { searchQuery = it },
+                matchCount = searchMatches.size,
+                matchIndex = searchMatchIndex,
+                onNext = { jumpToSearchMatch(searchMatchIndex + 1) },
+                onPrevious = { jumpToSearchMatch(searchMatchIndex - 1) },
+                onClose = { searchController.hide() },
+            )
+        }
         Box(
             modifier =
-                (if (terminalHeight != null) {
+                if (terminalHeight != null) {
                     Modifier
                         .height(terminalHeight)
                         .fillMaxWidth()
@@ -594,7 +683,11 @@ internal fun SessionTabBody(
                     Modifier
                         .weight(1f)
                         .fillMaxSize()
-                })
+                }
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
                     .background(Color.Black)
                     // Preview rather than onKeyEvent: claims the event before
                     // TerminalInputCapture's BasicTextField, so Ctrl+C isn't first eaten by the
@@ -671,32 +764,63 @@ internal fun SessionTabBody(
                         onMouseDrag = ::sendMouseDrag,
                         onMouseRelease = ::sendMouseRelease,
                     ),
-        ) {
-            TerminalCanvas(
-                emulator = terminalEmulator,
-                frame = frame,
-                onMeasured = { cols, rows, cellW, cellH ->
-                    measuredSize = TerminalSize(cols, rows, cellW, cellH)
-                },
-                modifier = Modifier.matchParentSize(),
-                fontSizeSp = fontSizeSp,
-                typeface = terminalTypeface,
-                lineHeightMultiplier = lineHeightMultiplier,
-                topRow = topRow,
-                selection = selectionState.selection,
-                selectionColor = selectionColor,
-            )
-            TerminalInputCapture(
-                focusRequester = focusRequester,
-                onText = ::sendText,
-                onBackspace = { summary.connection.write("\u007F") },
-                // See TerminalInputCapture for why the field carries this instead of the canvas.
-                // Named per session with the label the chip rail shows, so announcement and screen
-                // agree.
-                accessibilityLabel = "Terminal, ${summary.label}",
-                screenText = screenText,
-                modifier = Modifier.matchParentSize(),
-            )
+            ) {
+                TerminalCanvas(
+                    emulator = terminalEmulator,
+                    frame = frame,
+                    onMeasured = { cols, rows, cellW, cellH ->
+                        measuredSize = TerminalSize(cols, rows, cellW, cellH)
+                    },
+                    modifier = Modifier.matchParentSize(),
+                    fontSizeSp = fontSizeSp,
+                    typeface = terminalTypeface,
+                    lineHeightMultiplier = lineHeightMultiplier,
+                    topRow = topRow,
+                    selection = selectionState.selection,
+                    selectionColor = selectionColor,
+                )
+                TerminalInputCapture(
+                    focusRequester = focusRequester,
+                    onText = ::sendText,
+                    onBackspace = { summary.connection.write("\u007F") },
+                    // See TerminalInputCapture for why the field carries this instead of the canvas.
+                    // Named per session with the label the chip rail shows, so announcement and screen
+                    // agree.
+                    accessibilityLabel = "Terminal, ${summary.label}",
+                    screenText = screenText,
+                    modifier = Modifier.matchParentSize(),
+                )
+                TerminalSelectionOverlay(
+                    state = selectionState,
+                    emulator = terminalEmulator,
+                    cellWidthPx = measuredSize?.cellWidthPx ?: 0,
+                    cellHeightPx = measuredSize?.cellHeightPx ?: 0,
+                    topRow = topRow,
+                    onCopy = { text -> summary.connection.onCopyTextToClipboard(text) },
+                    onPaste = { summary.connection.onPasteTextFromClipboard() },
+                    onShare = ::shareSelection,
+                )
+                detectedLink?.let { link ->
+                    LinkActionDialog(
+                        link = link,
+                        onOpen = { openLink(link); detectedLink = null },
+                        onCopy = {
+                            summary.connection.onCopyTextToClipboard(link.text); detectedLink = null
+                        },
+                        // The path is known from the tap, so this skips straight to the SAF destination
+                        // picker.
+                        onDownload = {
+                            fileTransferController.requestDownload(
+                                summary.connection,
+                                link.text
+                            ); detectedLink = null
+                        },
+                        onDismiss = { detectedLink = null },
+                    )
+                }
+            }
+            // A sibling of the gesture-bearing Box, not a descendant of it - terminalGestures
+            // consumes every down on the Initial pass, which would otherwise swallow the tap.
             if (topRow < 0) {
                 JumpToBottomBadge(
                     linesBack = -topRow,
@@ -706,32 +830,13 @@ internal fun SessionTabBody(
                         .padding(12.dp),
                 )
             }
-            TerminalSelectionOverlay(
-                state = selectionState,
-                emulator = terminalEmulator,
-                cellWidthPx = measuredSize?.cellWidthPx ?: 0,
-                cellHeightPx = measuredSize?.cellHeightPx ?: 0,
-                topRow = topRow,
-                onCopy = { text -> summary.connection.onCopyTextToClipboard(text) },
-                onPaste = { summary.connection.onPasteTextFromClipboard() },
-                onShare = ::shareSelection,
-            )
-            detectedLink?.let { link ->
-                LinkActionDialog(
-                    link = link,
-                    onOpen = { openLink(link); detectedLink = null },
-                    onCopy = {
-                        summary.connection.onCopyTextToClipboard(link.text); detectedLink = null
-                    },
-                    // The path is known from the tap, so this skips straight to the SAF destination
-                    // picker.
-                    onDownload = {
-                        fileTransferController.requestDownload(
-                            summary.connection,
-                            link.text
-                        ); detectedLink = null
-                    },
-                    onDismiss = { detectedLink = null },
+            if (showLayoutToggle) {
+                LayoutToggleButton(
+                    fullWidth = fullWidthTerminal,
+                    onToggle = onToggleFullWidth,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(12.dp),
                 )
             }
         }

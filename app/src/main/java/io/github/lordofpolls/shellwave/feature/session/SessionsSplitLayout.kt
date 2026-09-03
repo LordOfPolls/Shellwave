@@ -18,7 +18,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -37,9 +36,10 @@ import io.github.lordofpolls.shellwave.ui.design.SessionCard
 
 /**
  * The terminal area's own layout switch: tabletop's vertical split, a bypassed full-width pane, or
- * the ordinary [ListDetailPaneScaffold] - plus the floating [LayoutToggleButton] anchored over
- * whichever one rendered. Pulled out of `SessionsScreen` itself so that composable stays about
- * assembling the screen's chrome, not about choosing between these three.
+ * the ordinary [ListDetailPaneScaffold]. The floating [LayoutToggleButton] is rendered inside
+ * `SessionTabBody`'s terminal box rather than here, so it never sits over the search bar above it.
+ * Pulled out of `SessionsScreen` itself so that composable stays about assembling the screen's
+ * chrome, not about choosing between these three.
  */
 @OptIn(ExperimentalMaterial3AdaptiveApi::class)
 @Composable
@@ -58,6 +58,7 @@ internal fun SessionsSplitLayout(
     terminalProfileDao: TerminalProfileDao,
     keyBarLayoutDao: KeyBarLayoutDao,
     fileTransferController: FileTransferController,
+    searchController: TerminalSearchController,
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier) {
@@ -72,6 +73,7 @@ internal fun SessionsSplitLayout(
                 terminalProfileDao = terminalProfileDao,
                 keyBarLayoutDao = keyBarLayoutDao,
                 fileTransferController = fileTransferController,
+                searchController = searchController,
                 modifier = Modifier.fillMaxSize(),
             )
         } else if (isWide && fullWidthTerminal) {
@@ -85,6 +87,10 @@ internal fun SessionsSplitLayout(
                 terminalProfileDao = terminalProfileDao,
                 keyBarLayoutDao = keyBarLayoutDao,
                 fileTransferController = fileTransferController,
+                searchController = searchController,
+                showLayoutToggle = true,
+                fullWidthTerminal = fullWidthTerminal,
+                onToggleFullWidth = onToggleFullWidth,
                 modifier = Modifier.fillMaxSize()
             )
         } else {
@@ -113,22 +119,14 @@ internal fun SessionsSplitLayout(
                             terminalProfileDao = terminalProfileDao,
                             keyBarLayoutDao = keyBarLayoutDao,
                             fileTransferController = fileTransferController,
+                            searchController = searchController,
+                            showLayoutToggle = isWide,
+                            fullWidthTerminal = fullWidthTerminal,
+                            onToggleFullWidth = onToggleFullWidth,
                             modifier = Modifier.fillMaxSize()
                         )
                     }
                 },
-            )
-        }
-
-        // Anchored to the terminal area, the thing whose shape it changes, instead of adding to
-        // either already-crowded strip.
-        if (isWide && tabletop == null) {
-            LayoutToggleButton(
-                fullWidth = fullWidthTerminal,
-                onToggle = onToggleFullWidth,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(12.dp),
             )
         }
     }
@@ -140,7 +138,7 @@ internal fun SessionsSplitLayout(
  * session. Renders only where there are two panes to choose between.
  */
 @Composable
-private fun LayoutToggleButton(
+internal fun LayoutToggleButton(
     fullWidth: Boolean,
     onToggle: () -> Unit,
     modifier: Modifier = Modifier
@@ -212,6 +210,7 @@ private fun TabletopSessionLayout(
     terminalProfileDao: TerminalProfileDao,
     keyBarLayoutDao: KeyBarLayoutDao,
     fileTransferController: FileTransferController,
+    searchController: TerminalSearchController,
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
@@ -234,6 +233,7 @@ private fun TabletopSessionLayout(
                 terminalProfileDao = terminalProfileDao,
                 keyBarLayoutDao = keyBarLayoutDao,
                 fileTransferController = fileTransferController,
+                searchController = searchController,
                 terminalHeight = terminalHeight,
                 preKeyBarGap = hingeGap,
                 modifier = Modifier.fillMaxSize(),
@@ -249,6 +249,7 @@ private fun TabletopSessionLayout(
                 terminalProfileDao = terminalProfileDao,
                 keyBarLayoutDao = keyBarLayoutDao,
                 fileTransferController = fileTransferController,
+                searchController = searchController,
                 modifier = Modifier.fillMaxSize(),
             )
         }

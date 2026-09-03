@@ -10,6 +10,9 @@ import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.Save
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.StopCircle
 import androidx.compose.material.icons.outlined.Upload
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -51,6 +54,10 @@ internal fun TerminalOverflowMenu(
     onBrowseFiles: (SshConnection) -> Unit,
     onRunScript: (() -> Unit)?,
     onClose: (() -> Unit)?,
+    onSearch: () -> Unit,
+    isLogging: Boolean,
+    onStartLogging: (SshConnection) -> Unit,
+    onStopLogging: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     var showingBell by remember { mutableStateOf(false) }
@@ -148,6 +155,36 @@ internal fun TerminalOverflowMenu(
                         onClick = {
                             expanded = false
                             onClose()
+                        },
+                    )
+                }
+                DropdownMenuItem(
+                    text = { Text("Search") },
+                    leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
+                    onClick = {
+                        expanded = false
+                        onSearch()
+                    },
+                )
+                // Stop logging is reachable independent of `connection`, which is only non-null
+                // while CONNECTED: a session already logging must stay stoppable through, say, a
+                // reconnect, not just while the channel that started it is still up.
+                if (isLogging) {
+                    DropdownMenuItem(
+                        text = { Text("Stop logging") },
+                        leadingIcon = { Icon(Icons.Outlined.StopCircle, contentDescription = null) },
+                        onClick = {
+                            expanded = false
+                            onStopLogging()
+                        },
+                    )
+                } else if (connection != null) {
+                    DropdownMenuItem(
+                        text = { Text("Log session to file…") },
+                        leadingIcon = { Icon(Icons.Outlined.Save, contentDescription = null) },
+                        onClick = {
+                            expanded = false
+                            onStartLogging(connection)
                         },
                     )
                 }
