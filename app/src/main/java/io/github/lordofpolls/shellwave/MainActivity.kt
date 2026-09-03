@@ -95,12 +95,14 @@ import io.github.lordofpolls.shellwave.feature.session.SessionsScreen
 import io.github.lordofpolls.shellwave.feature.settings.ConfigExporter
 import io.github.lordofpolls.shellwave.feature.settings.ConfigImporter
 import io.github.lordofpolls.shellwave.feature.settings.KeyBarLayoutsScreen
+import io.github.lordofpolls.shellwave.feature.settings.KnownHostsScreen
 import io.github.lordofpolls.shellwave.feature.settings.LicenseScreen
 import io.github.lordofpolls.shellwave.feature.settings.SettingsScreen
 import io.github.lordofpolls.shellwave.feature.settings.TerminalSettingsScreen
 import io.github.lordofpolls.shellwave.ssh.AuthMethod
 import io.github.lordofpolls.shellwave.ssh.ConnectionSpec
 import io.github.lordofpolls.shellwave.ssh.HostVerificationGate
+import io.github.lordofpolls.shellwave.ssh.KNOWN_HOSTS_FILE_NAME
 import io.github.lordofpolls.shellwave.ssh.KeyEnrolment
 import io.github.lordofpolls.shellwave.ssh.KeyboardInteractiveGate
 import io.github.lordofpolls.shellwave.ssh.ScriptRunner
@@ -111,6 +113,7 @@ import io.github.lordofpolls.shellwave.terminal.DEFAULT_COLOR_SCHEME
 import io.github.lordofpolls.shellwave.ui.design.ShellwaveTheme
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import java.io.File
 import javax.inject.Inject
 
 /**
@@ -147,6 +150,8 @@ private sealed class Screen {
     data object TerminalSettings : Screen()
 
     data object KeyBarLayouts : Screen()
+
+    data object KnownHosts : Screen()
 
     data object License : Screen()
 
@@ -389,6 +394,7 @@ class MainActivity : FragmentActivity() {
                         "addEditScript" -> Screen.AddEditScript(editingScriptId.takeIf { it >= 0 })
                         "scriptHistory" -> Screen.ScriptHistory(historyScriptId)
                         "keyBarLayouts" -> Screen.KeyBarLayouts
+                        "knownHosts" -> Screen.KnownHosts
                         "terminalSettings" -> Screen.TerminalSettings
                         "license" -> Screen.License
                         "importSshConfig" -> Screen.ImportSshConfig
@@ -909,6 +915,7 @@ class MainActivity : FragmentActivity() {
                                             AutomationPreferences.regenerateToken(this@MainActivity)
                                         },
                                         onOpenTerminalSettings = { push("terminalSettings") },
+                                        onOpenKnownHosts = { push("knownHosts") },
                                         onExportConfig = configExporter::writeTo,
                                         onImportConfig = { uri ->
                                             configImporter.readFrom(uri).also {
@@ -937,6 +944,14 @@ class MainActivity : FragmentActivity() {
                                 is Screen.KeyBarLayouts -> {
                                     KeyBarLayoutsScreen(
                                         keyBarLayoutDao = keyBarLayoutDao,
+                                        onBack = { popBack() },
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                }
+
+                                is Screen.KnownHosts -> {
+                                    KnownHostsScreen(
+                                        knownHostsFile = File(filesDir, KNOWN_HOSTS_FILE_NAME),
                                         onBack = { popBack() },
                                         modifier = Modifier.weight(1f),
                                     )

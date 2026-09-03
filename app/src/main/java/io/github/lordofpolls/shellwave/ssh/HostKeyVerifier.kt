@@ -9,6 +9,7 @@ import kotlinx.coroutines.runBlocking
 import net.schmizz.sshj.common.Buffer
 import net.schmizz.sshj.common.KeyType
 import net.schmizz.sshj.transport.verification.OpenSSHKnownHosts
+import net.schmizz.sshj.transport.verification.OpenSSHKnownHosts.KnownHostEntry
 import java.io.File
 import java.security.MessageDigest
 import java.security.PublicKey
@@ -176,8 +177,7 @@ open class TofuKnownHostsVerifier(
     }
 
     /**
-     * Temp-file-then-rename, so a death mid-write leaves the old file or the new one, never half of
-     * both. Re-reads entries from disk rather than this instance's own [entries]: that snapshot can
+     * Re-reads entries from disk rather than this instance's own [entries]: that snapshot can
      * be stale by now. `appliesTo(type, host)` alone also matches `@revoked`/`@cert-authority` rows,
      * dropping which would re-trust a blacklisted key or break a CA - so only plain rows are kept.
      * Also drops matches from `entries()` itself, or a rekey on this same connection would still
@@ -195,16 +195,84 @@ open class TofuKnownHostsVerifier(
         val stale = current.filter(::isStale)
         if (stale.isEmpty()) return
         val toKeep = current - stale.toSet()
-        val tmp = File.createTempFile("known_hosts", ".tmp", getFile().parentFile)
-        tmp.bufferedWriter().use { w -> toKeep.forEach { w.write(it.line); w.newLine() } }
-        if (!tmp.renameTo(getFile())) {
-            tmp.delete()
-            error("Could not rewrite known_hosts to drop superseded entry for $hostname")
-        }
+        rewriteKnownHostsFile(
+            getFile(),
+            toKeep,
+            "Could not rewrite known_hosts to drop superseded entry for $hostname"
+        )
     }
 
     /** Call once the attempt this was built for ends, for any reason. */
     fun cancel() {
         gate.cancel(this)
+    }
+}
+
+/** Temp-file-then-rename, so a death mid-write leaves the old file or the new one, never half of both. */
+private fun rewriteKnownHostsFile(file: File, keep: List<KnownHostEntry>, failureMessage: String) {
+    val tmp = File.createTempFile("known_hosts", ".tmp", file.parentFile)
+    tmp.bufferedWriter().use { w -> keep.forEach { w.write(it.line); w.newLine() } }
+    if (!tmp.renameTo(file)) {
+        tmp.delete()
+        error(failureMessage)
+    }
+}
+
+/**
+ * One row for the trusted-host-keys settings screen. [marker] surfaces `@revoked`/`@cert-authority`
+ * rows rather than hiding them, since removing one of those has a different consequence to removing
+ * a plain trust entry.
+ */
+data class KnownHostRow(
+    val line: String,
+    val hostDisplay: String,
+    val keyType: String,
+    val fingerprint: String,
+    val marker: String?,
+)
+
+/**
+ * [OpenSSHKnownHosts.HostEntry.getFingerprint] is MD5 in OpenSSH's own hex-pair shape, which
+ * doesn't match the SHA-256/base64 grouping used everywhere else host keys are shown - so the key
+ * is re-decoded from the line to get a [sha256Fingerprint] instead.
+ */
+fun listKnownHosts(file: File): List<KnownHostRow> = synchronized(knownHostsLock) {
+    if (!file.exists()) return@synchronized emptyList()
+    OpenSSHKnownHosts(file).entries().mapNotNull { entry -> toRow(entry) }
+}
+
+private fun toRow(entry: KnownHostEntry): KnownHostRow? {
+    if (entry.type == KeyType.UNKNOWN) return null
+    val tokens = entry.line.trim().split(Regex("\\s+"))
+    val marker = tokens.firstOrNull()?.takeIf { it == "@revoked" || it == "@cert-authority" }
+    var i = if (marker != null) 1 else 0
+    val host = tokens.getOrNull(i++) ?: return null
+    i++ // key type token; entry.type already has this
+    val keyBlob = tokens.getOrNull(i) ?: return null
+    val key = runCatching {
+        Buffer.PlainBuffer(Base64.getDecoder().decode(keyBlob)).readPublicKey()
+    }.getOrNull() ?: return null
+    val hostDisplay = if (host.startsWith("|1|")) "hashed host" else host
+    return KnownHostRow(
+        line = entry.line,
+        hostDisplay = hostDisplay,
+        keyType = entry.type.toString(),
+        fingerprint = sha256Fingerprint(key),
+        marker = marker,
+    )
+}
+
+/**
+ * [line] is [KnownHostRow.line]: the exact text sshj would write back, so the match is exact.
+ * Returns `false` when nothing matched - a stale row a concurrent edit already removed - so the
+ * caller can tell that apart from a write failure without catching an exception for the no-op case.
+ */
+fun removeKnownHost(file: File, line: String): Boolean {
+    synchronized(knownHostsLock) {
+        val current = OpenSSHKnownHosts(file).entries()
+        val toKeep = current.filterNot { it.line == line }
+        if (toKeep.size == current.size) return false
+        rewriteKnownHostsFile(file, toKeep, "Could not rewrite known_hosts to remove entry")
+        return true
     }
 }

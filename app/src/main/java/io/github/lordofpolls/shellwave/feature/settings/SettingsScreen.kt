@@ -71,6 +71,7 @@ fun SettingsScreen(
     automationToken: String?,
     onRegenerateAutomationToken: () -> Unit,
     onOpenTerminalSettings: () -> Unit,
+    onOpenKnownHosts: () -> Unit,
     onExportConfig: suspend (Uri) -> Unit,
     onImportConfig: suspend (Uri) -> ConfigImportSummary,
     onOpenLicenses: () -> Unit,
@@ -131,6 +132,13 @@ fun SettingsScreen(
             )
 
             SettingsSectionHeader("Hosts")
+
+            SettingsRow(
+                title = "Trusted host keys",
+                description = "The host keys accepted so far, with a fingerprint to check and a way to forget one.",
+                chevron = true,
+                onClick = onOpenKnownHosts,
+            )
 
             SettingsSwitch(
                 title = "Show which hosts are reachable",
