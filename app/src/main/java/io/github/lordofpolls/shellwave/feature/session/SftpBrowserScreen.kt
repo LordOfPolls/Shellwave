@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.CheckCircle
@@ -33,6 +34,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -80,8 +82,10 @@ fun SftpBrowserScreen(
     var path by remember { mutableStateOf(startPath) }
     var entries by remember { mutableStateOf<List<RemoteEntry>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
+    var refreshing by remember { mutableStateOf(false) }
     var failure by remember { mutableStateOf<String?>(null) }
     var reloadToken by remember { mutableIntStateOf(0) }
+    val listState = rememberLazyListState()
     var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
     var menuFor by remember { mutableStateOf<String?>(null) }
     var renaming by remember { mutableStateOf<RemoteEntry?>(null) }
@@ -91,23 +95,41 @@ fun SftpBrowserScreen(
     var creatingFolder by remember { mutableStateOf(false) }
     var opError by remember { mutableStateOf<String?>(null) }
 
-    // Keyed on reloadToken too, so a mkdir/rename/delete re-lists the same directory it changed.
-    LaunchedEffect(path, reloadToken) {
-        loading = true
+    suspend fun fetchListing() {
+        val requested = path
         failure = null
         selected = emptySet()
-        connection.listRemoteDirectory(path).fold(
+        connection.listRemoteDirectory(requested).fold(
             onSuccess = { listing ->
+                // A directory change in flight makes this listing stale; the path effect
+                // already started a fresh request for wherever the user navigated to.
+                if (requested != path) return@fold
                 path = listing.path
                 entries = sortedForPicker(listing.entries)
-                loading = false
             },
             onFailure = { e ->
+                if (requested != path) return@fold
                 entries = emptyList()
                 failure = e.message ?: "The server did not return a listing."
-                loading = false
             },
         )
+    }
+
+    LaunchedEffect(path) {
+        // Not the suspending scrollToItem: the LazyColumn isn't composed yet while the
+        // full-screen spinner is up (it's only in the `else` branch below), so scrollToItem
+        // would await a scroll mutex that never gets attached and hang forever.
+        listState.requestScrollToItem(0)
+        loading = true
+        fetchListing()
+        loading = false
+    }
+
+    LaunchedEffect(reloadToken) {
+        if (reloadToken == 0) return@LaunchedEffect
+        refreshing = true
+        fetchListing()
+        refreshing = false
     }
 
     fun reload() {
@@ -174,6 +196,8 @@ fun SftpBrowserScreen(
             windowInsets = WindowInsets(0, 0, 0, 0),
         )
 
+        if (refreshing) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+
         when {
             loading -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
@@ -185,10 +209,11 @@ fun SftpBrowserScreen(
                     modifier = Modifier.fillMaxSize(),
                 )
 
-            entries.isEmpty() -> EmptyState(message = "Empty directory", modifier = Modifier.fillMaxSize())
+            entries.isEmpty() && !refreshing ->
+                EmptyState(message = "Empty directory", modifier = Modifier.fillMaxSize())
 
             else ->
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                LazyColumn(modifier = Modifier.fillMaxSize(), state = listState) {
                     items(entries, key = { it.path }) { entry ->
                         SftpEntryRow(
                             entry = entry,
