@@ -10,7 +10,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -33,6 +32,7 @@ import io.github.lordofpolls.shellwave.ssh.SessionStatus
 import io.github.lordofpolls.shellwave.ssh.TunnelState
 import io.github.lordofpolls.shellwave.ssh.TunnelStatus
 import io.github.lordofpolls.shellwave.ui.design.MachineText
+import io.github.lordofpolls.shellwave.ui.design.RadioRow
 import kotlinx.coroutines.launch
 
 /**
@@ -259,18 +259,27 @@ private fun TunnelEditor(
             )
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                RadioButton(
+                RadioRow(
                     selected = type == PortForwardType.LOCAL,
-                    onClick = { type = PortForwardType.LOCAL })
-                Text("Local")
-                RadioButton(
+                    onClick = { type = PortForwardType.LOCAL },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Local")
+                }
+                RadioRow(
                     selected = type == PortForwardType.REMOTE,
-                    onClick = { type = PortForwardType.REMOTE })
-                Text("Remote")
-                RadioButton(
+                    onClick = { type = PortForwardType.REMOTE },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Remote")
+                }
+                RadioRow(
                     selected = type == PortForwardType.DYNAMIC,
-                    onClick = { type = PortForwardType.DYNAMIC })
-                Text("Dynamic (SOCKS5)")
+                    onClick = { type = PortForwardType.DYNAMIC },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Dynamic (SOCKS5)")
+                }
             }
             Text(
                 when (type) {

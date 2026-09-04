@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -47,6 +46,7 @@ import io.github.lordofpolls.shellwave.terminal.autoCursorColorFor
 import io.github.lordofpolls.shellwave.terminal.parseHexColorOrNull
 import io.github.lordofpolls.shellwave.terminal.selectionHighlightColor
 import io.github.lordofpolls.shellwave.terminal.toHexColorString
+import io.github.lordofpolls.shellwave.ui.design.RadioRow
 import kotlin.math.roundToInt
 
 /**
@@ -85,17 +85,16 @@ internal fun TerminalProfileFields(
         Text("Font family", style = MaterialTheme.typography.labelLarge)
         val currentFamily = TerminalFontFamily.fromStored(profile.fontFamily)
         TerminalFontFamily.entries.forEach { family ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                RadioButton(
-                    selected = currentFamily == family,
-                    onClick = {
-                        if (family == TerminalFontFamily.CUSTOM) {
-                            pickCustomFont.launch(arrayOf("*/*"))
-                        } else {
-                            onChange(profile.copy(fontFamily = family.name, customFontUri = null))
-                        }
-                    },
-                )
+            RadioRow(
+                selected = currentFamily == family,
+                onClick = {
+                    if (family == TerminalFontFamily.CUSTOM) {
+                        pickCustomFont.launch(arrayOf("*/*"))
+                    } else {
+                        onChange(profile.copy(fontFamily = family.name, customFontUri = null))
+                    }
+                },
+            ) {
                 Text(family.displayName)
             }
         }
@@ -138,10 +137,10 @@ internal fun TerminalProfileFields(
         Text("Cursor style", style = MaterialTheme.typography.labelLarge)
         val currentCursorStyle = TerminalCursorStyle.fromStored(profile.cursorStyle)
         TerminalCursorStyle.entries.forEach { style ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                RadioButton(
-                    selected = currentCursorStyle == style,
-                    onClick = { onChange(profile.copy(cursorStyle = style.name)) })
+            RadioRow(
+                selected = currentCursorStyle == style,
+                onClick = { onChange(profile.copy(cursorStyle = style.name)) },
+            ) {
                 Text(style.displayName)
             }
         }
@@ -183,11 +182,10 @@ internal fun ColorSchemeFields(scheme: ColorSchemeEntity, onChange: (ColorScheme
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Built-in", style = MaterialTheme.typography.labelLarge)
         BuiltInColorSchemes.ALL.forEach { builtin ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                RadioButton(
-                    selected = scheme.isBuiltIn && scheme.name == builtin.name,
-                    onClick = { onChange(builtin.copy(id = scheme.id)) },
-                )
+            RadioRow(
+                selected = scheme.isBuiltIn && scheme.name == builtin.name,
+                onClick = { onChange(builtin.copy(id = scheme.id)) },
+            ) {
                 Text(builtin.name)
             }
         }

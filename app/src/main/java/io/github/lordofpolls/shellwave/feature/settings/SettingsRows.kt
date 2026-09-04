@@ -5,13 +5,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
@@ -21,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
+import io.github.lordofpolls.shellwave.ui.design.RadioRow
 
 @Composable
 internal fun SettingsSectionHeader(title: String, first: Boolean = false) {
@@ -112,19 +111,11 @@ internal fun <T> SettingsRadioGroup(
 ) {
     if (label != null) Text(label, style = MaterialTheme.typography.labelLarge)
     options.forEach { option ->
-        Row(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .minimumInteractiveComponentSize()
-                    .selectable(
-                        selected = option == selected,
-                        role = Role.RadioButton,
-                        onClick = { onSelect(option) },
-                    ),
-            verticalAlignment = Alignment.CenterVertically,
+        RadioRow(
+            selected = option == selected,
+            onClick = { onSelect(option) },
+            modifier = Modifier.fillMaxWidth(),
         ) {
-            RadioButton(selected = option == selected, onClick = null)
             Text(labelOf(option))
         }
     }

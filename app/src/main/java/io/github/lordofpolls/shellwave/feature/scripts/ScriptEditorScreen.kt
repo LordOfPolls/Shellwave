@@ -18,7 +18,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
@@ -47,6 +46,7 @@ import io.github.lordofpolls.shellwave.core.prefs.AutomationPreferences
 import io.github.lordofpolls.shellwave.core.util.extractParamNames
 import io.github.lordofpolls.shellwave.ui.design.BackTopBar
 import io.github.lordofpolls.shellwave.ui.design.MachineText
+import io.github.lordofpolls.shellwave.ui.design.RadioRow
 import io.github.lordofpolls.shellwave.ui.design.rememberFormState
 import kotlinx.coroutines.launch
 
@@ -167,8 +167,7 @@ fun ScriptEditorScreen(
 
             Text("Mode", style = MaterialTheme.typography.titleSmall)
             ScriptMode.entries.forEach { candidate ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(selected = mode == candidate, onClick = { mode = candidate })
+                RadioRow(selected = mode == candidate, onClick = { mode = candidate }) {
                     Column {
                         Text(candidate.label())
                         Text(
@@ -184,8 +183,7 @@ fun ScriptEditorScreen(
                 Text("Target host", style = MaterialTheme.typography.titleSmall)
                 // "Ask each run" answers the same question the hosts do, so one radio group makes "no
                 // fixed host" read as a choice rather than the absence of one. First in the list.
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(selected = targetHostId == null, onClick = { targetHostId = null })
+                RadioRow(selected = targetHostId == null, onClick = { targetHostId = null }) {
                     Column {
                         Text("Ask each run")
                         Text(
@@ -196,10 +194,10 @@ fun ScriptEditorScreen(
                     }
                 }
                 hosts.forEach { host ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = targetHostId == host.id,
-                            onClick = { targetHostId = host.id })
+                    RadioRow(
+                        selected = targetHostId == host.id,
+                        onClick = { targetHostId = host.id },
+                    ) {
                         // A user-chosen label is human text; a bare hostname is a machine assertion.
                         val hostLabel = host.label
                         if (hostLabel != null) Text(hostLabel) else MachineText(host.hostname)
@@ -338,10 +336,10 @@ private fun ParamEditorRow(param: ScriptParam, onChange: (ScriptParam) -> Unit) 
         )
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             ParamType.entries.forEach { candidate ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(
-                        selected = param.type == candidate,
-                        onClick = { onChange(param.copy(type = candidate)) })
+                RadioRow(
+                    selected = param.type == candidate,
+                    onClick = { onChange(param.copy(type = candidate)) },
+                ) {
                     Text(candidate.name.lowercase())
                 }
             }

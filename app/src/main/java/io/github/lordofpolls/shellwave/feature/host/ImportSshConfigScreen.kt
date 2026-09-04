@@ -18,7 +18,6 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -46,6 +45,7 @@ import io.github.lordofpolls.shellwave.ssh.parseSshConfig
 import io.github.lordofpolls.shellwave.ssh.publicKeyLineOf
 import io.github.lordofpolls.shellwave.ssh.readKeyText
 import io.github.lordofpolls.shellwave.ui.design.BackTopBar
+import io.github.lordofpolls.shellwave.ui.design.RadioRow
 import kotlinx.coroutines.launch
 
 /** How a previewed entry gets its mandatory HostEntity.credentialId - see this file's class doc. */
@@ -421,10 +421,10 @@ private fun ImportEntryCard(
             HorizontalDivider()
             Text("Credential", style = MaterialTheme.typography.labelLarge)
             EntryCredentialChoice.entries.forEach { choice ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(
-                        selected = state.credentialChoice == choice,
-                        onClick = { state.credentialChoice = choice })
+                RadioRow(
+                    selected = state.credentialChoice == choice,
+                    onClick = { state.credentialChoice = choice },
+                ) {
                     Text(choice.label())
                 }
             }
@@ -437,10 +437,10 @@ private fun ImportEntryCard(
                         )
                     } else {
                         existingCredentials.forEach { credential ->
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                RadioButton(
-                                    selected = state.existingCredentialId == credential.id,
-                                    onClick = { state.existingCredentialId = credential.id })
+                            RadioRow(
+                                selected = state.existingCredentialId == credential.id,
+                                onClick = { state.existingCredentialId = credential.id },
+                            ) {
                                 Text(credentialLabel(credential))
                             }
                         }

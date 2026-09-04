@@ -12,7 +12,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -36,6 +35,7 @@ import io.github.lordofpolls.shellwave.terminal.SPECIAL_KEY_CHOICES
 import io.github.lordofpolls.shellwave.terminal.decodeKeyBarKeys
 import io.github.lordofpolls.shellwave.terminal.encodeKeyBarKeys
 import io.github.lordofpolls.shellwave.ui.design.BackTopBar
+import io.github.lordofpolls.shellwave.ui.design.RadioRow
 import kotlinx.coroutines.launch
 
 /**
@@ -259,10 +259,20 @@ private fun AddKeyDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(selected = !macroMode, onClick = { macroMode = false })
-                    Text("Special key")
-                    RadioButton(selected = macroMode, onClick = { macroMode = true })
-                    Text("Macro")
+                    RadioRow(
+                        selected = !macroMode,
+                        onClick = { macroMode = false },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Special key")
+                    }
+                    RadioRow(
+                        selected = macroMode,
+                        onClick = { macroMode = true },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Macro")
+                    }
                 }
                 if (macroMode) {
                     OutlinedTextField(
