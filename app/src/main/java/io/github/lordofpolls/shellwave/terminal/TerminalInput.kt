@@ -2,12 +2,13 @@ package io.github.lordofpolls.shellwave.terminal
 
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.input.InputTransformation
+import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -27,16 +28,14 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.KeyboardCapitalization
-import androidx.compose.ui.text.input.TextFieldValue
 import com.termux.terminal.KeyHandler
 import androidx.compose.ui.input.key.KeyEvent as ComposeKeyEvent
 
 /**
- * Non-empty so backspace is observable at all: an IME never calls onValueChange for "delete" on an
- * already-empty field. Deleting this placeholder is how a bare backspace is detected.
+ * Non-empty so backspace is observable at all: a delete on an already-empty field produces no
+ * edit at all. Deleting this placeholder is how a bare backspace is detected.
  */
 private const val PLACEHOLDER = " "
-private val PLACEHOLDER_VALUE = TextFieldValue(PLACEHOLDER, TextRange(1))
 
 /**
  * An invisible, always-focused field capturing IME text for the terminal. [onText] gets newly typed
@@ -59,56 +58,41 @@ fun TerminalInputCapture(
     screenText: String,
     modifier: Modifier = Modifier,
 ) {
-    var value by remember { mutableStateOf(PLACEHOLDER_VALUE) }
-
-    // What onValueChange last saw in the platform's own buffer. See below for why new text is
-    // diffed against this and not PLACEHOLDER.
-    var lastObserved by remember { mutableStateOf(PLACEHOLDER) }
+    val state = remember { TextFieldState(PLACEHOLDER, TextRange(1)) }
+    val currentOnText by rememberUpdatedState(onText)
+    val currentOnBackspace by rememberUpdatedState(onBackspace)
+    val transformation =
+        remember {
+            InputTransformation {
+                try {
+                    when (val delta = terminalInputDelta(originalText.toString(), asCharSequence().toString())) {
+                        is InputDelta.Text -> currentOnText(delta.text)
+                        InputDelta.Backspace -> currentOnBackspace()
+                        InputDelta.None -> {}
+                    }
+                } finally {
+                    // Skipping the revert would leave typed text in the buffer and re-send it as a prefix on every later edit.
+                    revertAllChanges()
+                }
+            }
+        }
 
     // This field's own long-press-to-select menu would otherwise pop up alongside the ActionMode a
     // long-press on the terminal is supposed to open, and Android has no notion of one deferring to
     // the other.
     CompositionLocalProvider(LocalTextToolbar provides NoOpTextToolbar) {
         BasicTextField(
-            value = value,
-            onValueChange = { new ->
-                val text = new.text
-                when {
-                    // The buffer grew from whatever we last observed, whether or not the reset below has propagated
-                    // back into it yet. This makes fast typing and autorepeat correct: onText() gets exactly
-                    // the newly appended suffix, never a re-send. Diffing against the fixed placeholder instead
-                    // assumes every reset lands before the next keystroke, which a controlled BasicTextField does not
-                    // guarantee, and outrunning it duplicates input.
-                    //
-                    // The isNotEmpty() guard matters: a backspace that empties the field sets lastObserved to "", and
-                    // every string starts with "". Without it the next keystroke takes substring(0) and sends the
-                    // whole buffer including the leading space.
-                    lastObserved.isNotEmpty() && text.length > lastObserved.length && text.startsWith(
-                        lastObserved
-                    ) ->
-                        onText(text.substring(lastObserved.length))
-                    // The reset landed first, so the buffer no longer extends lastObserved but is
-                    // still placeholder-prefixed. Deliberately not guarded by "text !=
-                    // lastObserved": typing the same character twice, each time after a landed
-                    // reset, produces the identical string both times, and that repeat is real
-                    // input.
-                    text.length > PLACEHOLDER.length && text.startsWith(PLACEHOLDER) ->
-                        onText(text.substring(PLACEHOLDER.length))
-
-                    text.isEmpty() -> onBackspace()
-                    text != PLACEHOLDER -> onText(text)
-                }
-                lastObserved = text
-                value = PLACEHOLDER_VALUE
-            },
+            state = state,
+            inputTransformation = transformation,
             // Plain `semantics` over `clearAndSetSemantics`: the field's editable-text role and
             // SetText action are what make the IME reachable at all.
-            modifier = modifier
-                .focusRequester(focusRequester)
-                .semantics {
-                    contentDescription =
-                        if (screenText.isEmpty()) accessibilityLabel else "$accessibilityLabel\n$screenText"
-                },
+            modifier =
+                modifier
+                    .focusRequester(focusRequester)
+                    .semantics {
+                        contentDescription =
+                            if (screenText.isEmpty()) accessibilityLabel else "$accessibilityLabel\n$screenText"
+                    },
             textStyle = TextStyle(color = Color.Transparent),
             cursorBrush = SolidColor(Color.Transparent),
             keyboardOptions =
@@ -119,6 +103,23 @@ fun TerminalInputCapture(
         )
     }
 }
+
+internal sealed class InputDelta {
+    data class Text(val text: String) : InputDelta()
+
+    data object Backspace : InputDelta()
+
+    data object None : InputDelta()
+}
+
+/** Pure classifier over the field's state before and after an edit. */
+internal fun terminalInputDelta(original: String, result: String): InputDelta =
+    when {
+        result == original -> InputDelta.None
+        result.isEmpty() -> InputDelta.Backspace
+        result.startsWith(PLACEHOLDER) -> InputDelta.Text(result.substring(PLACEHOLDER.length))
+        else -> InputDelta.Text(result)
+    }
 
 private object NoOpTextToolbar : TextToolbar {
     override val status: TextToolbarStatus = TextToolbarStatus.Hidden

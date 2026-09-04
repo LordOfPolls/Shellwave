@@ -572,14 +572,17 @@ internal fun SessionTabBody(
     }
 
     fun sendText(text: String) {
+        // The latch is a one-shot modifier for the next keypress, not the next batch: a fast burst
+        // can coalesce several characters into one delta, and only the first of those was actually
+        // typed while the modifier was held.
         val toSend =
             when {
-                ctrlLatched -> {
+                text.isNotEmpty() && ctrlLatched -> {
                     ctrlLatched = false
-                    text.map { ctrlCode(it) ?: it }.joinToString("")
+                    (ctrlCode(text[0]) ?: text[0]) + text.substring(1)
                 }
 
-                altLatched -> {
+                text.isNotEmpty() && altLatched -> {
                     altLatched = false
                     "\u001B$text"
                 }

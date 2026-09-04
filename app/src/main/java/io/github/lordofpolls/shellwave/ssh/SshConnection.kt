@@ -103,6 +103,7 @@ open class SshConnection(
 
     private val ssh = SSHClient()
     private var session: Session? = null
+    @Volatile
     private var shell: Session.Shell? = null
     private var readerJob: Job? = null
     private val closing = AtomicBoolean(false)
@@ -332,7 +333,10 @@ open class SshConnection(
     override fun write(data: ByteArray, offset: Int, count: Int) {
         val copy = data.copyOfRange(offset, offset + count)
         scope.launch(writeDispatcher) {
-            val out = shell?.outputStream ?: return@launch
+            val out = shell?.outputStream ?: run {
+                Log.w(LOG_TAG, "write dropped: shell not open (${copy.size} bytes)")
+                return@launch
+            }
             try {
                 out.write(copy)
                 out.flush()
@@ -462,7 +466,12 @@ open class SshConnection(
         closeLogging()
         scope.launch(Dispatchers.IO) {
             stopAllForwards()
-            runCatching { shell?.close() }
+            // Nulled before closing, not after, so a write racing this sees the logged null branch
+            // in write() for the whole window rather than an IOException on a stream that's already
+            // being torn down.
+            val s = shell
+            shell = null
+            runCatching { s?.close() }
             runCatching { session?.close() }
             runCatching { ssh.disconnect() }
             // After `ssh` itself, per ProxyChainResources.disconnect's ordering. A no-op with no
