@@ -265,6 +265,38 @@ class MigrationTest {
         }
     }
 
+    @Test
+    fun migrate8To9PreservesCredentialsAndLeavesCertificateUnset() {
+        // Build the DB at v8 (against the exported 8.json) and insert a credential using only
+        // columns that exist in v8 - `certificate` does not exist yet at this point.
+        helper.createDatabase(TEST_DB, 8).use { db ->
+            val values =
+                ContentValues().apply {
+                    put("type", "PRIVATE_KEY")
+                    put("label", "deploy key")
+                    put("keystoreAlias", "vault_default")
+                    put("secretIv", ByteArray(12))
+                    put("secretCiphertext", ByteArray(16))
+                    putNull("passphraseIv")
+                    putNull("passphraseCiphertext")
+                    put("publicKeyText", "ssh-ed25519 AAAA shellwave")
+                    put("createdAt", 1000L)
+                }
+            db.insert("credentials", android.database.sqlite.SQLiteDatabase.CONFLICT_FAIL, values)
+        }
+
+        // Run the real migration and validate against the live (v9) schema.
+        val migrated = helper.runMigrationsAndValidate(TEST_DB, 9, true, MIGRATION_8_9)
+
+        migrated.query("SELECT label, certificate FROM credentials").use { cursor ->
+            assertEquals(1, cursor.count)
+            assertEquals(true, cursor.moveToFirst())
+            assertEquals("deploy key", cursor.getString(cursor.getColumnIndexOrThrow("label")))
+            // A credential saved before certificates existed simply has no certificate.
+            assertEquals(true, cursor.isNull(cursor.getColumnIndexOrThrow("certificate")))
+        }
+    }
+
     companion object {
         private const val TEST_DB = "migration-test"
     }

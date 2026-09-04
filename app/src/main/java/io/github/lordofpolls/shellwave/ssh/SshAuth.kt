@@ -3,6 +3,7 @@ package io.github.lordofpolls.shellwave.ssh
 import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.connection.channel.direct.DirectConnection
 import net.schmizz.sshj.transport.verification.HostKeyVerifier
+import net.schmizz.sshj.userauth.keyprovider.KeyProvider
 import net.schmizz.sshj.userauth.method.AuthKeyboardInteractive
 import net.schmizz.sshj.userauth.password.PasswordUtils
 
@@ -65,12 +66,7 @@ internal fun connectViaAndAuthenticate(
 private fun authenticate(ssh: SSHClient, username: String, authMethod: AuthMethod) {
     when (authMethod) {
         is AuthMethod.Password -> ssh.authPassword(username, authMethod.password)
-        is AuthMethod.PrivateKey -> {
-            val passwordFinder =
-                authMethod.passphrase?.let { PasswordUtils.createOneOff(it.toCharArray()) }
-            val keyProvider = ssh.loadKeys(authMethod.privateKeyPem, null, passwordFinder)
-            ssh.authPublickey(username, keyProvider)
-        }
+        is AuthMethod.PrivateKey -> ssh.authPublickey(username, keyProviderFor(authMethod))
         // TODO: this path is broken. sshj throws NullPointerException inside `UserAuthImpl.handle`
         // and reports it as "Exhausted available authentication methods". Reproduces identically on
         // an unoptimized debug build, so it is not R8. Not yet root-caused past that.
@@ -79,4 +75,14 @@ private fun authenticate(ssh: SSHClient, username: String, authMethod: AuthMetho
             AuthKeyboardInteractive(authMethod.provider)
         )
     }
+}
+
+/** The seam [authenticate]'s `PrivateKey` branch uses - a certificate goes through [loadKeysWithCertificate], otherwise the bare key. */
+internal fun keyProviderFor(authMethod: AuthMethod.PrivateKey): KeyProvider {
+    val certificate = authMethod.certificate
+    if (certificate != null) {
+        return loadKeysWithCertificate(authMethod.privateKeyPem, certificate, authMethod.passphrase)
+    }
+    val passwordFinder = authMethod.passphrase?.let { PasswordUtils.createOneOff(it.toCharArray()) }
+    return SSHClient().loadKeys(authMethod.privateKeyPem, null, passwordFinder)
 }

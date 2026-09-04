@@ -119,22 +119,24 @@ fun ImportSshConfigScreen(
     val pickDocument =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri == null) return@rememberLauncherForActivityResult
-            runCatching {
-                val text = readKeyText(activity.contentResolver, uri)
-                parseSshConfig(text)
-            }.onSuccess { config ->
-                readError = null
-                importSummary = null
-                parsed = config
-                entries.clear()
-                entries += config.hosts.map { host ->
-                    val duplicate = existingHosts.any {
-                        it.hostname == host.hostName && it.port == (host.port
-                            ?: 22) && it.username == host.user
+            scope.launch {
+                runCatching {
+                    val text = readKeyText(activity.contentResolver, uri)
+                    parseSshConfig(text)
+                }.onSuccess { config ->
+                    readError = null
+                    importSummary = null
+                    parsed = config
+                    entries.clear()
+                    entries += config.hosts.map { host ->
+                        val duplicate = existingHosts.any {
+                            it.hostname == host.hostName && it.port == (host.port
+                                ?: 22) && it.username == host.user
+                        }
+                        ImportEntryState(host, alreadyImported = duplicate)
                     }
-                    ImportEntryState(host, alreadyImported = duplicate)
-                }
-            }.onFailure { readError = it.message ?: "Could not read that file" }
+                }.onFailure { readError = it.message ?: "Could not read that file" }
+            }
         }
 
     suspend fun resolveCredentialId(state: ImportEntryState): Long? =
@@ -258,6 +260,27 @@ fun ImportSshConfigScreen(
                         }
                     }
 
+                    if (config.matchNotes.isNotEmpty()) {
+                        Card(modifier = Modifier.fillMaxWidth()) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text(
+                                    "Match blocks not applied",
+                                    style = MaterialTheme.typography.titleSmall
+                                )
+                                Text(
+                                    "Shellwave only understands \"Match host <pattern-list>\" and \"Match all\" - these blocks were skipped entirely:",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                                config.matchNotes.forEach {
+                                    Text(it, style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                        }
+                    }
+
                     if (config.hosts.isEmpty()) {
                         Text(
                             "No importable Host entries found in this file.",
@@ -318,11 +341,14 @@ private fun ImportEntryCard(
     existingCredentials: List<CredentialEntity>
 ) {
     val activity = LocalActivity.current as FragmentActivity
+    val scope = rememberCoroutineScope()
     val pickKeyFile =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null) {
-                runCatching { readKeyText(activity.contentResolver, uri) }
-                    .onSuccess { state.importedPem = it; state.importedPublicKeyPreview = null }
+                scope.launch {
+                    runCatching { readKeyText(activity.contentResolver, uri) }
+                        .onSuccess { state.importedPem = it; state.importedPublicKeyPreview = null }
+                }
             }
         }
 

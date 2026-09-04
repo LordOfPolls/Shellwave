@@ -12,10 +12,19 @@ package io.github.lordofpolls.shellwave.ssh
  * real ssh_config accumulates every line that applies. A `Host` pattern containing `*` or `?`
  * matches, but is not itself importable.
  *
- * Not implemented, and surfaced and not dropped: `!pattern` negation (a leading `!` is treated as a
- * literal), `ProxyJump`'s full `user@host:port` and multi-hop grammar (a bare alias resolves,
- * anything else is shown unresolved), `Match` blocks (TODO if anyone asks for them), and `Include`,
- * where SAF hands over one document URI and not a filesystem to resolve relative paths against, so
+ * Exactly two `Match` forms are handled, the same way as ssh_config itself: `Match host
+ * <pattern-list>` (a single comma-separated argument, `!`-negatable per pattern) and `Match all`
+ * (no argument). A `Match host` block applies to an alias if any of its patterns match that alias's
+ * resolved `HostName` - falling back to the alias itself when no `Host` block set one - and its
+ * directives take part in the same first-match-wins, file-order precedence as every `Host` block.
+ * Any other `Match` line - a criterion this parser doesn't implement (`user`, `exec`, ...), or more
+ * than one criterion (`Match host x user y`) - is not guessed at: the whole block is dropped, and
+ * [ParsedSshConfig.matchNotes] says so instead of silently losing it.
+ *
+ * Not implemented, and surfaced and not dropped: `!pattern` negation on `Host` itself (a leading `!`
+ * there is treated as a literal - only `Match host` negates), `ProxyJump`'s full `user@host:port` and
+ * multi-hop grammar (a bare alias resolves, anything else is shown unresolved), and `Include`, where
+ * SAF hands over one document URI and not a filesystem to resolve relative paths against, so
  * ParsedSshConfig.includeDirectives lets the screen explain the short host list.
  *
  * [ParsedSshHost.identityFiles] holds paths, never key material: nothing here opens a file an
@@ -32,9 +41,41 @@ private val RECOGNIZED_KEYS = setOf(
     "serveraliveinterval"
 )
 
-/** One `Host` block as written: the pattern(s) on its `Host` line, and every recognised key/value pair until the next `Host` line. */
-private class ConfigBlock(val patterns: List<String>) {
+/** One `Host` or `Match` block as written: what makes it apply to a given alias, and every recognised key/value pair until the next `Host`/`Match` line. */
+private sealed class ConfigBlock {
     val params = mutableListOf<Pair<String, String>>()
+    abstract fun appliesTo(alias: String, hostName: String): Boolean
+}
+
+/** A `Host` block: matches purely on the alias, same as always - `hostName` is unused. */
+private class HostBlock(val patterns: List<String>) : ConfigBlock() {
+    override fun appliesTo(alias: String, hostName: String) = patterns.any { matchesHostPattern(it, alias) }
+}
+
+/**
+ * `Match host <patterns>`: matches against the alias's already-resolved `HostName` (or the alias
+ * itself, if none), not the alias - the one place this parser's `Host`/`Match` matching differs.
+ * A leading `!` on a pattern negates it: if any negated pattern matches, the whole line does not
+ * apply, regardless of the positive patterns.
+ */
+private class MatchHostBlock(patterns: List<String>) : ConfigBlock() {
+    private val negated = patterns.filter { it.startsWith("!") }.map { it.substring(1) }
+    private val positive = patterns.filterNot { it.startsWith("!") }
+
+    override fun appliesTo(alias: String, hostName: String): Boolean {
+        if (negated.any { matchesHostPattern(it, hostName) }) return false
+        return positive.isEmpty() || positive.any { matchesHostPattern(it, hostName) }
+    }
+}
+
+/** `Match all`: always applies. */
+private class MatchAllBlock : ConfigBlock() {
+    override fun appliesTo(alias: String, hostName: String) = true
+}
+
+/** A `Match` line this parser doesn't implement: never added to `blocks`, so its collected params are never read. */
+private class IgnoredMatchBlock : ConfigBlock() {
+    override fun appliesTo(alias: String, hostName: String) = false
 }
 
 /**
@@ -62,8 +103,17 @@ data class ParsedSshHost(
     val serverAliveInterval: Int?,
 )
 
-/** [hosts] in first-seen order; [includeDirectives] every `Include` argument found, in file order, never followed - see class doc. */
-data class ParsedSshConfig(val hosts: List<ParsedSshHost>, val includeDirectives: List<String>)
+/**
+ * [hosts] in first-seen order; [includeDirectives] every `Include` argument found, in file order,
+ * never followed - see class doc. [matchNotes] records one entry per `Match` block whose criterion
+ * this parser does not implement, in file order, so the block is explained rather than silently
+ * dropped.
+ */
+data class ParsedSshConfig(
+    val hosts: List<ParsedSshHost>,
+    val includeDirectives: List<String>,
+    val matchNotes: List<String> = emptyList(),
+)
 
 /** True if [pattern] contains an ssh_config glob character (`*` or `?`) and therefore can never itself be a literal, connectable alias. */
 private fun isWildcardPattern(pattern: String): Boolean =
@@ -91,6 +141,7 @@ private fun matchesHostPattern(pattern: String, alias: String): Boolean {
 fun parseSshConfig(text: String): ParsedSshConfig {
     val blocks = mutableListOf<ConfigBlock>()
     val includeDirectives = mutableListOf<String>()
+    val matchNotes = mutableListOf<String>()
     val aliasOrder = LinkedHashSet<String>()
     var current: ConfigBlock? = null
 
@@ -108,10 +159,30 @@ fun parseSshConfig(text: String): ParsedSshConfig {
             key == "host" -> {
                 if (value.isEmpty()) continue // "Host" with no pattern: malformed, ignore rather than throw.
                 val patterns = value.split(Regex("\\s+")).filter { it.isNotBlank() }
-                val block = ConfigBlock(patterns)
+                val block = HostBlock(patterns)
                 blocks += block
                 current = block
                 patterns.filterNot(::isWildcardPattern).forEach { aliasOrder += it }
+            }
+
+            key == "match" -> {
+                // Exactly one criterion is supported: "all" with no argument, or "host" with a
+                // single comma-separated pattern-list argument. Any other shape - an unsupported
+                // criterion, or more than one criterion ("Match host x user y") - drops the block.
+                val tokens = value.split(Regex("\\s+")).filter { it.isNotBlank() }
+                current =
+                    when {
+                        tokens.size == 1 && tokens[0].equals("all", ignoreCase = true) ->
+                            MatchAllBlock().also { blocks += it }
+
+                        tokens.size == 2 && tokens[0].equals("host", ignoreCase = true) ->
+                            MatchHostBlock(tokens[1].split(",").filter { it.isNotBlank() }).also { blocks += it }
+
+                        else -> {
+                            matchNotes += "Match $value: ignored (only 'Match host <pattern-list>' and 'Match all' are supported)"
+                            IgnoredMatchBlock() // Not added to `blocks` - its directives go nowhere.
+                        }
+                    }
             }
 
             key == "include" -> {
@@ -120,23 +191,36 @@ fun parseSshConfig(text: String): ParsedSshConfig {
 
             key in RECOGNIZED_KEYS -> {
                 if (value.isEmpty()) continue // key with no value: malformed, ignore rather than throw.
-                // A directive before any "Host" line applies file-wide: treat it like an implicit
-                // "Host *".
-                val block = current ?: ConfigBlock(listOf("*")).also { blocks += it; current = it }
+                // A directive before any "Host"/"Match" line applies file-wide: treat it like an
+                // implicit "Host *".
+                val block = current ?: HostBlock(listOf("*")).also { blocks += it; current = it }
                 block.params += key to value
             }
 
-            else -> Unit // Unrecognised directive (Match, Compression sub-options, etc.) - not this parser's concern.
+            else -> Unit // Unrecognised directive (Compression sub-options, etc.) - not this parser's concern.
         }
     }
 
-    val hosts = aliasOrder.map { alias -> resolveHost(alias, blocks) }
-    return ParsedSshConfig(hosts = hosts, includeDirectives = includeDirectives)
+    val hostBlocks = blocks.filterIsInstance<HostBlock>()
+    val hosts = aliasOrder.map { alias -> resolveHost(alias, hostBlocks, blocks) }
+    return ParsedSshConfig(hosts = hosts, includeDirectives = includeDirectives, matchNotes = matchNotes)
 }
 
+/**
+ * `HostName` as `Host` blocks alone would resolve it - the value `Match host` blocks are matched
+ * against. Computed from [hostBlocks] only, never from `Match` blocks: an alias's `HostName` isn't
+ * allowed to depend on a `Match` block whose own applicability depends on that same `HostName`.
+ */
+private fun resolvedHostNameForMatching(alias: String, hostBlocks: List<HostBlock>): String =
+    hostBlocks
+        .filter { it.appliesTo(alias, "") }
+        .firstNotNullOfOrNull { block -> block.params.firstOrNull { it.first == "hostname" }?.second }
+        ?: alias
+
 /** First-match-wins per key, `IdentityFile` cumulative - see this file's class doc. */
-private fun resolveHost(alias: String, blocks: List<ConfigBlock>): ParsedSshHost {
-    val matching = blocks.filter { block -> block.patterns.any { matchesHostPattern(it, alias) } }
+private fun resolveHost(alias: String, hostBlocks: List<HostBlock>, blocks: List<ConfigBlock>): ParsedSshHost {
+    val hostName = resolvedHostNameForMatching(alias, hostBlocks)
+    val matching = blocks.filter { it.appliesTo(alias, hostName) }
 
     fun firstValue(key: String): String? =
         matching.firstNotNullOfOrNull { block -> block.params.firstOrNull { it.first == key }?.second }

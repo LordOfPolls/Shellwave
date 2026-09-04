@@ -21,6 +21,8 @@ data class CredentialEntity(
     val passphraseCiphertext: ByteArray?,
     val publicKeyText: String?,
     val createdAt: Long,
+    /** The `-cert.pub` text alongside a private key, if the user picked one - not secret, so plain text, not through the vault. */
+    val certificate: String? = null,
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -34,7 +36,8 @@ data class CredentialEntity(
                 passphraseIv.contentEquals(other.passphraseIv) &&
                 passphraseCiphertext.contentEquals(other.passphraseCiphertext) &&
                 publicKeyText == other.publicKeyText &&
-                createdAt == other.createdAt
+                createdAt == other.createdAt &&
+                certificate == other.certificate
     }
 
     override fun hashCode(): Int {
@@ -48,6 +51,7 @@ data class CredentialEntity(
         result = 31 * result + (passphraseCiphertext?.contentHashCode() ?: 0)
         result = 31 * result + (publicKeyText?.hashCode() ?: 0)
         result = 31 * result + createdAt.hashCode()
+        result = 31 * result + (certificate?.hashCode() ?: 0)
         return result
     }
 }

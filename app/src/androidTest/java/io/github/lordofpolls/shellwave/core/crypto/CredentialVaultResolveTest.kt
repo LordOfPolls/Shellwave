@@ -28,6 +28,10 @@ private class FakeCredentialDao : CredentialDao {
         rows[credential.id] = credential
     }
 
+    override suspend fun setCertificate(id: Long, certificate: String?) {
+        rows[id]?.let { rows[id] = it.copy(certificate = certificate) }
+    }
+
     override suspend fun delete(credential: CredentialEntity) {
         rows.remove(credential.id)
     }

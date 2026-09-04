@@ -346,6 +346,213 @@ class SshConfigParserTest {
     }
 
     @Test
+    fun `a Match host block contributes a directive when its pattern matches the resolved HostName`() {
+        val config =
+            """
+            Host web1
+                HostName web1.example
+
+            Match host *.example
+                User matcheduser
+            """.trimIndent()
+
+        val parsed = parseSshConfig(config)
+
+        val web1 = parsed.hosts.single { it.alias == "web1" }
+        assertEquals("matcheduser", web1.user)
+        assertTrue(parsed.matchNotes.isEmpty())
+    }
+
+    @Test
+    fun `a Match block on an unsupported criterion is ignored and recorded as a note`() {
+        val config =
+            """
+            Host web1
+                HostName 10.16.16.1
+
+            Match user x
+                User shouldneverapply
+            """.trimIndent()
+
+        val parsed = parseSshConfig(config)
+
+        val web1 = parsed.hosts.single { it.alias == "web1" }
+        assertNull(web1.user)
+        assertEquals(1, parsed.matchNotes.size)
+        assertTrue(parsed.matchNotes.single().contains("Match user x"))
+    }
+
+    @Test
+    fun `Match all applies unconditionally, regardless of HostName`() {
+        val config =
+            """
+            Host web1
+                HostName 10.20.20.1
+
+            Match all
+                User everyone
+            """.trimIndent()
+
+        val parsed = parseSshConfig(config)
+
+        assertEquals("everyone", parsed.hosts.single().user)
+    }
+
+    @Test
+    fun `two separate Match all blocks do not share state - an earlier Host block's directive still wins`() {
+        // Each "Match all" must be its own instance: if they shared one underlying params list (the
+        // bug being guarded against), the second block's "User gamma" would leak into the first
+        // block's params too, and - since the first block sits earlier in file order than the Host
+        // block - "gamma" would incorrectly win over "beta" below.
+        val config =
+            """
+            Match all
+                Port 22
+
+            Host web1
+                HostName 10.20.20.2
+                User beta
+
+            Match all
+                User gamma
+            """.trimIndent()
+
+        val parsed = parseSshConfig(config)
+
+        assertEquals("beta", parsed.hosts.single().user)
+    }
+
+    @Test
+    fun `a negated pattern excludes an alias even when a positive pattern in the same line would match`() {
+        val config =
+            """
+            Host web1
+                HostName web1.example
+
+            Match host *.example,!web1.example
+                User shouldnotapply
+            """.trimIndent()
+
+        val parsed = parseSshConfig(config)
+
+        assertNull(parsed.hosts.single().user)
+    }
+
+    @Test
+    fun `negation-only patterns match everything except the negated pattern`() {
+        val config =
+            """
+            Host web1
+                HostName web1.example
+
+            Host web2
+                HostName web2.other
+
+            Match host !web1.example
+                User restuser
+            """.trimIndent()
+
+        val parsed = parseSshConfig(config)
+
+        assertNull(parsed.hosts.single { it.alias == "web1" }.user)
+        assertEquals("restuser", parsed.hosts.single { it.alias == "web2" }.user)
+    }
+
+    @Test
+    fun `a Host block earlier in the file wins over a later Match host block for the same alias`() {
+        val config =
+            """
+            Host special
+                HostName 10.1.1.1
+                User specificuser
+
+            Match host *
+                User globaluser
+            """.trimIndent()
+
+        val parsed = parseSshConfig(config)
+
+        assertEquals("specificuser", parsed.hosts.single().user)
+    }
+
+    @Test
+    fun `a Match host block earlier in the file wins over a later Host block for the same alias`() {
+        val config =
+            """
+            Match host *
+                User globaluser
+
+            Host special
+                HostName 10.1.1.1
+                User specificuser
+            """.trimIndent()
+
+        val parsed = parseSshConfig(config)
+
+        assertEquals("globaluser", parsed.hosts.single().user)
+    }
+
+    @Test
+    fun `a Match line with more than one criterion is dropped whole and recorded as a note`() {
+        val config =
+            """
+            Host web1
+                HostName 10.30.30.1
+
+            Match host *.example user root
+                User shouldneverapply
+            """.trimIndent()
+
+        val parsed = parseSshConfig(config)
+
+        assertNull(parsed.hosts.single().user)
+        assertEquals(1, parsed.matchNotes.size)
+        assertTrue(parsed.matchNotes.single().contains("Match host *.example user root"))
+    }
+
+    @Test
+    fun `a comma-separated Match host pattern list matches each pattern independently`() {
+        val config =
+            """
+            Host a1
+                HostName a1.example
+
+            Host a2
+                HostName a2.other
+
+            Match host a1.example,a2.other
+                User bothmatch
+            """.trimIndent()
+
+        val parsed = parseSshConfig(config)
+
+        assertEquals("bothmatch", parsed.hosts.single { it.alias == "a1" }.user)
+        assertEquals("bothmatch", parsed.hosts.single { it.alias == "a2" }.user)
+    }
+
+    @Test
+    fun `a Match block's own HostName directive never influences which Match blocks apply`() {
+        // If the HostName used to decide Match applicability were drawn from the full block list
+        // instead of Host blocks alone, "Match host *" would spuriously match the "" placeholder
+        // used while that HostName is still being resolved, feed its own spoofed HostName back in,
+        // and let "Match host spoofed.example" apply too - setting `user`, which must stay null.
+        val config =
+            """
+            Host victim
+
+            Match host *
+                HostName spoofed.example
+
+            Match host spoofed.example
+                User trapped
+            """.trimIndent()
+
+        val parsed = parseSshConfig(config)
+
+        assertNull(parsed.hosts.single { it.alias == "victim" }.user)
+    }
+
+    @Test
     fun `a directive before any Host line acts as a file-wide default`() {
         val config =
             """

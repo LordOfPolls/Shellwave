@@ -28,6 +28,7 @@ class KeyGeneratorTest {
         val expectedPrefix = mapOf(
             GeneratedKeyAlgorithm.ED25519 to "ssh-ed25519 ",
             GeneratedKeyAlgorithm.RSA to "ssh-rsa ",
+            GeneratedKeyAlgorithm.ECDSA_P256 to "ecdsa-sha2-nistp256 ",
         )
 
         for (algorithm in GeneratedKeyAlgorithm.entries) {

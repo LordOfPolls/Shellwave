@@ -65,6 +65,8 @@ import io.github.lordofpolls.shellwave.feature.settings.SettingsRow
 import io.github.lordofpolls.shellwave.feature.settings.SettingsSectionHeader
 import io.github.lordofpolls.shellwave.feature.settings.SettingsSwitch
 import io.github.lordofpolls.shellwave.feature.settings.TerminalProfileFields
+import com.hierynomus.sshj.userauth.certificate.Certificate
+import io.github.lordofpolls.shellwave.ssh.AuthMethod
 import io.github.lordofpolls.shellwave.ssh.GeneratedKey
 import io.github.lordofpolls.shellwave.ssh.GeneratedKeyAlgorithm
 import io.github.lordofpolls.shellwave.ssh.KeyEnrolment
@@ -72,6 +74,8 @@ import io.github.lordofpolls.shellwave.ssh.ScriptRunner
 import io.github.lordofpolls.shellwave.ssh.SessionManager
 import io.github.lordofpolls.shellwave.ssh.detectMacAddress
 import io.github.lordofpolls.shellwave.ssh.generateKeyPair
+import io.github.lordofpolls.shellwave.ssh.loadKeysWithCertificate
+import io.github.lordofpolls.shellwave.ssh.parsesAsCertificate
 import io.github.lordofpolls.shellwave.ssh.publicKeyLineOf
 import io.github.lordofpolls.shellwave.ssh.readKeyText
 import io.github.lordofpolls.shellwave.ssh.resolveProxyHops
@@ -208,6 +212,16 @@ fun AddEditHostScreen(
     var importedPem by remember { mutableStateOf("") }
     var importedPassphrase by remember { mutableStateOf("") }
     var importedPublicKeyPreview by remember { mutableStateOf<String?>(null) }
+    // Seeded from the stored credential's own certificate when editing (see the LaunchedEffect
+    // below); certificateTouched tracks whether the user actually picked or cleared one this
+    // session, so save() knows whether to write it back at all.
+    var importedCertificate by rememberFormState<String?>(existing?.id) { null }
+    var certificateTouched by rememberFormState(existing?.id) { false }
+    var certificateError by remember { mutableStateOf<String?>(null) }
+    var certificateNote by remember { mutableStateOf<String?>(null) }
+    // The stored key's own public line, for the ed25519 certificate note when editing without
+    // having re-typed the key (so importedPublicKeyPreview is still empty).
+    var existingPublicKeyText by rememberFormState<String?>(existing?.id) { null }
 
     var generatedKey by remember { mutableStateOf<GeneratedKey?>(null) }
 
@@ -228,6 +242,8 @@ fun AddEditHostScreen(
         originalAuthKind = kind
         storedSecretPresent = summary.hasStoredSecret
         requireBiometric = summary.requireBiometric
+        importedCertificate = summary.certificate
+        existingPublicKeyText = summary.publicKeyText
     }
 
     // Editing, radio still on the stored credential's auth kind, nothing typed that would replace
@@ -241,12 +257,78 @@ fun AddEditHostScreen(
                     AuthKind.KEYBOARD_INTERACTIVE -> true
                 }
 
+    // A rotated key must not silently carry over a certificate picked for the old one.
+    fun setImportedPem(pem: String) {
+        importedPem = pem
+        if (!certificateTouched) importedCertificate = null
+    }
+
     val pickDocument =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null) {
-                runCatching { readKeyText(activity.contentResolver, uri) }
-                    .onSuccess { importedPem = it }
-                    .onFailure { error = it.message }
+                scope.launch {
+                    runCatching { readKeyText(activity.contentResolver, uri) }
+                        .onSuccess { setImportedPem(it) }
+                        .onFailure { error = it.message }
+                }
+            }
+        }
+
+    val pickCertificate =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri == null) return@rememberLauncherForActivityResult
+            scope.launch {
+                certificateNote = null
+                val text = runCatching { readKeyText(activity.contentResolver, uri) }
+                    .onFailure { certificateError = it.message ?: "Could not read that file" }
+                    .getOrNull() ?: return@launch
+
+                when {
+                    // Load key and certificate together the way SshAuth will; sshj does not check
+                    // they match, only that the pair loads. The standalone parse fallback exists
+                    // because sshj drops a certificate on an ed25519 key (see loadKeysWithCertificate).
+                    importedPem.isNotBlank() -> {
+                        val matches = runCatching {
+                            loadKeysWithCertificate(
+                                importedPem,
+                                text,
+                                importedPassphrase.ifBlank { null },
+                            ).public is Certificate<*>
+                        }.getOrDefault(false)
+                        if (matches || parsesAsCertificate(text)) {
+                            importedCertificate = text.trim(); certificateTouched = true; certificateError = null
+                        } else {
+                            certificateError = "Not an OpenSSH certificate"
+                        }
+                    }
+
+                    // Editing, key unchanged: decrypt the stored PEM to validate against it. Either a
+                    // biometric-gated key that can't be unsealed right now, or the ed25519 key-match
+                    // limitation above, falls back to a standalone parse - the certificate/key match
+                    // is then only checked for real at connect time.
+                    keepExistingCredential -> {
+                        val authMethod =
+                            runCatching { credentialVault.resolve(existing!!.credentialId, activity) }
+                                .getOrNull() as? AuthMethod.PrivateKey
+                        val matches = authMethod != null && runCatching {
+                            loadKeysWithCertificate(
+                                authMethod.privateKeyPem,
+                                text,
+                                authMethod.passphrase,
+                            ).public is Certificate<*>
+                        }.getOrDefault(false)
+                        if (matches) {
+                            importedCertificate = text.trim(); certificateTouched = true; certificateError = null
+                        } else if (parsesAsCertificate(text)) {
+                            importedCertificate = text.trim(); certificateTouched = true; certificateError = null
+                            certificateNote = "Could not confirm this certificate matches the stored key - the match is checked at connect."
+                        } else {
+                            certificateError = "Not an OpenSSH certificate"
+                        }
+                    }
+
+                    else -> certificateError = "Load the private key first."
+                }
             }
         }
 
@@ -270,6 +352,9 @@ fun AddEditHostScreen(
             try {
                 val credentialId =
                     if (keepExistingCredential) {
+                        if (certificateTouched) {
+                            credentialVault.setCertificate(existing!!.credentialId, importedCertificate)
+                        }
                         existing!!.credentialId
                     } else {
                         when (authKind) {
@@ -288,6 +373,7 @@ fun AddEditHostScreen(
                                     label.ifBlank { null },
                                     requireBiometric,
                                     activity,
+                                    importedCertificate,
                                 )
 
                             AuthKind.GENERATE_KEY -> {
@@ -455,7 +541,7 @@ fun AddEditHostScreen(
                     )
                     OutlinedTextField(
                         value = importedPem,
-                        onValueChange = { importedPem = it; importedPublicKeyPreview = null },
+                        onValueChange = { setImportedPem(it); importedPublicKeyPreview = null },
                         label = { Text("Or paste private key") },
                         modifier = Modifier.fillMaxWidth(),
                         minLines = 3,
@@ -492,16 +578,53 @@ fun AddEditHostScreen(
                             MachineText(it, style = MaterialTheme.typography.bodySmall)
                         }
                     }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(onClick = { pickCertificate.launch(arrayOf("*/*")) }) {
+                            Text("Certificate (optional)")
+                        }
+                        if (importedCertificate != null) {
+                            TextButton(onClick = {
+                                importedCertificate = null
+                                certificateTouched = true
+                                certificateError = null
+                                certificateNote = null
+                            }) {
+                                Text("Clear")
+                            }
+                        }
+                    }
+                    certificateError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                    certificateNote?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                    if (importedCertificate != null) {
+                        Text("Certificate loaded - offered instead of the bare key.", style = MaterialTheme.typography.bodySmall)
+                        // sshj 0.40.0 can't attach a certificate to an ed25519 openssh-key-v1 PEM
+                        // loaded from a string - see KeyImport.loadKeysWithCertificate's KDoc.
+                        if ((importedPublicKeyPreview ?: existingPublicKeyText)?.startsWith("ssh-ed25519 ") == true) {
+                            Text(
+                                "ed25519 keys can't carry a certificate in this app yet (a known sshj limitation) - it will be ignored.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    }
                 }
 
                 AuthKind.GENERATE_KEY -> {
+                    Text("Generate:", style = MaterialTheme.typography.bodySmall)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = {
                             generatedKey = generateKeyPair(GeneratedKeyAlgorithm.ED25519)
-                        }) { Text("Generate ed25519") }
+                        }) { Text("ed25519") }
                         Button(onClick = {
                             generatedKey = generateKeyPair(GeneratedKeyAlgorithm.RSA)
-                        }) { Text("Generate RSA") }
+                        }) { Text("RSA") }
+                        Button(onClick = {
+                            generatedKey = generateKeyPair(GeneratedKeyAlgorithm.ECDSA_P256)
+                        }) { Text("ECDSA") }
                     }
                     generatedKey?.let { key ->
                         Text(

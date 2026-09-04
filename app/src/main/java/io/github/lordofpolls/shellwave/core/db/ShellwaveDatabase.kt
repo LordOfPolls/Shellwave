@@ -36,7 +36,7 @@ import io.github.lordofpolls.shellwave.core.db.entities.TerminalProfileEntity
         ScriptRunEntity::class,
         PortForwardEntity::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = true,
 )
 abstract class ShellwaveDatabase : RoomDatabase() {

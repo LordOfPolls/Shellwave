@@ -41,6 +41,7 @@ private class FakeCredentialDao(private val credentials: MutableMap<Long, Creden
     override fun observeAll(): Flow<List<CredentialEntity>> = TODO()
     override suspend fun insert(credential: CredentialEntity): Long = TODO()
     override suspend fun update(credential: CredentialEntity) = TODO()
+    override suspend fun setCertificate(id: Long, certificate: String?) = TODO()
     override suspend fun delete(credential: CredentialEntity) {
         deleted = credential
         credentials.remove(credential.id)

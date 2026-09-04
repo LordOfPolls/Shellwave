@@ -76,3 +76,11 @@ val MIGRATION_7_8 =
             db.execSQL("ALTER TABLE hosts ADD COLUMN macAddress TEXT")
         }
     }
+
+/** Nullable with no default: an existing credential simply has no certificate. */
+val MIGRATION_8_9 =
+    object : Migration(8, 9) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE credentials ADD COLUMN certificate TEXT")
+        }
+    }

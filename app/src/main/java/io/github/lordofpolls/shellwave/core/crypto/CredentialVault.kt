@@ -42,6 +42,7 @@ constructor(
         /** False for a row that arrived through a config import - see [hasSealedSecret]. */
         val hasStoredSecret: Boolean,
         val requireBiometric: Boolean,
+        val certificate: String?,
     )
 
     data class TriggerAuth(val scriptId: Long, val token: String)
@@ -60,7 +61,13 @@ constructor(
             credential.publicKeyText,
             credential.hasSealedSecret(),
             VaultAliasPolicy.isBiometricAlias(credential.keystoreAlias),
+            credential.certificate,
         )
+    }
+
+    /** Updates only the plaintext `certificate` column - no re-seal, since it never went through [VaultCrypto]. */
+    suspend fun setCertificate(credentialId: Long, certificate: String?) {
+        credentialDao.setCertificate(credentialId, certificate)
     }
 
     suspend fun storePassword(
@@ -93,6 +100,7 @@ constructor(
         label: String?,
         requireBiometric: Boolean,
         activity: FragmentActivity?,
+        certificate: String? = null,
     ): Long {
         val alias = aliasFor(requireBiometric)
         val sealedKey = encrypt(alias, privateKeyPem, activity)
@@ -108,6 +116,7 @@ constructor(
                 passphraseCiphertext = sealedPassphrase?.ciphertext,
                 publicKeyText = publicKeyText,
                 createdAt = System.currentTimeMillis(),
+                certificate = certificate,
             ),
         )
     }
@@ -185,7 +194,7 @@ constructor(
                         null
                     }
                 resealOntoWindowedAliasIfDue(credential, pem, passphrase)
-                AuthMethod.PrivateKey(pem, passphrase)
+                AuthMethod.PrivateKey(pem, passphrase, credential.certificate)
             }
 
             CredentialType.KEYBOARD_INTERACTIVE -> AuthMethod.KeyboardInteractive(

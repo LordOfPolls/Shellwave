@@ -23,6 +23,10 @@ interface CredentialDao {
     @Update
     suspend fun update(credential: CredentialEntity)
 
+    /** Column-targeted, not a read-modify-write [update]: leaves the sealed fields structurally untouched and can't race a concurrent reseal onto them. */
+    @Query("UPDATE credentials SET certificate = :certificate WHERE id = :id")
+    suspend fun setCertificate(id: Long, certificate: String?)
+
     @Delete
     suspend fun delete(credential: CredentialEntity)
 }
