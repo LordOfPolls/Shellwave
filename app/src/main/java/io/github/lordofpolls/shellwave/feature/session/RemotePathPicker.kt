@@ -34,7 +34,9 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
 import io.github.lordofpolls.shellwave.ssh.RemoteEntry
+import io.github.lordofpolls.shellwave.ssh.SftpOp
 import io.github.lordofpolls.shellwave.ssh.SshConnection
+import io.github.lordofpolls.shellwave.ssh.describeSftpFailure
 import io.github.lordofpolls.shellwave.ui.design.MachineText
 
 /**
@@ -83,7 +85,7 @@ internal fun RemotePathPickerDialog(
             },
             onFailure = { e ->
                 entries = emptyList()
-                failure = e.message ?: "The server did not return a listing."
+                failure = describeSftpFailure(e, SftpOp.List, path)
                 loading = false
             },
         )

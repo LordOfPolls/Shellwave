@@ -7,7 +7,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import io.github.lordofpolls.shellwave.ssh.SftpOp
 import io.github.lordofpolls.shellwave.ssh.SshConnection
+import io.github.lordofpolls.shellwave.ssh.describeSftpFailure
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -174,7 +176,8 @@ internal class FileTransferController internal constructor(private val scope: Co
                     // Never guess: if we can't tell whether the destination already exists, refuse
                     // and not risk a silent clobber.
                     error =
-                        "Couldn't check whether \"$trimmed\" already exists on the server: ${e.message}. Nothing was uploaded."
+                        "Couldn't check whether \"$trimmed\" already exists on the server: " +
+                            "${describeSftpFailure(e, SftpOp.Stat, trimmed)}. Nothing was uploaded."
                 },
             )
         }
@@ -202,7 +205,7 @@ internal class FileTransferController internal constructor(private val scope: Co
                         _progress.value =
                             TransferProgress(label, transferred, total.takeIf { it >= 0 })
                     }
-                finish(label, "Downloaded", outcome)
+                finish(label, "Downloaded", SftpOp.Download, remotePath, outcome)
             }
     }
 
@@ -221,11 +224,11 @@ internal class FileTransferController internal constructor(private val scope: Co
                         _progress.value =
                             TransferProgress(label, transferred, total.takeIf { it >= 0 })
                     }
-                finish(label, "Uploaded", outcome)
+                finish(label, "Uploaded", SftpOp.Upload, remotePath, outcome)
             }
     }
 
-    private fun finish(label: String, verb: String, outcome: Result<Long>) {
+    private fun finish(label: String, verb: String, op: SftpOp, remotePath: String, outcome: Result<Long>) {
         _progress.value = null
         activeConnection = null
         if (cancelledByUser) return // the user already dismissed this - don't pop a stale result/error over it
@@ -238,8 +241,16 @@ internal class FileTransferController internal constructor(private val scope: Co
                 )
             },
             onFailure = { e ->
-                result =
-                    TransferUiResult(label, success = false, message = e.message ?: "$verb failed")
+                val infinitive = when (op) {
+                    SftpOp.Download -> "download"
+                    SftpOp.Upload -> "upload"
+                    else -> error("finish() is only ever called for a download or an upload")
+                }
+                result = TransferUiResult(
+                    label,
+                    success = false,
+                    message = "Couldn't $infinitive \"$label\": ${describeSftpFailure(e, op, remotePath)}"
+                )
             },
         )
     }

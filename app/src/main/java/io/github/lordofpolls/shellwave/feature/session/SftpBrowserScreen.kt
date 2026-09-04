@@ -54,7 +54,9 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
 import io.github.lordofpolls.shellwave.ssh.RemoteEntry
+import io.github.lordofpolls.shellwave.ssh.SftpOp
 import io.github.lordofpolls.shellwave.ssh.SshConnection
+import io.github.lordofpolls.shellwave.ssh.describeSftpFailure
 import io.github.lordofpolls.shellwave.ui.design.EmptyState
 import io.github.lordofpolls.shellwave.ui.design.MachineText
 import kotlinx.coroutines.launch
@@ -110,7 +112,7 @@ fun SftpBrowserScreen(
             onFailure = { e ->
                 if (requested != path) return@fold
                 entries = emptyList()
-                failure = e.message ?: "The server did not return a listing."
+                failure = describeSftpFailure(e, SftpOp.List, requested)
             },
         )
     }
@@ -140,7 +142,9 @@ fun SftpBrowserScreen(
         scope.launch {
             connection.renameRemote(entry.path, target).fold(
                 onSuccess = { reload() },
-                onFailure = { e -> opError = "Couldn't rename \"${entry.name}\": ${e.message}" },
+                onFailure = { e ->
+                    opError = "Couldn't rename \"${entry.name}\": ${describeSftpFailure(e, SftpOp.Rename, entry.path)}"
+                },
             )
         }
     }
@@ -267,7 +271,8 @@ fun SftpBrowserScreen(
                             },
                             onFailure = { e ->
                                 opError =
-                                    "Couldn't check whether \"$target\" already exists on the server: ${e.message}. Nothing was renamed."
+                                    "Couldn't check whether \"$target\" already exists on the server: " +
+                                        "${describeSftpFailure(e, SftpOp.Stat, target)}. Nothing was renamed."
                             },
                         )
                     }
@@ -307,7 +312,10 @@ fun SftpBrowserScreen(
                             )
                         result.fold(
                             onSuccess = { reload() },
-                            onFailure = { e -> opError = "Couldn't delete \"${entry.name}\": ${e.message}" },
+                            onFailure = { e ->
+                                val op = if (entry.isDirectory) SftpOp.DeleteDir else SftpOp.Delete
+                                opError = "Couldn't delete \"${entry.name}\": ${describeSftpFailure(e, op, entry.path)}"
+                            },
                         )
                     }
                 }) { Text("Delete") }
@@ -331,12 +339,18 @@ fun SftpBrowserScreen(
                                 if (entry.isDirectory) connection.removeRemoteDir(entry.path) else connection.removeRemoteFile(
                                     entry.path
                                 )
-                            result.exceptionOrNull()?.let { entry.name to it }
+                            result.exceptionOrNull()?.let { entry to it }
                         }
                         reload()
                         if (failures.isNotEmpty()) {
                             opError =
-                                "Couldn't delete: ${failures.joinToString { (name, e) -> "$name (${e.message})" }}"
+                                "Couldn't delete: ${
+                                    failures.joinToString { (entry, e) ->
+                                        val op = if (entry.isDirectory) SftpOp.DeleteDir else SftpOp.Delete
+                                        val reason = describeSftpFailure(e, op, entry.path).removeSuffix(".")
+                                        "${entry.name} ($reason)"
+                                    }
+                                }"
                         }
                     }
                 }) { Text("Delete") }
@@ -352,10 +366,13 @@ fun SftpBrowserScreen(
             confirmLabel = "Create",
             onConfirm = { name ->
                 creatingFolder = false
+                val target = remoteChildPath(path, name)
                 scope.launch {
-                    connection.makeRemoteDir(remoteChildPath(path, name)).fold(
+                    connection.makeRemoteDir(target).fold(
                         onSuccess = { reload() },
-                        onFailure = { e -> opError = "Couldn't create \"$name\": ${e.message}" },
+                        onFailure = { e ->
+                            opError = "Couldn't create \"$name\": ${describeSftpFailure(e, SftpOp.MakeDir, target)}"
+                        },
                     )
                 }
             },
