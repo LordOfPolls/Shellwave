@@ -15,6 +15,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -32,6 +33,7 @@ import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.unit.dp
 import io.github.lordofpolls.shellwave.BuildConfig
 import io.github.lordofpolls.shellwave.core.billing.SupporterState
+import io.github.lordofpolls.shellwave.core.billing.SupporterTier
 import io.github.lordofpolls.shellwave.core.prefs.ReachabilityInterval
 import io.github.lordofpolls.shellwave.core.prefs.ThemeMode
 import io.github.lordofpolls.shellwave.service.ACTION_RUN_SCRIPT
@@ -76,7 +78,7 @@ fun SettingsScreen(
     onImportConfig: suspend (Uri) -> ConfigImportSummary,
     onOpenLicenses: () -> Unit,
     supporterState: SupporterState,
-    onBecomeSupporter: () -> Unit,
+    onBecomeSupporter: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
@@ -294,18 +296,30 @@ private fun AutomationSettings(
  * A one-time, no-functionality purchase, so the copy says up front that it unlocks nothing.
  *
  * Callers skip this entirely for [SupporterState.Unavailable] - an F-Droid build or a Play Console
- * listing with no matching product - so there's nothing to render for that case here.
+ * listing where no tier resolves - so there's nothing to render for that case here.
  */
 @Composable
-private fun SupporterRow(state: SupporterState, onBecomeSupporter: () -> Unit) {
+private fun SupporterRow(state: SupporterState, onBecomeSupporter: (String) -> Unit) {
     when (state) {
         is SupporterState.Loading, is SupporterState.Unavailable -> Unit
 
-        is SupporterState.Purchasable -> SettingsRow(
-            title = "Become a supporter · ${state.priceLabel}",
-            description = "A one-time purchase that unlocks nothing - just a way to say thanks.",
-            onClick = onBecomeSupporter,
-        )
+        is SupporterState.Purchasable -> Column {
+            SettingsRow(
+                title = "Become a supporter",
+                description = "A one-time purchase that unlocks nothing - just a way to say thanks. " +
+                    "Pick whatever feels right.",
+            )
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                state.tiers.forEach { tier: SupporterTier ->
+                    FilledTonalButton(onClick = { onBecomeSupporter(tier.purchaseOptionId) }) {
+                        Text(tier.priceLabel)
+                    }
+                }
+            }
+        }
 
         is SupporterState.Supporter -> SettingsRow(
             title = "You're a supporter",

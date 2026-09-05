@@ -31,12 +31,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-/** Play Console one-time product id for the donation. Unlocks nothing - see [SupporterState]. */
+/** Play Console one-time product backing the donation ladder; its purchase options carry the actual prices. */
 const val SUPPORTER_PRODUCT_ID = "supporter_badge"
 
 /**
- * Play Billing for one product: a no-strings-attached donation. Nothing else in the app reads
- * [state]; it exists purely so Settings can show a price or a thank-you.
+ * Play Billing for the donation ladder: one one-time product ([SUPPORTER_PRODUCT_ID]) whose
+ * purchase options are the tiers; owning any one makes the user a supporter. Nothing else
+ * in the app reads [state]; it exists purely so Settings can show prices or a thank-you.
  *
  * `play` flavour only. This file is the entire reason the flavour dimension exists: everything
  * it imports from `com.android.billingclient` is proprietary, and the `foss` flavour ships
@@ -54,6 +55,7 @@ class PlaySupporterBilling
         override val state: StateFlow<SupporterState> = _state.asStateFlow()
 
         private var productDetails: ProductDetails? = null
+        private var offersByPurchaseOptionId: Map<String, ProductDetails.OneTimePurchaseOfferDetails> = emptyMap()
 
         private val client =
             BillingClient.newBuilder(context)
@@ -82,7 +84,9 @@ class PlaySupporterBilling
             val owned =
                 client.queryPurchasesAsync(QueryPurchasesParams.newBuilder().setProductType(BillingClient.ProductType.INAPP).build())
                     .purchasesList
-                    .filter { SUPPORTER_PRODUCT_ID in it.products && it.purchaseState == Purchase.PurchaseState.PURCHASED }
+                    .filter { purchase ->
+                        SUPPORTER_PRODUCT_ID in purchase.products && purchase.purchaseState == Purchase.PurchaseState.PURCHASED
+                    }
 
             if (owned.isNotEmpty()) {
                 _state.value = SupporterState.Supporter
@@ -90,9 +94,14 @@ class PlaySupporterBilling
                 return
             }
 
-            productDetails = queryProductDetails()
-            val price = productDetails?.oneTimePurchaseOfferDetails?.formattedPrice
-            _state.value = if (price != null) SupporterState.Purchasable(price) else SupporterState.Unavailable
+            val details = queryProductDetails()
+            cacheOffers(details)
+            val priced =
+                offersByPurchaseOptionId.map { (purchaseOptionId, offer) ->
+                    PricedOption(purchaseOptionId, offer.priceAmountMicros, offer.formattedPrice)
+                }
+            val tiers = supporterTiers(priced)
+            _state.value = if (tiers.isNotEmpty()) SupporterState.Purchasable(tiers) else SupporterState.Unavailable
         }
 
         private suspend fun queryProductDetails(): ProductDetails? =
@@ -108,13 +117,35 @@ class PlaySupporterBilling
                     ).build(),
             ).productDetailsList?.firstOrNull()
 
-        override fun launchPurchase(activity: Activity) {
+        private fun cacheOffers(details: ProductDetails?) {
+            productDetails = details
+            offersByPurchaseOptionId =
+                details?.oneTimePurchaseOfferDetailsList
+                    ?.mapNotNull { offer -> offer.purchaseOptionId?.let { it to offer } }
+                    ?.toMap() ?: emptyMap()
+        }
+
+        override fun launchPurchase(activity: Activity, purchaseOptionId: String) {
             scope.launch {
-                val details = productDetails ?: queryProductDetails() ?: return@launch
+                var offer = offersByPurchaseOptionId[purchaseOptionId]
+                var details = productDetails
+                if (offer == null) {
+                    val requeried = queryProductDetails()
+                    if (requeried != null) cacheOffers(requeried)
+                    offer = offersByPurchaseOptionId[purchaseOptionId]
+                    details = productDetails
+                }
+                val offerToken = offer?.offerToken
+                if (offerToken == null || details == null) return@launch
                 val params =
                     BillingFlowParams.newBuilder()
                         .setProductDetailsParamsList(
-                            listOf(BillingFlowParams.ProductDetailsParams.newBuilder().setProductDetails(details).build()),
+                            listOf(
+                                BillingFlowParams.ProductDetailsParams.newBuilder()
+                                    .setProductDetails(details)
+                                    .setOfferToken(offerToken)
+                                    .build(),
+                            ),
                         ).build()
                 client.launchBillingFlow(activity, params)
             }
@@ -123,7 +154,7 @@ class PlaySupporterBilling
         override fun onPurchasesUpdated(result: BillingResult, purchases: MutableList<Purchase>?) {
             if (result.responseCode != BillingClient.BillingResponseCode.OK || purchases == null) return
             scope.launch {
-                purchases.filter { SUPPORTER_PRODUCT_ID in it.products && it.purchaseState == Purchase.PurchaseState.PURCHASED }
+                purchases.filter { purchase -> SUPPORTER_PRODUCT_ID in purchase.products && purchase.purchaseState == Purchase.PurchaseState.PURCHASED }
                     .forEach { purchase ->
                         _state.value = SupporterState.Supporter
                         if (!purchase.isAcknowledged) acknowledge(purchase)

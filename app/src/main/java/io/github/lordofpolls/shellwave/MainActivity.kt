@@ -935,7 +935,7 @@ class MainActivity : FragmentActivity() {
                                         },
                                         onOpenLicenses = { push("license") },
                                         supporterState = supporterState,
-                                        onBecomeSupporter = { supporterBilling.launchPurchase(this@MainActivity) },
+                                        onBecomeSupporter = { purchaseOptionId -> supporterBilling.launchPurchase(this@MainActivity, purchaseOptionId) },
                                         modifier = Modifier.weight(1f),
                                     )
                                 }
@@ -1029,14 +1029,14 @@ class MainActivity : FragmentActivity() {
                             )
                         }
 
-                        val supportPrice = (supporterState as? SupporterState.Purchasable)?.priceLabel
-                        if (showSupportPrompt && supportPrice != null && isNavAtRoot(destination, subStack)) {
+                        val supportTiers = (supporterState as? SupporterState.Purchasable)?.tiers
+                        if (showSupportPrompt && supportTiers != null && isNavAtRoot(destination, subStack)) {
                             SupportPromptDialog(
-                                priceLabel = supportPrice,
-                                onBecomeSupporter = {
+                                tiers = supportTiers,
+                                onBecomeSupporter = { purchaseOptionId ->
                                     showSupportPrompt = false
                                     SupportPreferences.markPromptSettled(this@MainActivity)
-                                    supporterBilling.launchPurchase(this@MainActivity)
+                                    supporterBilling.launchPurchase(this@MainActivity, purchaseOptionId)
                                 },
                                 onDismiss = {
                                     showSupportPrompt = false

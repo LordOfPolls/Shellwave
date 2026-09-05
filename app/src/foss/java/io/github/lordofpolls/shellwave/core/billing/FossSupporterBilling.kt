@@ -26,7 +26,7 @@ class FossSupporterBilling
         override val state: StateFlow<SupporterState> =
             MutableStateFlow<SupporterState>(SupporterState.Unavailable).asStateFlow()
 
-        override fun launchPurchase(activity: Activity) = Unit
+        override fun launchPurchase(activity: Activity, purchaseOptionId: String) = Unit
     }
 
 @Module
