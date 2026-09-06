@@ -1,0 +1,3 @@
+New:
+- Add PgUp and PgDn to the arrow cluster on the key bar
+- Scroll mouse-aware apps with a drag instead of a button drag
