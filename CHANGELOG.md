@@ -1,6 +1,14 @@
 # Changelog
 
 
+## 1.7.0 - 2026-09-06
+
+### New
+- Add PgUp and PgDn to the default key bar
+- Scroll mouse-aware apps with a drag instead of a button drag
+
+[Every commit in this release](https://github.com/LordOfPolls/Shellwave/compare/1.6.1...1.7.0)
+
 ## 1.6.1 - 2026-09-06
 
 ### New
