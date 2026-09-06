@@ -784,8 +784,12 @@ internal fun SessionTabBody(
                 )
                 TerminalInputCapture(
                     focusRequester = focusRequester,
-                    onText = ::sendText,
                     onBackspace = { summary.connection.write("\u007F") },
+                    // Lambdas, not ::sendText: the Compose compiler memoises a local function
+                    // reference without keying on what it captures, so ::sendText kept writing to
+                    // the previous tab's summary. Any local fun that reads summary must be passed
+                    // as a lambda.
+                    onText = { sendText(it) },
                     // See TerminalInputCapture for why the field carries this instead of the canvas.
                     // Named per session with the label the chip rail shows, so announcement and screen
                     // agree.
@@ -858,10 +862,10 @@ internal fun SessionTabBody(
             altLatched = altLatched,
             onCtrlToggle = { ctrlLatched = !ctrlLatched },
             onAltToggle = { altLatched = !altLatched },
-            onSpecialKey = ::sendSpecialKey,
-            // Through the same text-input path as typed IME input, so it inherits ::sendText's
+            onSpecialKey = { keyCode -> sendSpecialKey(keyCode) },
+            // Through the same text-input path as typed IME input, so it inherits sendText's
             // Ctrl/Alt latch behaviour.
-            onMacro = ::sendText,
+            onMacro = { text -> sendText(text) },
             keyboardVisible = imeVisible,
             onKeyboardToggle = {
                 if (imeVisible) {
