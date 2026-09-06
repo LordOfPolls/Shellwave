@@ -784,12 +784,15 @@ internal fun SessionTabBody(
                 )
                 TerminalInputCapture(
                     focusRequester = focusRequester,
-                    onBackspace = { summary.connection.write("\u007F") },
+                    resetKey = sessionId,
                     // Lambdas, not ::sendText: the Compose compiler memoises a local function
                     // reference without keying on what it captures, so ::sendText kept writing to
                     // the previous tab's summary. Any local fun that reads summary must be passed
                     // as a lambda.
                     onText = { sendText(it) },
+                    onBackspace = { n ->
+                        summary.connection.write("\u007F".repeat(n))
+                    },
                     // See TerminalInputCapture for why the field carries this instead of the canvas.
                     // Named per session with the label the chip rail shows, so announcement and screen
                     // agree.

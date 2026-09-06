@@ -3,44 +3,62 @@ package io.github.lordofpolls.shellwave.terminal
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-/**
- * [terminalInputDelta] used to also cover a reset-race (fast typing outrunning the placeholder
- * reset); that race no longer exists now the transformation runs synchronously in the same edit.
- */
 class TerminalInputDeltaTest {
     @Test
-    fun `plain insert appends onto the placeholder`() {
-        assertEquals(InputDelta.Text("h"), terminalInputDelta(original = " ", result = " h"))
+    fun `bare backspace on the placeholder`() {
+        assertEquals(InputDelta(1, ""), terminalInputDelta(original = " ", result = ""))
     }
 
     @Test
-    fun `multi-char insert`() {
-        assertEquals(InputDelta.Text("hello"), terminalInputDelta(original = " ", result = " hello"))
+    fun `plain typing is a pure insert`() {
+        assertEquals(InputDelta(0, "b"), terminalInputDelta(original = " a", result = " ab"))
     }
 
     @Test
-    fun `delete to empty is backspace`() {
-        assertEquals(InputDelta.Backspace, terminalInputDelta(original = " ", result = ""))
+    fun `autocorrect replaces the trailing chars in place`() {
+        assertEquals(InputDelta(1, "lo "), terminalInputDelta(original = " helo", result = " hello "))
     }
 
     @Test
-    fun `no-op space to space`() {
-        assertEquals(InputDelta.None, terminalInputDelta(original = " ", result = " "))
+    fun `IME deletes several characters`() {
+        assertEquals(InputDelta(3, ""), terminalInputDelta(original = " hello", result = " he"))
     }
 
     @Test
-    fun `whole-buffer replacement not prefixed by the placeholder`() {
-        assertEquals(InputDelta.Text("xyz"), terminalInputDelta(original = " ", result = "xyz"))
+    fun `unchanged input`() {
+        assertEquals(InputDelta(0, ""), terminalInputDelta(original = " ", result = " "))
     }
 
     @Test
-    fun `newline`() {
-        assertEquals(InputDelta.Text("\n"), terminalInputDelta(original = " ", result = " \n"))
+    fun `backspace over an emoji doesn't split the surrogate pair`() {
+        assertEquals(InputDelta(1, ""), terminalInputDelta(original = " 😀", result = " "))
     }
 
     @Test
-    fun `surrogate pair insert intact`() {
-        val emoji = "😀"
-        assertEquals(InputDelta.Text(emoji), terminalInputDelta(original = " ", result = " $emoji"))
+    fun `emoji insert`() {
+        assertEquals(InputDelta(0, "😀"), terminalInputDelta(original = " ", result = " 😀"))
+    }
+
+    @Test
+    fun `replacing an emoji with one sharing a high surrogate`() {
+        assertEquals(
+            InputDelta(1, "😂"),
+            terminalInputDelta(original = " 😀", result = " 😂"),
+        )
+    }
+
+    @Test
+    fun `delete spanning the placeholder is not charged twice`() {
+        assertEquals(InputDelta(2, ""), terminalInputDelta(original = " ls", result = ""))
+    }
+
+    @Test
+    fun `whole-buffer replacement`() {
+        assertEquals(InputDelta(2, "x"), terminalInputDelta(original = " ab", result = "x"))
+    }
+
+    @Test
+    fun `placeholder replaced without deletion is not charged a backspace`() {
+        assertEquals(InputDelta(0, "x"), terminalInputDelta(original = " ", result = "x"))
     }
 }

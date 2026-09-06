@@ -39,7 +39,8 @@ private const val PLACEHOLDER = " "
 
 /**
  * An invisible, always-focused field capturing IME text for the terminal. [onText] gets newly typed
- * characters, not yet control/alt transformed; [onBackspace] fires when the placeholder is deleted.
+ * characters, not yet control/alt transformed; [onBackspace] fires with the number of code points
+ * removed after the common prefix, not counting the placeholder.
  *
  * [accessibilityLabel] is the whole terminal's accessible name in practice. The grid above is a
  * custom-drawn canvas with no semantics of its own, so this field is the only node a screen reader
@@ -48,31 +49,42 @@ private const val PLACEHOLDER = " "
  * [screenText] is the visible screen content, already rate-limited by the caller so fast output
  * (a build log, `yes`) doesn't turn into a flood of announcements - this composable just publishes
  * whatever it's given.
+ *
+ * [resetKey] changing drops the buffer, so a tab switch does not diff against text typed into the
+ * previous session.
+ *
+ * The buffer holds the current line until Enter so the IME can revise it, which also means the IME
+ * sees that line, including a password typed at a no-echo prompt. Compose cannot request
+ * no-suggestions or no-personalised-learning without also disabling the autocorrect this exists
+ * for, so that exposure is accepted.
  */
 @Composable
 fun TerminalInputCapture(
     focusRequester: FocusRequester,
+    resetKey: Any?,
     onText: (String) -> Unit,
-    onBackspace: () -> Unit,
+    onBackspace: (count: Int) -> Unit,
     accessibilityLabel: String,
     screenText: String,
     modifier: Modifier = Modifier,
 ) {
-    val state = remember { TextFieldState(PLACEHOLDER, TextRange(1)) }
+    val state = remember(resetKey) { TextFieldState(PLACEHOLDER, TextRange(1)) }
     val currentOnText by rememberUpdatedState(onText)
     val currentOnBackspace by rememberUpdatedState(onBackspace)
     val transformation =
         remember {
             InputTransformation {
-                try {
-                    when (val delta = terminalInputDelta(originalText.toString(), asCharSequence().toString())) {
-                        is InputDelta.Text -> currentOnText(delta.text)
-                        InputDelta.Backspace -> currentOnBackspace()
-                        InputDelta.None -> {}
-                    }
-                } finally {
-                    // Skipping the revert would leave typed text in the buffer and re-send it as a prefix on every later edit.
-                    revertAllChanges()
+                val delta = terminalInputDelta(originalText.toString(), asCharSequence().toString())
+                if (delta.backspaces > 0) currentOnBackspace(delta.backspaces)
+                if (delta.text.isNotEmpty()) currentOnText(delta.text)
+
+                if ('\n' in asCharSequence() || length > 1024) {
+                    // Deliberate ceiling. Enter ends the line the IME could still revise, and the cap
+                    // bounds an invisible field; past a reset the IME can no longer revert an
+                    // autocorrect with backspace.
+                    replace(0, length, PLACEHOLDER)
+                } else if (length == 0 || asCharSequence()[0] != PLACEHOLDER[0]) {
+                    replace(0, 0, PLACEHOLDER)
                 }
             }
         }
@@ -104,22 +116,21 @@ fun TerminalInputCapture(
     }
 }
 
-internal sealed class InputDelta {
-    data class Text(val text: String) : InputDelta()
+internal data class InputDelta(val backspaces: Int, val text: String)
 
-    data object Backspace : InputDelta()
+/**
+ * Pure diff of the field's state before and after an edit: code points removed after the common
+ * prefix (not counting the placeholder), then the text inserted after it.
+ */
+internal fun terminalInputDelta(original: String, result: String): InputDelta {
+    var prefix = original.commonPrefixWith(result).length
+    if (prefix > 0 && Character.isHighSurrogate(original[prefix - 1])) prefix--
 
-    data object None : InputDelta()
+    var backspaces = original.codePointCount(prefix, original.length)
+    if (prefix == 0 && !(original == PLACEHOLDER && result.isEmpty())) backspaces--
+
+    return InputDelta(backspaces = backspaces, text = result.substring(prefix))
 }
-
-/** Pure classifier over the field's state before and after an edit. */
-internal fun terminalInputDelta(original: String, result: String): InputDelta =
-    when {
-        result == original -> InputDelta.None
-        result.isEmpty() -> InputDelta.Backspace
-        result.startsWith(PLACEHOLDER) -> InputDelta.Text(result.substring(PLACEHOLDER.length))
-        else -> InputDelta.Text(result)
-    }
 
 private object NoOpTextToolbar : TextToolbar {
     override val status: TextToolbarStatus = TextToolbarStatus.Hidden
