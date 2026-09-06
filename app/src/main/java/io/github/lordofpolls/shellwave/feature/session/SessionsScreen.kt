@@ -91,7 +91,9 @@ import io.github.lordofpolls.shellwave.terminal.linkAt
 import io.github.lordofpolls.shellwave.terminal.rememberTerminalSelectionState
 import io.github.lordofpolls.shellwave.terminal.resolveTerminalTypeface
 import io.github.lordofpolls.shellwave.terminal.selectionHighlightColor
+import io.github.lordofpolls.shellwave.terminal.dragRows
 import io.github.lordofpolls.shellwave.terminal.terminalGestures
+import io.github.lordofpolls.shellwave.terminal.wheelButton
 import io.github.lordofpolls.shellwave.ui.design.EmptyState
 import io.github.lordofpolls.shellwave.ui.design.MachineText
 import io.github.lordofpolls.shellwave.ui.design.SessionChipModel
@@ -107,6 +109,7 @@ import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.abs
 
 /**
  * N concurrent sessions, with a [ListDetailPaneScaffold] beside the terminal on wide or unfolded
@@ -429,9 +432,6 @@ internal fun SessionTabBody(
     // pinch-to-resize.
     LaunchedEffect(profileOrDefault.id) { fontSizeSp = profileOrDefault.fontSizeSp.sp }
 
-    // So onMouseDrag only sends on a cell change instead of flooding the socket per pixel.
-    var lastMouseCell by remember { mutableStateOf<Pair<Int, Int>?>(null) }
-
     // Coordinates are the external row system, same as topRow.
     val selectionState = rememberTerminalSelectionState()
 
@@ -609,37 +609,26 @@ internal fun SessionTabBody(
     }
 
     // TerminalEmulator.sendMouseEvent picks SGR 1006 vs. legacy X10 internally from DECSET state;
-    // these three only convert a pixel offset to the 1-based column and row it expects.
+    // this only converts a pixel offset to the 1-based column and row it expects.
     fun mouseCell(offset: Offset): Pair<Int, Int>? {
         val size = measuredSize ?: return null
         return (offset.x / size.cellWidthPx).toInt() + 1 to (offset.y / size.cellHeightPx).toInt() + 1
     }
 
-    fun sendMousePress(offset: Offset) {
+    fun sendMouseClick(offset: Offset) {
         val emulator = terminalEmulator ?: return
-        val cell = mouseCell(offset) ?: return
-        lastMouseCell = cell
-        emulator.sendMouseEvent(TerminalEmulator.MOUSE_LEFT_BUTTON, cell.first, cell.second, true)
+        val (column, row) = mouseCell(offset) ?: return
+        emulator.sendMouseEvent(TerminalEmulator.MOUSE_LEFT_BUTTON, column, row, true)
+        emulator.sendMouseEvent(TerminalEmulator.MOUSE_LEFT_BUTTON, column, row, false)
     }
 
-    fun sendMouseDrag(offset: Offset) {
+    fun sendMouseWheel(offset: Offset, dy: Float) {
         val emulator = terminalEmulator ?: return
-        val cell = mouseCell(offset) ?: return
-        if (cell == lastMouseCell) return
-        lastMouseCell = cell
-        emulator.sendMouseEvent(
-            TerminalEmulator.MOUSE_LEFT_BUTTON_MOVED,
-            cell.first,
-            cell.second,
-            true
-        )
-    }
-
-    fun sendMouseRelease(offset: Offset) {
-        val emulator = terminalEmulator ?: return
-        val cell = mouseCell(offset) ?: lastMouseCell ?: return
-        lastMouseCell = null
-        emulator.sendMouseEvent(TerminalEmulator.MOUSE_LEFT_BUTTON, cell.first, cell.second, false)
+        val cellHeightPx = measuredSize?.cellHeightPx ?: return
+        val (column, row) = mouseCell(offset) ?: return
+        val (notches, remainder) = dragRows(scrollDragRemainderPx + dy, cellHeightPx)
+        scrollDragRemainderPx = remainder
+        repeat(abs(notches)) { emulator.sendMouseEvent(wheelButton(notches), column, row, true) }
     }
 
     val localContext = LocalContext.current
@@ -714,12 +703,9 @@ internal fun SessionTabBody(
                         onDrag = { dy ->
                             val cellHeightPx = measuredSize?.cellHeightPx ?: return@terminalGestures
                             val maxScrollback = terminalEmulator?.screen?.activeTranscriptRows ?: 0
-                            scrollDragRemainderPx += dy
-                            val rows = (scrollDragRemainderPx / cellHeightPx).toInt()
-                            if (rows != 0) {
-                                scrollDragRemainderPx -= rows * cellHeightPx
-                                topRow = (topRow - rows).coerceIn(-maxScrollback, 0)
-                            }
+                            val (rows, remainder) = dragRows(scrollDragRemainderPx + dy, cellHeightPx)
+                            scrollDragRemainderPx = remainder
+                            if (rows != 0) topRow = (topRow - rows).coerceIn(-maxScrollback, 0)
                         },
                         onPinch = { scale ->
                             fontSizeSp = (fontSizeSp.value * scale).coerceIn(
@@ -763,9 +749,8 @@ internal fun SessionTabBody(
                         isMouseReportingActive = {
                             terminalEmulator?.isMouseTrackingActive() ?: false
                         },
-                        onMousePress = ::sendMousePress,
-                        onMouseDrag = ::sendMouseDrag,
-                        onMouseRelease = ::sendMouseRelease,
+                        onMouseClick = ::sendMouseClick,
+                        onMouseWheel = ::sendMouseWheel,
                     ),
             ) {
                 TerminalCanvas(

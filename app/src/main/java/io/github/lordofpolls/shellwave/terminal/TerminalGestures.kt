@@ -8,6 +8,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
+import com.termux.terminal.TerminalEmulator
 import kotlin.math.hypot
 
 private const val LONG_PRESS_TIMEOUT_MS = 500L
@@ -42,9 +43,8 @@ fun Modifier.terminalGestures(
     onTap: (Offset) -> Unit,
     onLongPress: (Offset) -> Unit,
     isMouseReportingActive: () -> Boolean = { false },
-    onMousePress: (Offset) -> Unit = {},
-    onMouseDrag: (Offset) -> Unit = {},
-    onMouseRelease: (Offset) -> Unit = {},
+    onMouseClick: (Offset) -> Unit = {},
+    onMouseWheel: (Offset, dy: Float) -> Unit = { _, _ -> },
 ): Modifier =
     pointerInput(Unit) {
         awaitEachGesture {
@@ -60,20 +60,25 @@ fun Modifier.terminalGestures(
             // Once the remote app turns on mouse tracking, touch means mouse for the rest of this
             // gesture: no long-press-select race, no timeout, no pinch ambiguity. Checked once at
             // the down, which is why it is a self-contained loop and not a state in the machine
-            // below.
+            // below. A drag is the wheel, not a button drag: tmux, less and vim all scroll on
+            // wheel events, while a left-button drag starts a selection in them, which on a phone
+            // nobody wants from the one gesture that means "scroll" everywhere else.
             if (isMouseReportingActive()) {
-                onMousePress(down.position)
+                var wheeling = false
                 while (true) {
                     val event = awaitPointerEvent()
                     val change1 =
                         event.changes.firstOrNull { it.id == pointer1 } ?: return@awaitEachGesture
                     if (!change1.pressed) {
                         change1.consume()
-                        onMouseRelease(change1.position)
+                        if (!wheeling) onMouseClick(change1.position)
                         return@awaitEachGesture
                     }
-                    if (change1.positionChange() != Offset.Zero) {
-                        onMouseDrag(change1.position)
+                    val delta = change1.positionChange()
+                    if (delta != Offset.Zero) {
+                        wheeling = wheeling ||
+                            distanceBetween(down.position, change1.position) > TOUCH_SLOP_PX
+                        if (wheeling && delta.y != 0f) onMouseWheel(change1.position, delta.y)
                         change1.consume()
                     }
                 }
@@ -151,3 +156,13 @@ fun Modifier.terminalGestures(
     }
 
 private fun distanceBetween(a: Offset, b: Offset): Float = hypot(a.x - b.x, a.y - b.y)
+
+/** Whole rows in [remainderPx] and what is left over to carry into the next move event. */
+fun dragRows(remainderPx: Float, cellHeightPx: Int): Pair<Int, Float> {
+    val rows = (remainderPx / cellHeightPx).toInt()
+    return rows to remainderPx - rows * cellHeightPx
+}
+
+/** Finger down (positive rows) shows older content, which is wheel up, as with the local scrollback. */
+fun wheelButton(rows: Int): Int =
+    if (rows > 0) TerminalEmulator.MOUSE_WHEELUP_BUTTON else TerminalEmulator.MOUSE_WHEELDOWN_BUTTON
