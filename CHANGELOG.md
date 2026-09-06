@@ -1,6 +1,43 @@
 # Changelog
 
 
+## 1.6.1 - 2026-09-06
+
+### New
+- Expose the visible terminal screen to screen readers
+- List and forget trusted host keys from settings
+- Browse, rename, delete and upload over SFTP from a session
+- Search scrollback and log sessions to a file
+- Generate ECDSA keys, honour Match blocks and attach OpenSSH certificates
+- Offer the supporter donation in three tiers
+- Build and publish the Play bundle from the justfile
+
+### Fixed
+- Revoke superseded host key on accepted key-change
+- Add handshake read timeout to SOCKS5 forwarder
+- Stop config import overwriting the default terminal profile and colour scheme
+- Read the activity through LocalActivity so lint passes
+- Keep SFTP browser scroll position across same-directory refreshes
+- Make radio button labels tappable across the app
+- Give SFTP failures a useful reason instead of OpenSSH's bare "Failure"
+- Stop dropping keystrokes under rapid terminal input
+- Send typed text to the selected session after a tab switch
+- Let soft-keyboard autocorrect replace the word in place
+
+### Internal
+- Build, test and guard the standing invariants on every push and commit
+- Freeze existing lint warnings in a baseline and fail on new ones
+- Resolve a host's connection spec in one place
+- Move host delete and duplicate out of MainActivity
+- Split the overflow menu, script picker and split layout out of SessionsScreen
+- Share the keyed form-state guard between the host and script editors
+- Observe prefs changes instead of mirroring them
+
+### Documentation
+- Tweak readme
+
+[Every commit in this release](https://github.com/LordOfPolls/Shellwave/compare/1.5.0...1.6.1)
+
 ## 1.5.0 - 2026-08-29
 
 ### New

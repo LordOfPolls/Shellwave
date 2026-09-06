@@ -1,0 +1,11 @@
+New:
+- Expose the visible terminal screen to screen readers
+- List and forget trusted host keys from settings
+- Browse, rename, delete and upload over SFTP from a session
+- Search scrollback and log sessions to a file
+- Generate ECDSA keys, honour Match blocks and attach OpenSSH certificates
+- Offer the supporter donation in three tiers
+- Build and publish the Play bundle from the justfile
+
+Fixed:
+- Revoke superseded host key on accepted key-change
