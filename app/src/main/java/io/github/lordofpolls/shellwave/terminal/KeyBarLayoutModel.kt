@@ -83,9 +83,10 @@ fun decodeKeyBarKeys(json: String): List<KeyBarKey> {
  * `Ctrl-A`/`Ctrl-E` reach the first and nothing reaches the second, and both are two taps here
  * against one.
  *
- * `PgUp`/`PgDn` push the wider row to 211.8dp against a 206.9dp flowing column on that phone, a
- * few dp of horizontal scroll. Accepted: tmux, less and every pager without mouse mode have no
- * other way to page, and a finger drag only reaches them once mouse reporting is on.
+ * `PgUp`/`PgDn` were the obvious next pair and are absent on the same measurement: the pinned
+ * cluster and keyboard key leave the flowing column 206.9dp, and eight buttons would put four on
+ * the wider row at 211.8dp, which is the horizontal scroll this arrangement removed. They live in
+ * the cluster instead, in the two cells beside `↑`.
  *
  * Only the default changes. A saved layout decodes to exactly the keys it stored.
  */
@@ -95,8 +96,6 @@ val DEFAULT_KEY_BAR_KEYS: List<KeyBarKey> =
         KeyBarKey("Tab", KeyBarKeyType.SPECIAL, keyCode = KeyEvent.KEYCODE_TAB),
         KeyBarKey("Home", KeyBarKeyType.SPECIAL, keyCode = KeyEvent.KEYCODE_MOVE_HOME),
         KeyBarKey("End", KeyBarKeyType.SPECIAL, keyCode = KeyEvent.KEYCODE_MOVE_END),
-        KeyBarKey("PgUp", KeyBarKeyType.SPECIAL, keyCode = KeyEvent.KEYCODE_PAGE_UP),
-        KeyBarKey("PgDn", KeyBarKeyType.SPECIAL, keyCode = KeyEvent.KEYCODE_PAGE_DOWN),
         KeyBarKey(CURSOR_CLUSTER_LABEL, KeyBarKeyType.CURSOR_CLUSTER),
     )
 

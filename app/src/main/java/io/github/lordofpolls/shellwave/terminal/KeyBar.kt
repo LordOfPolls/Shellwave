@@ -11,11 +11,12 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Keyboard
+import androidx.compose.material.icons.outlined.KeyboardDoubleArrowDown
+import androidx.compose.material.icons.outlined.KeyboardDoubleArrowUp
 import androidx.compose.material.icons.outlined.KeyboardHide
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
@@ -28,6 +29,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -62,9 +64,8 @@ import java.util.Locale
  * The keyboard key sits outside the scroll on purpose. Every other button may be scrolled off the
  * right edge, survivable for `HOME` and fatal for this one: the soft keyboard is what the user
  * reaches for when the IME is hidden, and a control that is both the only way back and reachable
- * only by an unadvertised swipe is a dead end. It is also the only icon here, which is the
- * distinction - it sends nothing to the far end, so drawing it as one more [MachineText] key would
- * say the opposite.
+ * only by an unadvertised swipe is a dead end. It sends nothing to the far end, so drawing it as
+ * one more [MachineText] key would say the opposite.
  *
  * A bare arrow read aloud says nothing about what it does, and latch state is carried by colour
  * alone: hence [keyBarKeyDescription] building descriptions from [KeyBarKey] and not the rendered
@@ -178,10 +179,10 @@ private const val MIN_BUTTONS_FOR_FREE_SECOND_ROW = 4
  * *already* focused, which is a no-op and brings nothing back. The bar is the only chrome that
  * survives an IME dismissal, so this is where the way back belongs.
  *
- * Icon-only, and the only icon on the bar: it is app chrome rather than a key, and nothing it does
- * reaches the far end, so dressing it as one more `CTRL`-style label would be a claim about the
- * wrong thing. The glyph swaps with [visible] because the button's meaning does - and the
- * `contentDescription` swaps with it, since a screen reader gets no glyph to read.
+ * Icon-only: it is app chrome rather than a key, and nothing it does reaches the far end, so
+ * dressing it as one more `CTRL`-style label would be a claim about the wrong thing. The glyph
+ * swaps with [visible] because the button's meaning does - and the `contentDescription` swaps with
+ * it, since a screen reader gets no glyph to read.
  */
 @Composable
 private fun KeyboardKey(visible: Boolean, onClick: () -> Unit) {
@@ -212,27 +213,38 @@ private fun HapticFeedback.keyTap() = performHapticFeedback(HapticFeedbackType.K
 const val MAX_KEY_BAR_ROWS = 2
 
 /**
- * The arrow keys as the inverted T every physical keyboard uses:
+ * The arrow keys as the inverted T every physical keyboard uses, with the page keys in the two
+ * cells the T leaves empty:
  * ```
- *      ↑
- *  ←   ↓   →
+ * PgUp  ↑  PgDn
+ *  ←    ↓   →
  * ```
  * Two rows tall, about 44dp of terminal height, and that was the accepted trade. A linear `↑↓←→`
- * run has no spatial meaning and every press needs reading.
+ * run has no spatial meaning and every press needs reading. PgUp/PgDn here rather than as flat
+ * keys because those cost bar width the flowing rows do not have, and these cells were blank.
+ * Drawn as icons: "PgUp" wraps inside a 48dp cell, and the Unicode page glyphs come from a
+ * fallback font that renders them at half the arrows' size.
  *
  * Fixed [ClusterKeySize] rather than [MinKeyWidth], since `↑` has to sit above `↓` and equal-width
  * cells are what guarantee it.
  */
 @Composable
 private fun CursorCluster(onSpecialKey: (keyCode: Int) -> Unit) {
-    val clusterWidth = ClusterKeySize * 3 + KeyGap * 2
-
     Column(verticalArrangement = Arrangement.spacedBy(KeyGap)) {
-        Row(
-            modifier = Modifier.width(clusterWidth),
-            horizontalArrangement = Arrangement.Center,
-        ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(KeyGap)) {
+            ClusterKey(
+                KeyEvent.KEYCODE_PAGE_UP,
+                "PgUp",
+                onSpecialKey,
+                icon = Icons.Outlined.KeyboardDoubleArrowUp,
+            )
             ClusterKey(KeyEvent.KEYCODE_DPAD_UP, "↑", onSpecialKey)
+            ClusterKey(
+                KeyEvent.KEYCODE_PAGE_DOWN,
+                "PgDn",
+                onSpecialKey,
+                icon = Icons.Outlined.KeyboardDoubleArrowDown,
+            )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(KeyGap)) {
             ClusterKey(KeyEvent.KEYCODE_DPAD_LEFT, "←", onSpecialKey)
@@ -248,7 +260,12 @@ private fun CursorCluster(onSpecialKey: (keyCode: Int) -> Unit) {
  * the repeats - the count is still right.
  */
 @Composable
-private fun ClusterKey(keyCode: Int, glyph: String, onSpecialKey: (keyCode: Int) -> Unit) {
+private fun ClusterKey(
+    keyCode: Int,
+    glyph: String,
+    onSpecialKey: (keyCode: Int) -> Unit,
+    icon: ImageVector? = null,
+) {
     val haptics = LocalHapticFeedback.current
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
@@ -281,9 +298,13 @@ private fun ClusterKey(keyCode: Int, glyph: String, onSpecialKey: (keyCode: Int)
                             )
                         )
                 },
-        contentPadding = KeyContentPadding,
+        contentPadding = if (icon == null) KeyContentPadding else PaddingValues(0.dp),
     ) {
-        MachineText(glyph, style = MaterialTheme.typography.labelMedium)
+        if (icon == null) {
+            MachineText(glyph, style = MaterialTheme.typography.labelMedium)
+        } else {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(KeyIconSize))
+        }
     }
 }
 
