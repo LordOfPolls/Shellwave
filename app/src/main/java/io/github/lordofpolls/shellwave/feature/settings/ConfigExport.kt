@@ -201,7 +201,7 @@ constructor(
     private fun settings(): Map<String, Any?> =
         mapOf(
             "themeMode" to AppearancePreferences.getThemeMode(context).name,
-            "dynamicColour" to AppearancePreferences.getDynamicColor(context),
+            "colourTheme" to AppearancePreferences.getColourTheme(context).name,
             "exactSchemeColours" to AppearancePreferences.getExactSchemeColours(context),
             "bellMode" to BellPreferences.get(context).name,
             "fullWidthTerminal" to SessionLayoutPreferences.getFullWidthTerminal(context),

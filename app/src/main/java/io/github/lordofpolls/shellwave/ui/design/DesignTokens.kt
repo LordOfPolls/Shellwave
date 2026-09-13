@@ -5,6 +5,7 @@ import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.lordofpolls.shellwave.R
@@ -15,6 +16,10 @@ import io.github.lordofpolls.shellwave.R
  * app speaking, the grid is the server speaking, and only the latter is themeable.
  */
 val ChromeMonoFontFamily = FontFamily(Font(R.font.jetbrains_mono))
+
+/** Pinned because the upstream variable font's default instance is Black, not Regular. */
+val NothingDisplayFontFamily =
+    FontFamily(Font(R.font.doto, variationSettings = FontVariation.Settings(FontVariation.weight(700))))
 
 /** Fixed here so no call site scales it. */
 val StatusSquareSize: Dp = 8.dp

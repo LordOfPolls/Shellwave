@@ -4,6 +4,8 @@ import android.content.Context
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
+enum class ColourTheme { DYNAMIC, SCHEMATIC, NOTHING }
+
 private const val PREFS_NAME = "shellwave_prefs"
 
 internal fun sharedPrefs(context: Context) =
@@ -11,6 +13,7 @@ internal fun sharedPrefs(context: Context) =
 
 private const val KEY_THEME_MODE = "theme_mode"
 private const val KEY_DYNAMIC_COLOR = "dynamic_color"
+private const val KEY_COLOUR_THEME = "colour_theme"
 private const val KEY_EXACT_SCHEME_COLOURS = "exact_scheme_colours"
 
 /** Shares [PREFS_NAME] with [BellPreferences]/[SessionLayoutPreferences]. */
@@ -26,13 +29,16 @@ object AppearancePreferences {
             .putString(KEY_THEME_MODE, mode.name).apply()
     }
 
-    fun getDynamicColor(context: Context): Boolean =
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getBoolean(KEY_DYNAMIC_COLOR, true)
+    fun getColourTheme(context: Context): ColourTheme {
+        val prefs = sharedPrefs(context)
+        val stored = prefs.getString(KEY_COLOUR_THEME, null)
+        return stored?.let { runCatching { ColourTheme.valueOf(it) }.getOrNull() }
+            // Pre-1.8 devices only ever wrote the boolean; honour it until they pick explicitly.
+            ?: if (prefs.getBoolean(KEY_DYNAMIC_COLOR, true)) ColourTheme.DYNAMIC else ColourTheme.SCHEMATIC
+    }
 
-    fun setDynamicColor(context: Context, enabled: Boolean) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
-            .putBoolean(KEY_DYNAMIC_COLOR, enabled).apply()
+    fun setColourTheme(context: Context, theme: ColourTheme) {
+        sharedPrefs(context).edit().putString(KEY_COLOUR_THEME, theme.name).apply()
     }
 
     /** `true` means exact/unharmonized. */

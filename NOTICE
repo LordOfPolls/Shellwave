@@ -94,6 +94,12 @@ so its full text is reproduced per font rather than merely named:
     Source:  https://github.com/google/fonts/blob/main/ofl/robotomono/RobotoMono%5Bwght%5D.ttf
     Licence: SIL Open Font License 1.1 - full text in licenses/fonts/OFL-RobotoMono.txt
 
+  Doto             -> app/src/main/res/font/doto.ttf
+    https://github.com/oliverlalan/Doto
+    Source:  https://github.com/google/fonts/blob/main/ofl/doto/Doto%5BROND%2Cwght%5D.ttf
+    Licence: SIL Open Font License 1.1 - full text in licenses/fonts/OFL-Doto.txt
+    Not a terminal font: the chrome's display face for the Nothing colour theme only.
+
 Third-party libraries (module :app)
 ----------------------------------------
 Compiled into the app as dependencies (see gradle/libs.versions.toml and app/build.gradle.kts),

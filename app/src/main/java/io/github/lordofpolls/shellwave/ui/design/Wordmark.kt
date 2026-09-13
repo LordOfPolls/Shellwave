@@ -17,7 +17,8 @@ private const val WORDMARK_SPOKEN = "Shellwave"
  * `~/shellwave`, where the tilde is both home and a wave.
  *
  * Mono but not `MachineText`: that marks things a server asserts, and a brand name is the app
- * talking about itself. Only the prefix takes `colorScheme.primary`, so the wordmark picks up
+ * talking about itself. A theme that sets its own title face (Nothing's dot matrix) wins over
+ * mono. Only the prefix takes `colorScheme.primary`, so the wordmark picks up
  * Material You while the launcher icon stays a fixed brand constant. TalkBack gets "Shellwave", not
  * the drawn string, which would announce as "tilde slash shellwave".
  */
@@ -32,8 +33,8 @@ fun Wordmark(modifier: Modifier = Modifier) {
             },
         modifier = modifier.clearAndSetSemantics { contentDescription = WORDMARK_SPOKEN },
         style =
-            MaterialTheme.typography.titleLarge.merge(
-                fontFamily = ChromeMonoFontFamily,
-            ),
+            MaterialTheme.typography.titleLarge.let {
+                it.merge(fontFamily = it.fontFamily ?: ChromeMonoFontFamily)
+            },
     )
 }

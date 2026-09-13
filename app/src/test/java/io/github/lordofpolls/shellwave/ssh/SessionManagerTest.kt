@@ -13,6 +13,7 @@ import io.github.lordofpolls.shellwave.core.db.entities.ColorSchemeEntity
 import io.github.lordofpolls.shellwave.core.db.entities.HostEntity
 import io.github.lordofpolls.shellwave.core.db.entities.PortForwardEntity
 import io.github.lordofpolls.shellwave.core.db.entities.TerminalProfileEntity
+import io.github.lordofpolls.shellwave.core.prefs.FakeSharedPreferences
 import io.github.lordofpolls.shellwave.service.SessionAlerts
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -27,59 +28,8 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
-
-/** In-memory stand-in for the handful of [SharedPreferences] calls SessionManager's dependencies make. */
-private class FakeSharedPreferences : SharedPreferences {
-    private val values = ConcurrentHashMap<String, Any?>()
-
-    override fun getAll(): MutableMap<String, *> = values.toMutableMap()
-    override fun getString(key: String?, defValue: String?): String? =
-        values[key] as? String ?: defValue
-
-    override fun getStringSet(key: String?, defValues: MutableSet<String>?): MutableSet<String>? =
-        @Suppress("UNCHECKED_CAST") (values[key] as? MutableSet<String> ?: defValues)
-
-    override fun getInt(key: String?, defValue: Int): Int = values[key] as? Int ?: defValue
-    override fun getLong(key: String?, defValue: Long): Long = values[key] as? Long ?: defValue
-    override fun getFloat(key: String?, defValue: Float): Float = values[key] as? Float ?: defValue
-    override fun getBoolean(key: String?, defValue: Boolean): Boolean =
-        values[key] as? Boolean ?: defValue
-
-    override fun contains(key: String?): Boolean = values.containsKey(key)
-
-    override fun edit(): SharedPreferences.Editor = object : SharedPreferences.Editor {
-        private val pending = ConcurrentHashMap<String, Any?>()
-        override fun putString(key: String?, value: String?) = apply { pending[key!!] = value }
-        override fun putStringSet(key: String?, values: MutableSet<String>?) =
-            apply { pending[key!!] = values }
-
-        override fun putInt(key: String?, value: Int) = apply { pending[key!!] = value }
-        override fun putLong(key: String?, value: Long) = apply { pending[key!!] = value }
-        override fun putFloat(key: String?, value: Float) = apply { pending[key!!] = value }
-        override fun putBoolean(key: String?, value: Boolean) = apply { pending[key!!] = value }
-        override fun remove(key: String?) = apply { pending.remove(key) }
-        override fun clear() = apply { values.clear() }
-        override fun commit(): Boolean {
-            values.putAll(pending)
-            return true
-        }
-
-        override fun apply() {
-            commit()
-        }
-    }
-
-    override fun registerOnSharedPreferenceChangeListener(
-        listener: SharedPreferences.OnSharedPreferenceChangeListener?
-    ) = Unit
-
-    override fun unregisterOnSharedPreferenceChangeListener(
-        listener: SharedPreferences.OnSharedPreferenceChangeListener?
-    ) = Unit
-}
 
 /**
  * Just enough of [Context] for SessionManager's own code path: a working prefs store (used by

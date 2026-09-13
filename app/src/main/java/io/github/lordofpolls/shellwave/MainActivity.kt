@@ -296,7 +296,7 @@ class MainActivity : FragmentActivity() {
 
         setContent {
             // Disk stays the source of truth; rememberPrefState re-reads on any change.
-            val dynamicColorEnabled by rememberPrefState { AppearancePreferences.getDynamicColor(it) }
+            val colourTheme by rememberPrefState { AppearancePreferences.getColourTheme(it) }
             val themeMode by rememberPrefState { AppearancePreferences.getThemeMode(it) }
             val exactSchemeColours by rememberPrefState { AppearancePreferences.getExactSchemeColours(it) }
 
@@ -321,7 +321,7 @@ class MainActivity : FragmentActivity() {
                     ThemeMode.DARK -> true
                 }
 
-            ShellwaveTheme(darkTheme = darkTheme, dynamicColor = dynamicColorEnabled) {
+            ShellwaveTheme(darkTheme = darkTheme, colourTheme = colourTheme) {
                 // A pair instead of one flat back stack, so a tab switch and a push-within-a-tab
                 // stay distinguishable; see [popNav] and [isNavAtRoot].
                 var destination by rememberSaveable { mutableStateOf(AppDestination.HOSTS) }
@@ -868,9 +868,9 @@ class MainActivity : FragmentActivity() {
 
                                 is Screen.Settings -> {
                                     SettingsScreen(
-                                        dynamicColorEnabled = dynamicColorEnabled,
-                                        onDynamicColorChange = {
-                                            AppearancePreferences.setDynamicColor(
+                                        colourTheme = colourTheme,
+                                        onColourThemeChange = {
+                                            AppearancePreferences.setColourTheme(
                                                 this@MainActivity,
                                                 it
                                             )

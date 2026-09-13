@@ -19,6 +19,7 @@ import io.github.lordofpolls.shellwave.core.db.entities.TerminalProfileEntity
 import io.github.lordofpolls.shellwave.core.prefs.AppearancePreferences
 import io.github.lordofpolls.shellwave.core.prefs.BellMode
 import io.github.lordofpolls.shellwave.core.prefs.BellPreferences
+import io.github.lordofpolls.shellwave.core.prefs.ColourTheme
 import io.github.lordofpolls.shellwave.core.prefs.ReachabilityInterval
 import io.github.lordofpolls.shellwave.core.prefs.ReachabilityPreferences
 import io.github.lordofpolls.shellwave.core.prefs.SessionLayoutPreferences
@@ -51,7 +52,7 @@ data class ParsedConfig(
 
 data class ImportedSettings(
     val themeMode: ThemeMode? = null,
-    val dynamicColour: Boolean? = null,
+    val colourTheme: ColourTheme? = null,
     val exactSchemeColours: Boolean? = null,
     val bellMode: BellMode? = null,
     val fullWidthTerminal: Boolean? = null,
@@ -229,7 +230,9 @@ private fun JSONObject?.toImportedSettings(): ImportedSettings {
     val pinned = optJSONArray("widgetPinnedScriptIds")
     return ImportedSettings(
         themeMode = enumOrNull(stringOrNull("themeMode")),
-        dynamicColour = booleanOrNull("dynamicColour"),
+        // Old export files carry only the boolean; a stored enum name always wins.
+        colourTheme = enumOrNull<ColourTheme>(stringOrNull("colourTheme"))
+            ?: booleanOrNull("dynamicColour")?.let { if (it) ColourTheme.DYNAMIC else ColourTheme.SCHEMATIC },
         exactSchemeColours = booleanOrNull("exactSchemeColours"),
         bellMode = enumOrNull(stringOrNull("bellMode")),
         fullWidthTerminal = booleanOrNull("fullWidthTerminal"),
@@ -377,7 +380,7 @@ constructor(
         notes: MutableList<String>,
     ) {
         settings.themeMode?.let { AppearancePreferences.setThemeMode(context, it) }
-        settings.dynamicColour?.let { AppearancePreferences.setDynamicColor(context, it) }
+        settings.colourTheme?.let { AppearancePreferences.setColourTheme(context, it) }
         settings.exactSchemeColours?.let { AppearancePreferences.setExactSchemeColours(context, it) }
         settings.bellMode?.let { BellPreferences.set(context, it) }
         settings.fullWidthTerminal?.let {

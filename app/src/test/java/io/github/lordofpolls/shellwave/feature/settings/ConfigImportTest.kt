@@ -9,6 +9,7 @@ import io.github.lordofpolls.shellwave.core.db.entities.PortForwardEntity
 import io.github.lordofpolls.shellwave.core.db.entities.ScriptEntity
 import io.github.lordofpolls.shellwave.core.db.entities.TerminalProfileEntity
 import io.github.lordofpolls.shellwave.core.prefs.BellMode
+import io.github.lordofpolls.shellwave.core.prefs.ColourTheme
 import io.github.lordofpolls.shellwave.core.prefs.ReachabilityInterval
 import io.github.lordofpolls.shellwave.core.prefs.ThemeMode
 import kotlinx.coroutines.flow.Flow
@@ -123,7 +124,7 @@ class ConfigImportTest {
         settings: Map<String, Any?> =
             mapOf(
                 "themeMode" to "DARK",
-                "dynamicColour" to false,
+                "colourTheme" to "NOTHING",
                 "exactSchemeColours" to true,
                 "bellMode" to "SILENT",
                 "fullWidthTerminal" to true,
@@ -177,7 +178,7 @@ class ConfigImportTest {
         val settings = parseConfigImport(export()).settings
 
         assertEquals(ThemeMode.DARK, settings.themeMode)
-        assertEquals(false, settings.dynamicColour)
+        assertEquals(ColourTheme.NOTHING, settings.colourTheme)
         assertEquals(true, settings.exactSchemeColours)
         assertEquals(BellMode.SILENT, settings.bellMode)
         assertEquals(true, settings.fullWidthTerminal)
@@ -198,6 +199,14 @@ class ConfigImportTest {
         assertNull(settings.fullWidthTerminal)
         assertNull(settings.quickSettingsTileScriptId)
         assertTrue(settings.widgetPinnedScriptIds.isEmpty())
+    }
+
+    @Test
+    fun aLegacyBooleanDynamicColourFallsBackToSchematic() {
+        val settings =
+            parseConfigImport(export(settings = mapOf("dynamicColour" to false))).settings
+
+        assertEquals(ColourTheme.SCHEMATIC, settings.colourTheme)
     }
 
     @Test

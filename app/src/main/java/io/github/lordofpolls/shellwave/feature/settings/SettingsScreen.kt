@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import io.github.lordofpolls.shellwave.BuildConfig
 import io.github.lordofpolls.shellwave.core.billing.SupporterState
 import io.github.lordofpolls.shellwave.core.billing.SupporterTier
+import io.github.lordofpolls.shellwave.core.prefs.ColourTheme
 import io.github.lordofpolls.shellwave.core.prefs.ReachabilityInterval
 import io.github.lordofpolls.shellwave.core.prefs.ThemeMode
 import io.github.lordofpolls.shellwave.service.ACTION_RUN_SCRIPT
@@ -55,8 +56,8 @@ import java.time.LocalDate
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
-    dynamicColorEnabled: Boolean,
-    onDynamicColorChange: (Boolean) -> Unit,
+    colourTheme: ColourTheme,
+    onColourThemeChange: (ColourTheme) -> Unit,
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
     exactSchemeColours: Boolean,
@@ -110,11 +111,18 @@ fun SettingsScreen(
                 onSelect = onThemeModeChange,
             )
 
-            SettingsSwitch(
-                title = "Dynamic colour (Material You)",
-                description = "Take the app's accent from your wallpaper.",
-                checked = dynamicColorEnabled,
-                onCheckedChange = onDynamicColorChange,
+            SettingsRadioGroup(
+                label = "Colour",
+                options = ColourTheme.entries,
+                selected = colourTheme,
+                labelOf = {
+                    when (it) {
+                        ColourTheme.DYNAMIC -> "Dynamic (Material You)"
+                        ColourTheme.SCHEMATIC -> "Schematic"
+                        ColourTheme.NOTHING -> "Nothing"
+                    }
+                },
+                onSelect = onColourThemeChange,
             )
 
             SettingsSwitch(
