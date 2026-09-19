@@ -170,6 +170,8 @@ android {
             excludes += setOf(
                 "META-INF/LICENSE.md",
                 "META-INF/LICENSE-notice.md",
+                // Picnic post-quantum tables, 1.2 MB nothing in SSH can use.
+                "org/bouncycastle/pqc/legacy/picnic/**",
             )
         }
     }

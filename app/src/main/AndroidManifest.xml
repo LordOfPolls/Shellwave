@@ -16,6 +16,9 @@
          is metered. No runtime prompt, but it is a visible permission-list entry for an app that
          claims not to touch the network, so the release notes name it. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- The built manifest also carries USE_BIOMETRIC and USE_FINGERPRINT (androidx.biometric) and
+         WAKE_LOCK and RECEIVE_BOOT_COMPLETED (WorkManager, via glance-appwidget); merged in, not
+         declared here. -->
 
     <application
         android:name=".ShellwaveApplication"

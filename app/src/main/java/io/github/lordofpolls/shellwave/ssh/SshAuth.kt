@@ -16,6 +16,11 @@ import net.schmizz.sshj.userauth.password.PasswordUtils
  */
 internal const val KEEPALIVE_INTERVAL_SECONDS = 15
 
+// sshj's 30s default bounds the KEX wait the host key dialog blocks inside. Comparing a
+// fingerprint against the server and typing OVERRIDE on a phone keyboard takes longer than that.
+// Only affects a server that completes TCP but never finishes KEX; socket connect is separate.
+private const val KEX_TIMEOUT_MS = 180_000
+
 /**
  * Connect and authenticate one [SSHClient] - the half of "open an SSH connection" that has nothing
  * to do with what happens afterwards (a PTY + shell for SshConnection, a headless `exec` for
@@ -40,6 +45,7 @@ internal fun connectAndAuthenticate(
     // Must be set before connect(); sshj starts the keepalive thread right after KEX, inside
     // connect() itself, only if the interval is already non-zero at that point.
     ssh.connection.keepAlive.keepAliveInterval = KEEPALIVE_INTERVAL_SECONDS
+    ssh.transport.timeoutMs = KEX_TIMEOUT_MS
     ssh.connect(host, port)
     authenticate(ssh, username, authMethod)
 }
@@ -58,6 +64,7 @@ internal fun connectViaAndAuthenticate(
 ) {
     ssh.addHostKeyVerifier(hostKeyVerifier)
     ssh.connection.keepAlive.keepAliveInterval = KEEPALIVE_INTERVAL_SECONDS
+    ssh.transport.timeoutMs = KEX_TIMEOUT_MS
     ssh.connectVia(directConnection)
     authenticate(ssh, username, authMethod)
 }
