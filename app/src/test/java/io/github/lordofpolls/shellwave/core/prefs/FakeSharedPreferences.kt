@@ -3,6 +3,10 @@ package io.github.lordofpolls.shellwave.core.prefs
 import android.content.SharedPreferences
 import java.util.concurrent.ConcurrentHashMap
 
+// A key mapped to this is deleted from `values` on commit, rather than simply absent from
+// `pending` - otherwise remove() followed by commit() would be a no-op.
+private object Removed
+
 /** In-memory stand-in for the handful of [SharedPreferences] calls the prefs objects make. */
 internal class FakeSharedPreferences : SharedPreferences {
     private val values = ConcurrentHashMap<String, Any?>()
@@ -32,10 +36,12 @@ internal class FakeSharedPreferences : SharedPreferences {
         override fun putLong(key: String?, value: Long) = apply { pending[key!!] = value }
         override fun putFloat(key: String?, value: Float) = apply { pending[key!!] = value }
         override fun putBoolean(key: String?, value: Boolean) = apply { pending[key!!] = value }
-        override fun remove(key: String?) = apply { pending.remove(key) }
+        override fun remove(key: String?) = apply { pending[key!!] = Removed }
         override fun clear() = apply { values.clear() }
         override fun commit(): Boolean {
-            values.putAll(pending)
+            pending.forEach { (key, value) ->
+                if (value === Removed) values.remove(key) else values[key] = value
+            }
             return true
         }
 
