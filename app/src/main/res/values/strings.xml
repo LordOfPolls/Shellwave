@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Shellwave</string>
+    <string name="wol_tile_label">Wake on LAN</string>
 </resources>

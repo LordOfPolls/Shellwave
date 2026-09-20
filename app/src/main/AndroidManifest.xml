@@ -109,6 +109,32 @@
                 android:resource="@xml/script_widget_info" />
         </receiver>
 
+        <!-- Quick Settings tile bound to one host's MAC address - see WolTileService.kt. A plain
+             @string/app_name label would leave two tiles named "Shellwave" in the picker. -->
+        <service
+            android:name=".feature.glance.WolTileService"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/wol_tile_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <!-- The Wake-on-LAN widget; see WolWidget.kt. Sends the magic packet directly from the
+             ActionCallback, no SSH, no credentials, no service. -->
+        <receiver
+            android:name=".feature.glance.WolWidgetReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/wol_widget_info" />
+        </receiver>
+
     </application>
 
 </manifest>

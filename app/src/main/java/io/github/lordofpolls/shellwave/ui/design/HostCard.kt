@@ -19,6 +19,7 @@ import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.PowerSettingsNew
+import androidx.compose.material.icons.outlined.ToggleOn
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -66,6 +67,9 @@ fun HostCard(
     onDelete: () -> Unit,
     /** Null hides the Wake item rather than disabling it. */
     onWake: (() -> Unit)? = null,
+    isWolTile: Boolean = false,
+    /** Null hides the item rather than disabling it. */
+    onUseForWolTile: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
@@ -150,6 +154,8 @@ fun HostCard(
                     onEdit = { menuExpanded = false; onEdit() },
                     onDuplicate = { menuExpanded = false; onDuplicate() },
                     onWake = onWake?.let { wake -> { menuExpanded = false; wake() } },
+                    isWolTile = isWolTile,
+                    onUseForWolTile = onUseForWolTile?.let { use -> { menuExpanded = false; use() } },
                     onDelete = { menuExpanded = false; onDelete() },
                     onRunScript = { action -> menuExpanded = false; action.onRun() },
                 )
@@ -171,6 +177,8 @@ private fun HostMenu(
     onEdit: () -> Unit,
     onDuplicate: () -> Unit,
     onWake: (() -> Unit)?,
+    isWolTile: Boolean,
+    onUseForWolTile: (() -> Unit)?,
     onDelete: () -> Unit,
     onRunScript: (HostScriptAction) -> Unit,
 ) {
@@ -221,6 +229,15 @@ private fun HostMenu(
                         Icon(Icons.Outlined.PowerSettingsNew, contentDescription = null)
                     },
                     onClick = onWake,
+                )
+            }
+            if (onUseForWolTile != null) {
+                DropdownMenuItem(
+                    text = { Text(if (isWolTile) "Remove from WOL tile" else "Use for WOL tile") },
+                    leadingIcon = {
+                        Icon(Icons.Outlined.ToggleOn, contentDescription = null)
+                    },
+                    onClick = onUseForWolTile,
                 )
             }
             if (scripts.isNotEmpty()) {

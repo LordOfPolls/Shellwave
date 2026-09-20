@@ -37,16 +37,19 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import io.github.lordofpolls.shellwave.core.db.entities.HostEntity
 import io.github.lordofpolls.shellwave.core.db.entities.ScriptEntity
 import io.github.lordofpolls.shellwave.core.net.Reachability
+import io.github.lordofpolls.shellwave.core.prefs.WidgetPreferences
 import io.github.lordofpolls.shellwave.feature.scripts.ScriptMode
 import io.github.lordofpolls.shellwave.ssh.SessionStatus
 import io.github.lordofpolls.shellwave.ssh.SessionSummary
@@ -117,6 +120,9 @@ fun HomeScreen(
     var hostPendingDelete by remember { mutableStateOf<HostEntity?>(null) }
     var searchQuery by remember { mutableStateOf("") }
     var quickConnectText by remember { mutableStateOf("") }
+    val context = LocalContext.current
+    // Bumped on every WOL tile change so the `remember` below re-reads WidgetPreferences.
+    var wolTileChanges by remember { mutableIntStateOf(0) }
 
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
     val searchVisible = hosts.size >= SEARCH_FIELD_HOST_THRESHOLD
@@ -242,6 +248,9 @@ fun HomeScreen(
             } else {
                 items(visibleHosts, key = { it.id }) { host ->
                     val session = liveSessions.firstOrNull { it.hostId == host.id }
+                    val isWolTile = remember(host.id, wolTileChanges) {
+                        WidgetPreferences.wolTileHostId(context) == host.id
+                    }
                     HostCard(
                         displayName = host.label ?: host.hostname,
                         identity = "${host.username}@${host.hostname}:${host.port}",
@@ -260,6 +269,16 @@ fun HomeScreen(
                         onEdit = { onEditHost(host) },
                         onDuplicate = { onDuplicateHost(host) },
                         onWake = host.macAddress?.let { { onWakeHost(host) } },
+                        isWolTile = isWolTile,
+                        onUseForWolTile = host.macAddress?.let {
+                            {
+                                WidgetPreferences.setWolTileHostId(
+                                    context,
+                                    if (isWolTile) null else host.id
+                                )
+                                wolTileChanges++
+                            }
+                        },
                         onDelete = { hostPendingDelete = host },
                     )
                 }

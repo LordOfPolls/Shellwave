@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?><!-- The Wake-on-LAN widget's AppWidgetProviderInfo.
+     Resizable only vertically (one host per row - see WolWidget.kt) since the host name labels
+     are the whole point; a horizontal resize wouldn't add anything a wider row doesn't already
+     give for free. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:initialLayout="@layout/glance_default_loading_layout"
+    android:minWidth="180dp"
+    android:minHeight="110dp"
+    android:previewImage="@mipmap/ic_launcher"
+    android:resizeMode="vertical"
+    android:targetCellWidth="3"
+    android:targetCellHeight="2"
+    android:updatePeriodMillis="0"
+    android:widgetCategory="home_screen" />

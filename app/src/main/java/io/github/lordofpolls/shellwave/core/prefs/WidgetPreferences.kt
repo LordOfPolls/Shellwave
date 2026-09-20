@@ -2,6 +2,7 @@ package io.github.lordofpolls.shellwave.core.prefs
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.core.content.edit
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -9,6 +10,7 @@ import kotlinx.coroutines.flow.callbackFlow
 private const val PREFS_NAME = "shellwave_prefs"
 private const val KEY_PINNED_SCRIPT_IDS = "widget_pinned_script_ids"
 private const val KEY_QS_TILE_SCRIPT_ID = "qs_tile_script_id"
+private const val KEY_WOL_TILE_HOST_ID = "wol_tile_host_id"
 
 object WidgetPreferences {
     fun pinnedScriptIds(context: Context): Set<Long> =
@@ -42,6 +44,21 @@ object WidgetPreferences {
             scriptId
         )
         editor.apply()
+    }
+
+    fun wolTileHostId(context: Context): Long? {
+        val id = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getLong(KEY_WOL_TILE_HOST_ID, -1L)
+        return id.takeIf { it >= 0 }
+    }
+
+    fun setWolTileHostId(context: Context, hostId: Long?) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+            if (hostId == null) remove(KEY_WOL_TILE_HOST_ID) else putLong(
+                KEY_WOL_TILE_HOST_ID,
+                hostId
+            )
+        }
     }
 
     fun pinnedScriptIdsFlow(context: Context): Flow<Set<Long>> = callbackFlow {
