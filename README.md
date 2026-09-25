@@ -24,6 +24,13 @@
   <a href="LICENSE">
     <img src="https://img.shields.io/github/license/LordOfPolls/Shellwave?label=Licence" alt="Licence">
   </a>
+  <br>
+  <a href="https://play.google.com/store/apps/details?id=io.github.lordofpolls.shellwave">
+    <img src="https://img.shields.io/badge/Google%20Play-414141?logo=googleplay&logoColor=white" alt="Get it on Google Play">
+  </a>
+  <a href="https://f-droid.org/packages/io.github.lordofpolls.shellwave">
+    <img src="https://img.shields.io/f-droid/v/io.github.lordofpolls.shellwave?logo=fdroid&label=F-Droid" alt="Get it on F-Droid">
+  </a>
 </p>
 
 ## Screenshots
@@ -64,10 +71,9 @@ terminal the full width.
 
 ## Install
 
-Every release ships a signed APK, built by GitHub Actions from the tag - an unsigned build
-never reaches the release page:
-
-**[Download the latest release](https://github.com/LordOfPolls/Shellwave/releases/latest)**
+- [Google Play](https://play.google.com/store/apps/details?id=io.github.lordofpolls.shellwave)
+- [F-Droid](https://f-droid.org/packages/io.github.lordofpolls.shellwave)
+- [GitHub releases](https://github.com/LordOfPolls/Shellwave/releases/latest)
 
 > [!NOTE]
 > Forwarded ports and the SOCKS5 proxy bind to loopback unless you say otherwise. Binding wider is
