@@ -1,1 +1,1 @@
-Shellwave
+Shellwave: SSH Client & SFTP

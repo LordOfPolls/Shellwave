@@ -1,6 +1,9 @@
-Shellwave is an SSH client for Android phones and foldables, built because every
-mobile SSH client makes you choose between convenient and trustworthy — and
-that's a stupid choice.
+Shellwave is an open-source SSH client and terminal for Android phones, tablets
+and foldables. Connect to your Linux servers, Raspberry Pi or homelab with SFTP,
+port forwarding and sessions that survive a dropped connection.
+
+It exists because every mobile SSH client makes you choose between convenient
+and trustworthy — and that's a stupid choice.
 
 Sessions that survive
 Your train goes into a tunnel and the connection drops. When the signal comes
@@ -16,8 +19,9 @@ Shellwave stops you before you go any further. There is no accept-all mode, and
 a script running from a widget or a tile never answers a prompt on your behalf.
 
 Your keys stay on your device
-Password, an imported private key, a key generated on your device, or
-keyboard-interactive/2FA — whatever you already use. Everything is encrypted
+Password, an imported private key, a key generated on your device (Ed25519,
+ECDSA or RSA), OpenSSH certificates, or keyboard-interactive/2FA — whatever you
+already use. Everything is encrypted
 on-device, with hardware-backed protection on phones that support it, and an
 optional biometric lock. You can generate a key on the device and install it in
 a host's authorized_keys without the private key ever leaving the phone.
@@ -27,21 +31,25 @@ Save commands or scripts against a host, with parameters you fill in when you ru
 them. Watch them run live, run them in the background and check back later, or
 fire them into a session you already have open. You can launch a script from the
 app itself, a home-screen widget, an app shortcut, or a Quick Settings tile.
+The same widget and tile can wake a sleeping machine with Wake-on-LAN.
 
 Networking, done properly
 - Local and remote port forwarding
 - A SOCKS5 proxy
 - Jump host/bastion chaining through multiple hops
-- Import your existing ~/.ssh/config as-is — hosts, ports, users, keys, jump hosts
+- Import your existing ~/.ssh/config as-is — hosts, ports, users, keys, jump
+  hosts, Match blocks
 Forwarded ports and the proxy bind to loopback unless you say otherwise.
 
 File transfer
-Send files to a host or pull them down over SFTP, without switching apps.
+Browse a host's files over SFTP from inside a session: upload, download, rename
+and delete without switching apps.
 
 A real terminal
 256 colours, wide character support, correct cursor and scroll handling. If you use
 vim, tmux, or htop, they will look and behave the way you expect. No weird redraws,
-no broken keys, no compromises.
+no broken keys, no compromises. Search the scrollback, log a session to a file,
+and the visible screen is readable by TalkBack.
 
 Built with foldables in mind
 On unfolded or wide screens you get a two-pane layout, host list next to the

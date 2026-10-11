@@ -1,1 +1,1 @@
-An SSH client that doesn't make you choose between convenient and trustworthy
+Open-source SSH client and terminal with SFTP, port forwarding and jump hosts
