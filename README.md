@@ -1,12 +1,8 @@
 <h1 align="center">
-  <img src="fastlane/metadata/android/en-US/images/icon.png" width="128" alt="Shellwave app icon">
-  <br>
-  ~/Shellwave
+  <img src="fastlane/metadata/android/en-US/images/featureGraphic.png" width="640" alt="Shellwave - an SSH client for Android">
 </h1>
 
 <p align="center">
-  An SSH client for Android
-  <br>
   Built because every mobile SSH client makes you choose between convenient and trustworthy,
   and that's a stupid choice.
   <br>
@@ -36,10 +32,10 @@
 ## Screenshots
 
 <p>
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/01_terminal.png" width="205" alt="A session tailing a coloured log, with three session tabs above it">
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/02_hosts.png" width="205" alt="The host list with a quick-connect field">
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/04_ansi_truecolour.png" width="205" alt="16-colour, 256-colour and 24-bit ramps rendered in a session">
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/06_per_host_settings.png" width="205" alt="Per-host settings: tmux reattach, profile and colour scheme overrides, key bar, ProxyJump">
+  <img src="assets/screenshots/terminal.png" width="205" alt="A session tailing a coloured log, with three session tabs above it">
+  <img src="assets/screenshots/hosts.png" width="205" alt="The host list with a quick-connect field">
+  <img src="assets/screenshots/ansi-truecolour.png" width="205" alt="16-colour, 256-colour and 24-bit ramps rendered in a session">
+  <img src="assets/screenshots/per-host-settings.png" width="205" alt="Per-host settings: tmux reattach, profile and colour scheme overrides, key bar, ProxyJump">
 </p>
 
 Unfolded, the session list and the terminal share the screen; collapsing the split gives the
