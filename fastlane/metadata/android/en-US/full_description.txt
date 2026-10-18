@@ -1,72 +1,41 @@
-Shellwave is an open-source SSH client and terminal for Android phones, tablets
-and foldables. Connect to your Linux servers, Raspberry Pi or homelab with SFTP,
-port forwarding and sessions that survive a dropped connection.
+Shellwave is an open-source SSH client and terminal for Android phones, tablets and foldables. Connect to your Linux servers, Raspberry Pi or homelab with SFTP, port forwarding and sessions that survive a dropped connection.
 
-It exists because every mobile SSH client makes you choose between convenient
-and trustworthy — and that's a stupid choice.
+It exists because every mobile SSH client makes you choose between convenient and trustworthy — and that's a stupid choice.
 
 Sessions that survive
-Your train goes into a tunnel and the connection drops. When the signal comes
-back, your session is still there — reconnected without re-typing a password,
-and with optional tmux-backed sessions, reattached with scrollback intact. You
-don't do anything. Hosts can also keep a persistent session running, so you can
-close the app and come back to exactly where you left off.
+Your train goes into a tunnel and the connection drops. When the signal comes back, your session is still there — reconnected without re-typing a password, and with optional tmux-backed sessions, reattached with scrollback intact. You don't do anything. Hosts can also keep a persistent session running, so you can close the app and come back to exactly where you left off.
 
 Nothing is trusted for you
-Host keys are checked the first time you connect and remembered after that, with
-the fingerprint shown so you can check it yourself. If a host key ever changes,
-Shellwave stops you before you go any further. There is no accept-all mode, and
-a script running from a widget or a tile never answers a prompt on your behalf.
+Host keys are checked the first time you connect and remembered after that, with the fingerprint shown so you can check it yourself. If a host key ever changes, Shellwave stops you before you go any further. There is no accept-all mode, and a script running from a widget or a tile never answers a prompt on your behalf.
 
 Your keys stay on your device
-Password, an imported private key, a key generated on your device (Ed25519,
-ECDSA or RSA), OpenSSH certificates, or keyboard-interactive/2FA — whatever you
-already use. Everything is encrypted
-on-device, with hardware-backed protection on phones that support it, and an
-optional biometric lock. You can generate a key on the device and install it in
-a host's authorized_keys without the private key ever leaving the phone.
+Password, an imported private key, a key generated on your device (Ed25519, ECDSA or RSA), OpenSSH certificates, or keyboard-interactive/2FA — whatever you already use. Everything is encrypted on-device, with hardware-backed protection on phones that support it, and an optional biometric lock. You can generate a key on the device and install it in a host's authorized_keys without the private key ever leaving the phone.
 
 Save yourself the typing
-Save commands or scripts against a host, with parameters you fill in when you run
-them. Watch them run live, run them in the background and check back later, or
-fire them into a session you already have open. You can launch a script from the
-app itself, a home-screen widget, an app shortcut, or a Quick Settings tile.
-The same widget and tile can wake a sleeping machine with Wake-on-LAN.
+Save commands or scripts against a host, with parameters you fill in when you run them. Watch them run live, run them in the background and check back later, or fire them into a session you already have open. You can launch a script from the app itself, a home-screen widget, an app shortcut, or a Quick Settings tile. The same widget and tile can wake a sleeping machine with Wake-on-LAN.
 
 Networking, done properly
 - Local and remote port forwarding
 - A SOCKS5 proxy
 - Jump host/bastion chaining through multiple hops
-- Import your existing ~/.ssh/config as-is — hosts, ports, users, keys, jump
-  hosts, Match blocks
+- Import your existing ~/.ssh/config as-is — hosts, ports, users, keys, jump hosts, Match blocks
 Forwarded ports and the proxy bind to loopback unless you say otherwise.
 
 File transfer
-Browse a host's files over SFTP from inside a session: upload, download, rename
-and delete without switching apps.
+Browse a host's files over SFTP from inside a session: upload, download, rename and delete without switching apps.
 
 A real terminal
-256 colours, wide character support, correct cursor and scroll handling. If you use
-vim, tmux, or htop, they will look and behave the way you expect. No weird redraws,
-no broken keys, no compromises. Search the scrollback, log a session to a file,
-and the visible screen is readable by TalkBack.
+256 colours, wide character support, correct cursor and scroll handling. If you use vim, tmux, or htop, they will look and behave the way you expect. No weird redraws, no broken keys, no compromises. Search the scrollback, log a session to a file, and the visible screen is readable by TalkBack.
 
 Built with foldables in mind
-On unfolded or wide screens you get a two-pane layout, host list next to the
-terminal. Tabletop mode keeps the terminal above the hinge and the keyboard below
-it. Fold or unfold mid-session and nothing drops.
+On unfolded or wide screens you get a two-pane layout, host list next to the terminal. Tabletop mode keeps the terminal above the hinge and the keyboard below it. Fold or unfold mid-session and nothing drops.
 
 Make it look like yours
-A handful of bundled monospace fonts, or bring your own. Colour schemes like
-Solarized, Gruvbox, Nord, Dracula, Tango and Campbell, plus a full editor if you
-want to build your own. A key bar you can customise per host with macros and
-layouts. Material You colour throughout.
+A handful of bundled monospace fonts, or bring your own. Colour schemes like Solarized, Gruvbox, Nord, Dracula, Tango and Campbell, plus a full editor if you want to build your own. A key bar you can customise per host with macros and layouts. Material You colour throughout.
 
 Privacy
-No usage data, no analytics, no crash reporting. Shellwave only connects to the
-hosts you tell it to — nothing else.
+No usage data, no analytics, no crash reporting. Shellwave only connects to the hosts you tell it to — nothing else.
 
-The Play Store build has an optional one-time tip for the developer. It does not unlock
-anything, and the F-Droid build leaves it out entirely.
+The Play Store build has an optional one-time tip for the developer. It does not unlock anything, and the F-Droid build leaves it out entirely.
 
 Open source, GNU GPLv3.
