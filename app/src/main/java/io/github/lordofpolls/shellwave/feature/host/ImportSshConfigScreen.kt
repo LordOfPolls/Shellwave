@@ -376,6 +376,12 @@ private fun ImportEntryCard(
                 value = state.hostNameOverride,
                 onValueChange = { state.hostNameOverride = it },
                 label = { Text("Hostname") },
+                keyboardOptions =
+                    KeyboardOptions(
+                        keyboardType = KeyboardType.Uri,
+                        autoCorrectEnabled = false,
+                    ),
+                singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
@@ -389,6 +395,12 @@ private fun ImportEntryCard(
                 value = state.usernameOverride,
                 onValueChange = { state.usernameOverride = it },
                 label = { Text("Username") },
+                keyboardOptions =
+                    KeyboardOptions(
+                        keyboardType = KeyboardType.PasswordVisible,
+                        autoCorrectEnabled = false,
+                    ),
+                singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
 

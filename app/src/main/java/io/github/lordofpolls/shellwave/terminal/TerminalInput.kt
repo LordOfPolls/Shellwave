@@ -28,6 +28,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
 import com.termux.terminal.KeyHandler
 import androidx.compose.ui.input.key.KeyEvent as ComposeKeyEvent
 
@@ -54,9 +55,10 @@ private const val PLACEHOLDER = " "
  * previous session.
  *
  * The buffer holds the current line until Enter so the IME can revise it, which also means the IME
- * sees that line, including a password typed at a no-echo prompt. Compose cannot request
- * no-suggestions or no-personalised-learning without also disabling the autocorrect this exists
- * for, so that exposure is accepted.
+ * sees that line, including a password typed at a no-echo prompt. The field uses
+ * [KeyboardType.PasswordVisible] so the IME neither offers suggestions nor learns from that text;
+ * the text stays unmasked (Compose masks only through a visual transformation) and the capture
+ * logic below is unaffected.
  */
 @Composable
 fun TerminalInputCapture(
@@ -111,6 +113,8 @@ fun TerminalInputCapture(
                 KeyboardOptions(
                     autoCorrectEnabled = false,
                     capitalization = KeyboardCapitalization.None,
+                    // Prevent keyboard from autocorrect/suggestions
+                    keyboardType = KeyboardType.PasswordVisible,
                 ),
         )
     }

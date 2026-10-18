@@ -485,14 +485,24 @@ fun AddEditHostScreen(
                 value = hostname,
                 onValueChange = { hostname = it },
                 label = { Text("Hostname") },
+                keyboardOptions =
+                    KeyboardOptions(
+                        keyboardType = KeyboardType.Uri,
+                        autoCorrectEnabled = false,
+                    ),
+                singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
-            // Without a declared content type a password manager sees an unlabelled field and offers
-            // nothing. Username here and Password below give it the pair it needs.
             OutlinedTextField(
                 value = username,
                 onValueChange = { username = it },
                 label = { Text("Username") },
+                keyboardOptions =
+                    KeyboardOptions(
+                        keyboardType = KeyboardType.PasswordVisible,
+                        autoCorrectEnabled = false,
+                    ),
+                singleLine = true,
                 modifier = Modifier
                     .fillMaxWidth()
                     .semantics { contentType = ContentType.Username },
