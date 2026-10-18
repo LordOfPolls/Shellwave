@@ -1,11 +1,29 @@
 # Changelog
 
 
-## 1.7.1 - 2026-09-06
+## 1.8.0 - 2026-10-18
 
 ### New
-- Add PgUp and PgDn to the arrow cluster on the key bar
+- Add a Nothing colour theme with the Doto display face
+- Wake a host from a quick settings tile or home screen widget
+
+### Fixed
+- Give the host key dialog three minutes and drop unused BouncyCastle picnic tables
+- Make FakeSharedPreferences.remove actually delete on commit
+- Keyboard text suggestions are disabled in terminal view (#1)
+
+### Documentation
+- Link the Play Store and F-Droid listings from the README
+- Work search keywords and missing features into the store listing
+
+[Every commit in this release](https://github.com/LordOfPolls/Shellwave/compare/1.7.1...1.8.0)
+
+## 1.7.1 - 2026-09-13
+
+### New
+- Add PgUp and PgDn to the default key bar
 - Scroll mouse-aware apps with a drag instead of a button drag
+- Move PgUp and PgDn into the arrow cluster beside the up key
 
 [Every commit in this release](https://github.com/LordOfPolls/Shellwave/compare/1.6.1...1.7.1)
 

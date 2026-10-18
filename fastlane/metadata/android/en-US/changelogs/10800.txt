@@ -1,0 +1,8 @@
+New:
+- Add a Nothing colour theme with the Doto display face
+- Wake a host from a quick settings tile or home screen widget
+
+Fixed:
+- Give the host key dialog three minutes and drop unused BouncyCastle picnic tables
+- Make FakeSharedPreferences.remove actually delete on commit
+- Keyboard text suggestions are disabled in terminal view (#1)
