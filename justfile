@@ -5,6 +5,7 @@
 #   just release        commit, tag and push what bump wrote
 #   just bundle         build the signed Play Store .aab
 #   just publish        push that .aab to the Play internal testing track
+#   just listing        show the live Play store listing, or --push the repo's
 #
 
 
@@ -167,7 +168,31 @@ publish *ARGS:
         exit 1
     fi
 
+    # The listing is a separate edit from the bundle, so this only reports drift - it never
+    # writes. Silence here is the point: a release that changes the store page should say so.
+    if [[ -x scripts/play-listing.py ]]; then
+        scripts/play-listing.py --push --dry-run || true
+    else
+        echo "publish: scripts/play-listing.py is missing - store listing drift NOT checked" >&2
+    fi
+    echo
+
     scripts/play-publish.py {{ ARGS }}
+
+# Read the live Play store listing, or `just listing --push` to make the repo's listing live
+listing *ARGS:
+    #!/usr/bin/env bash
+    # play-publish only ships the bundle and the changelog. Everything else on the store page -
+    # title, descriptions, screenshots, feature graphic - lives in fastlane/metadata and used to
+    # reach Play only by hand, which is how the live listing drifted a release behind the repo.
+    set -euo pipefail
+
+    if [[ ! -x scripts/play-listing.py ]]; then
+        echo "listing: scripts/play-listing.py is missing (scripts/ is untracked - copy it in)" >&2
+        exit 1
+    fi
+
+    scripts/play-listing.py {{ ARGS }}
 
 # Commit, tag and push the release `bump` prepared. This publishes.
 release:
