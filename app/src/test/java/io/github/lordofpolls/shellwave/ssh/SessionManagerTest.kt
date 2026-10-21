@@ -58,9 +58,21 @@ private class NoopSessionAlerts(context: Context) : SessionAlerts(context) {
 }
 
 private class EmptyHostDao : HostDao {
+    val countConnectCalls = AtomicInteger(0)
+    val touchCalls = AtomicInteger(0)
+
     override fun observeAll(): Flow<List<HostEntity>> = TODO("not used")
     override fun observeRecents(limit: Int): Flow<List<HostEntity>> = TODO("not used")
-    override suspend fun getById(id: Long): HostEntity? = TODO("not used - tests use hostId = null")
+    override suspend fun getById(id: Long): HostEntity? = HostEntity(
+        id = id,
+        label = null,
+        hostname = "example.invalid",
+        port = 22,
+        username = "user",
+        credentialId = 1L,
+        lastConnectedAt = null,
+        createdAt = 0L,
+    )
     override suspend fun insert(host: HostEntity): Long = TODO("not used")
     override suspend fun update(host: HostEntity) = TODO("not used")
     override suspend fun delete(host: HostEntity) = TODO("not used")
@@ -68,7 +80,17 @@ private class EmptyHostDao : HostDao {
     override suspend fun countOtherHostsUsingCredential(credentialId: Long, excludeHostId: Long): Int =
         TODO("not used")
 
-    override suspend fun touchLastConnected(id: Long, timestamp: Long) = TODO("not used")
+    override suspend fun touchLastConnected(id: Long, timestamp: Long) {
+        touchCalls.incrementAndGet()
+    }
+
+    override suspend fun countConnect(id: Long) {
+        countConnectCalls.incrementAndGet()
+    }
+
+    override suspend fun clearGroup(groupId: Long) = TODO()
+
+    override suspend fun setPosition(id: Long, position: Int) = TODO()
 }
 
 private class FakeTerminalProfileDao : TerminalProfileDao {
@@ -92,7 +114,7 @@ private class FakeColorSchemeDao : ColorSchemeDao {
 }
 
 private class FakePortForwardDao : PortForwardDao {
-    override suspend fun getForHost(hostId: Long): List<PortForwardEntity> = TODO("not used")
+    override suspend fun getForHost(hostId: Long): List<PortForwardEntity> = emptyList()
     override fun observeForHost(hostId: Long): Flow<List<PortForwardEntity>> = TODO("not used")
     override suspend fun insert(forward: PortForwardEntity): Long = TODO("not used")
     override suspend fun update(forward: PortForwardEntity) = TODO("not used")
@@ -158,11 +180,11 @@ private class FakeSshConnection(
 
 class SessionManagerTest {
 
-    private fun newManager(tempDir: File): SessionManager {
+    private fun newManager(tempDir: File, hostDao: EmptyHostDao = EmptyHostDao()): SessionManager {
         val context = FakeContext(tempDir)
         return SessionManager(
             context,
-            EmptyHostDao(),
+            hostDao,
             FakeTerminalProfileDao(),
             FakeColorSchemeDao(),
             FakePortForwardDao(),
@@ -326,6 +348,36 @@ class SessionManagerTest {
         callsBefore = factoryCalls.get()
         manager.reconnectNow(failedId)
         assertEquals(callsBefore + 1, factoryCalls.get())
+    }
+
+    /** "Most used" counts reaching for a host, not network instability: a reconnect must not count. */
+    @Test
+    fun reconnectAfterDrop_countsOnceButTouchesLastConnectedEveryAttempt() {
+        val tempDir = createTempDir()
+        val hostDao = EmptyHostDao()
+        val manager = newManager(tempDir, hostDao)
+        val factoryCalls = AtomicInteger(0)
+        manager.connectionFactory = { id ->
+            factoryCalls.incrementAndGet()
+            FakeSshConnection(
+                CoroutineScope(SupervisorJob() + Dispatchers.Default),
+                FakeContext(tempDir),
+            ).apply { connectGate.complete(Unit) }
+        }
+
+        val id = manager.openSession(spec().copy(hostId = 1L))
+        manager.beginConnectIfNeeded(id, 80, 24, 8, 16)
+        waitUntil(message = "timed out waiting for first touch") { hostDao.touchCalls.get() == 1 }
+
+        handleDisconnected(manager, id, clean = true)
+        manager.reconnectNow(id)
+        waitUntil(message = "timed out waiting for second touch") {
+            hostDao.touchCalls.get() == 2 && hostDao.countConnectCalls.get() >= 1
+        }
+
+        assertEquals(2, factoryCalls.get())
+        assertEquals(2, hostDao.touchCalls.get())
+        assertEquals(1, hostDao.countConnectCalls.get())
     }
 
     /**

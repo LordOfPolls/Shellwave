@@ -18,12 +18,15 @@ import org.junit.Test
 private class FakeDuplicationHostDao(private val hosts: MutableMap<Long, HostEntity>) : HostDao {
     var updated: HostEntity? = null
         private set
+    var inserted: HostEntity? = null
+        private set
     private var nextId = 100L
 
     override fun observeAll(): Flow<List<HostEntity>> = TODO()
     override fun observeRecents(limit: Int): Flow<List<HostEntity>> = TODO()
     override suspend fun getById(id: Long): HostEntity? = hosts[id]
     override suspend fun insert(host: HostEntity): Long {
+        inserted = host
         val id = nextId++
         hosts[id] = host.copy(id = id)
         return id
@@ -36,6 +39,11 @@ private class FakeDuplicationHostDao(private val hosts: MutableMap<Long, HostEnt
     override suspend fun getProxyJumpDependents(hostId: Long): List<HostEntity> = TODO()
     override suspend fun countOtherHostsUsingCredential(credentialId: Long, excludeHostId: Long): Int = TODO()
     override suspend fun touchLastConnected(id: Long, timestamp: Long) = TODO()
+    override suspend fun countConnect(id: Long) = TODO()
+
+    override suspend fun clearGroup(groupId: Long) = TODO()
+
+    override suspend fun setPosition(id: Long, position: Int) = TODO()
 }
 
 private class FakeTerminalProfileDao(private val profiles: Map<Long, TerminalProfileEntity>) : TerminalProfileDao {
@@ -170,6 +178,8 @@ class HostDuplicationTest {
         username = "user",
         credentialId = 1L,
         lastConnectedAt = 123L,
+        connectCount = 5,
+        position = 3,
         createdAt = 0L,
         terminalProfileId = 7L,
         colorSchemeId = 9L,
@@ -187,6 +197,8 @@ class HostDuplicationTest {
 
         val updated = hostDao.updated
         assertEquals(100L, updated?.id)
+        assertEquals(0, hostDao.inserted?.connectCount)
+        assertNull(hostDao.inserted?.position)
         assertEquals(200L, updated?.terminalProfileId)
         assertEquals(300L, updated?.colorSchemeId)
         assertEquals(1, portForwardDao.inserted.size)

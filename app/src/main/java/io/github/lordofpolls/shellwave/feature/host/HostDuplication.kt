@@ -42,6 +42,8 @@ suspend fun duplicateHost(
         createdAt = System.currentTimeMillis(),
         terminalProfileId = null,
         colorSchemeId = null,
+        connectCount = 0,
+        position = null,
     )
     val newHostId = hostDao.insert(newHost)
     val assets = duplicatedHostAssets(

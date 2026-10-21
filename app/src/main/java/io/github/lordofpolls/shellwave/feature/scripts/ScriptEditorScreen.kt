@@ -1,18 +1,13 @@
 package io.github.lordofpolls.shellwave.feature.scripts
 
 import android.content.ClipData
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -20,7 +15,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
@@ -30,14 +24,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import io.github.lordofpolls.shellwave.core.db.dao.ScriptDao
 import io.github.lordofpolls.shellwave.core.db.entities.HostEntity
@@ -45,6 +34,7 @@ import io.github.lordofpolls.shellwave.core.db.entities.ScriptEntity
 import io.github.lordofpolls.shellwave.core.prefs.AutomationPreferences
 import io.github.lordofpolls.shellwave.core.util.extractParamNames
 import io.github.lordofpolls.shellwave.ui.design.BackTopBar
+import io.github.lordofpolls.shellwave.ui.design.ColorSwatch
 import io.github.lordofpolls.shellwave.ui.design.MachineText
 import io.github.lordofpolls.shellwave.ui.design.RadioRow
 import io.github.lordofpolls.shellwave.ui.design.rememberFormState
@@ -364,24 +354,6 @@ private fun ParamEditorRow(param: ScriptParam, onChange: (ScriptParam) -> Unit) 
 /** TalkBack names for [ScriptColor.PRESETS], positionally: made-up accent shades have no canonical name. */
 private val COLOR_PRESET_NAMES: List<String> =
     listOf("Green", "Teal", "Red", "Amber", "Purple", "Blue")
-
-@Composable
-private fun ColorSwatch(argb: Int, description: String, selected: Boolean, onClick: () -> Unit) {
-    Box(
-        modifier =
-            Modifier
-                .minimumInteractiveComponentSize()
-                .size(32.dp)
-                .clip(CircleShape)
-                .background(Color(argb))
-                // selectable over clickable: exactly one colour is selected, so Role.RadioButton
-                // plus `selected` is the right semantics. A contentDescription would announce the
-                // colour but never whether it is the chosen one.
-                .selectable(selected = selected, onClick = onClick, role = Role.RadioButton)
-                .semantics { contentDescription = description }
-                .then(if (selected) Modifier.padding(2.dp) else Modifier),
-    )
-}
 
 /** Matches the enum names ScriptsScreen renders, so the list and this picker say the same thing. */
 private fun ScriptMode.label(): String =

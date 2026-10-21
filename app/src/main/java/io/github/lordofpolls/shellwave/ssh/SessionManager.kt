@@ -34,6 +34,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -206,6 +207,7 @@ constructor(
         // Bumped at the start of every attemptConnect() (a fresh connect or a reconnect) and again
         // by handleDisconnected(): see attemptConnect's comment on why this exists.
         val generation: AtomicLong = AtomicLong(0),
+        val connectCounted: AtomicBoolean = AtomicBoolean(false),
     )
 
     /**
@@ -571,10 +573,12 @@ constructor(
             // regardless of what any concurrently-connecting sibling session did to the shared
             // template in between - see applySchemeToEntry's doc.
             applySchemeToEntry(entry, scheme)
-            if (entry.spec.hostId != null) hostDao.touchLastConnected(
-                entry.spec.hostId,
-                System.currentTimeMillis()
-            )
+            if (entry.spec.hostId != null) {
+                hostDao.touchLastConnected(entry.spec.hostId, System.currentTimeMillis())
+                // "Most used" is how often the user reaches for a host; a reconnect after a drop is
+                // not a use. compareAndSet because attempts can race on one entry.
+                if (entry.connectCounted.compareAndSet(false, true)) hostDao.countConnect(entry.spec.hostId)
+            }
         } catch (e: Exception) {
             if (entry.generation.get() == myGeneration) {
                 entry.status = SessionStatus.FAILED

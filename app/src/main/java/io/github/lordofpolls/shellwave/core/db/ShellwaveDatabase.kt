@@ -4,6 +4,7 @@ import androidx.room.Database
 import androidx.room.RoomDatabase
 import io.github.lordofpolls.shellwave.core.db.dao.ColorSchemeDao
 import io.github.lordofpolls.shellwave.core.db.dao.CredentialDao
+import io.github.lordofpolls.shellwave.core.db.dao.GroupDao
 import io.github.lordofpolls.shellwave.core.db.dao.HostDao
 import io.github.lordofpolls.shellwave.core.db.dao.KeyBarLayoutDao
 import io.github.lordofpolls.shellwave.core.db.dao.PortForwardDao
@@ -12,6 +13,7 @@ import io.github.lordofpolls.shellwave.core.db.dao.ScriptRunDao
 import io.github.lordofpolls.shellwave.core.db.dao.TerminalProfileDao
 import io.github.lordofpolls.shellwave.core.db.entities.ColorSchemeEntity
 import io.github.lordofpolls.shellwave.core.db.entities.CredentialEntity
+import io.github.lordofpolls.shellwave.core.db.entities.GroupEntity
 import io.github.lordofpolls.shellwave.core.db.entities.HostEntity
 import io.github.lordofpolls.shellwave.core.db.entities.KeyBarLayoutEntity
 import io.github.lordofpolls.shellwave.core.db.entities.PortForwardEntity
@@ -35,8 +37,9 @@ import io.github.lordofpolls.shellwave.core.db.entities.TerminalProfileEntity
         ScriptEntity::class,
         ScriptRunEntity::class,
         PortForwardEntity::class,
+        GroupEntity::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = true,
 )
 abstract class ShellwaveDatabase : RoomDatabase() {
@@ -55,6 +58,8 @@ abstract class ShellwaveDatabase : RoomDatabase() {
     abstract fun scriptRunDao(): ScriptRunDao
 
     abstract fun portForwardDao(): PortForwardDao
+
+    abstract fun groupDao(): GroupDao
 
     companion object {
         const val DATABASE_NAME = "shellwave.db"

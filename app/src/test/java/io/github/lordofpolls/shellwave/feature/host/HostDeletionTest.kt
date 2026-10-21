@@ -31,6 +31,11 @@ private class FakeHostDao(
     override suspend fun countOtherHostsUsingCredential(credentialId: Long, excludeHostId: Long): Int =
         hosts.values.count { it.credentialId == credentialId && it.id != excludeHostId }
     override suspend fun touchLastConnected(id: Long, timestamp: Long) = TODO()
+    override suspend fun countConnect(id: Long) = TODO()
+
+    override suspend fun clearGroup(groupId: Long) = TODO()
+
+    override suspend fun setPosition(id: Long, position: Int) = TODO()
 }
 
 private class FakeCredentialDao(private val credentials: MutableMap<Long, CredentialEntity>) : CredentialDao {

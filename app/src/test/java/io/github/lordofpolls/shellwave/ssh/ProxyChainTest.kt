@@ -25,6 +25,11 @@ private class ProxyChainFakeHostDao(private val hosts: Map<Long, HostEntity>) : 
     override suspend fun getProxyJumpDependents(hostId: Long): List<HostEntity> = TODO()
     override suspend fun countOtherHostsUsingCredential(credentialId: Long, excludeHostId: Long): Int = TODO()
     override suspend fun touchLastConnected(id: Long, timestamp: Long) = TODO()
+    override suspend fun countConnect(id: Long) = TODO()
+
+    override suspend fun clearGroup(groupId: Long) = TODO()
+
+    override suspend fun setPosition(id: Long, position: Int) = TODO()
 }
 
 /** Never reached: [ProxyChainFakeCredentialVault] overrides [CredentialVault.resolve]. */

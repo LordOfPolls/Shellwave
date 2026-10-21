@@ -51,6 +51,7 @@ import io.github.lordofpolls.shellwave.core.crypto.CredentialVault
 import io.github.lordofpolls.shellwave.core.crypto.isBiometricCancellation
 import io.github.lordofpolls.shellwave.core.db.dao.ColorSchemeDao
 import io.github.lordofpolls.shellwave.core.db.dao.CredentialDao
+import io.github.lordofpolls.shellwave.core.db.dao.GroupDao
 import io.github.lordofpolls.shellwave.core.db.dao.HostDao
 import io.github.lordofpolls.shellwave.core.db.dao.KeyBarLayoutDao
 import io.github.lordofpolls.shellwave.core.db.dao.PortForwardDao
@@ -201,6 +202,9 @@ class MainActivity : FragmentActivity() {
 
     @Inject
     lateinit var hostDao: HostDao
+
+    @Inject
+    lateinit var groupDao: GroupDao
 
     @Inject
     lateinit var credentialDao: CredentialDao
@@ -639,9 +643,21 @@ class MainActivity : FragmentActivity() {
                                         .collectAsState(initial = emptyList())
                                     val scripts by scriptDao.observeAll()
                                         .collectAsState(initial = emptyList())
+                                    val groups by groupDao.observeAll()
+                                        .collectAsState(initial = emptyList())
                                     HomeScreen(
                                         hosts = hosts,
                                         recents = recents,
+                                        groups = groups,
+                                        onUpdateGroup = { scope.launch { groupDao.update(it) } },
+                                        onDeleteGroup = { g ->
+                                            scope.launch {
+                                                hostDao.clearGroup(g.id)
+                                                groupDao.delete(g)
+                                            }
+                                        },
+                                        onSetHostPositions = { hostDao.setPositions(it) },
+                                        onSetGroupPositions = { groupDao.setPositions(it) },
                                         scripts = scripts,
                                         liveSessions = summaries,
                                         onQuickConnect = { target: QuickConnectTarget ->
@@ -722,6 +738,7 @@ class MainActivity : FragmentActivity() {
                                     AddEditHostScreen(
                                         existing = hosts.firstOrNull { it.id == current.hostId },
                                         hostDao = hostDao,
+                                        groupDao = groupDao,
                                         credentialVault = credentialVault,
                                         keyEnrolment = keyEnrolment,
                                         terminalProfileDao = terminalProfileDao,

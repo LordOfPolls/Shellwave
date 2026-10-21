@@ -84,3 +84,17 @@ val MIGRATION_8_9 =
             db.execSQL("ALTER TABLE credentials ADD COLUMN certificate TEXT")
         }
     }
+
+val MIGRATION_9_10 =
+    object : Migration(9, 10) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `host_groups` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                    "`name` TEXT NOT NULL, `color` INTEGER NOT NULL, `collapsed` INTEGER NOT NULL, `position` INTEGER)",
+            )
+            db.execSQL("ALTER TABLE hosts ADD COLUMN groupId INTEGER")
+            db.execSQL("ALTER TABLE hosts ADD COLUMN color INTEGER")
+            db.execSQL("ALTER TABLE hosts ADD COLUMN position INTEGER")
+            db.execSQL("ALTER TABLE hosts ADD COLUMN connectCount INTEGER NOT NULL DEFAULT 0")
+        }
+    }

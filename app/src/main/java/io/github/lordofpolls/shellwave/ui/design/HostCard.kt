@@ -13,8 +13,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.Login
+import androidx.compose.material.icons.outlined.ArrowDownward
+import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.PlayArrow
@@ -34,6 +37,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.lordofpolls.shellwave.core.net.Reachability
@@ -70,6 +74,11 @@ fun HostCard(
     isWolTile: Boolean = false,
     /** Null hides the item rather than disabling it. */
     onUseForWolTile: (() -> Unit)? = null,
+    /** Row accent. Null renders the icon in the default content colour. */
+    accent: Color? = null,
+    /** Null in every sort mode but manual. */
+    onMoveUp: (() -> Unit)? = null,
+    onMoveDown: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
@@ -99,6 +108,11 @@ fun HostCard(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            Icon(
+                Icons.Outlined.Dns,
+                contentDescription = null,
+                tint = accent ?: MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
@@ -156,6 +170,8 @@ fun HostCard(
                     onWake = onWake?.let { wake -> { menuExpanded = false; wake() } },
                     isWolTile = isWolTile,
                     onUseForWolTile = onUseForWolTile?.let { use -> { menuExpanded = false; use() } },
+                    onMoveUp = onMoveUp?.let { up -> { menuExpanded = false; up() } },
+                    onMoveDown = onMoveDown?.let { down -> { menuExpanded = false; down() } },
                     onDelete = { menuExpanded = false; onDelete() },
                     onRunScript = { action -> menuExpanded = false; action.onRun() },
                 )
@@ -179,6 +195,8 @@ private fun HostMenu(
     onWake: (() -> Unit)?,
     isWolTile: Boolean,
     onUseForWolTile: (() -> Unit)?,
+    onMoveUp: (() -> Unit)?,
+    onMoveDown: (() -> Unit)?,
     onDelete: () -> Unit,
     onRunScript: (HostScriptAction) -> Unit,
 ) {
@@ -251,6 +269,20 @@ private fun HostMenu(
                         )
                     },
                     onClick = onShowScripts,
+                )
+            }
+            if (onMoveUp != null) {
+                DropdownMenuItem(
+                    text = { Text("Move up") },
+                    leadingIcon = { Icon(Icons.Outlined.ArrowUpward, contentDescription = null) },
+                    onClick = onMoveUp,
+                )
+            }
+            if (onMoveDown != null) {
+                DropdownMenuItem(
+                    text = { Text("Move down") },
+                    leadingIcon = { Icon(Icons.Outlined.ArrowDownward, contentDescription = null) },
+                    onClick = onMoveDown,
                 )
             }
             DropdownMenuItem(

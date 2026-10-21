@@ -5,19 +5,24 @@ import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowDropDown
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -38,6 +43,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.autofill.ContentType
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.semantics.Role
@@ -51,14 +58,17 @@ import androidx.fragment.app.FragmentActivity
 import io.github.lordofpolls.shellwave.core.crypto.CredentialType
 import io.github.lordofpolls.shellwave.core.crypto.CredentialVault
 import io.github.lordofpolls.shellwave.core.db.dao.ColorSchemeDao
+import io.github.lordofpolls.shellwave.core.db.dao.GroupDao
 import io.github.lordofpolls.shellwave.core.db.dao.HostDao
 import io.github.lordofpolls.shellwave.core.db.dao.KeyBarLayoutDao
 import io.github.lordofpolls.shellwave.core.db.dao.PortForwardDao
 import io.github.lordofpolls.shellwave.core.db.dao.TerminalProfileDao
 import io.github.lordofpolls.shellwave.core.db.entities.ColorSchemeEntity
+import io.github.lordofpolls.shellwave.core.db.entities.GroupEntity
 import io.github.lordofpolls.shellwave.core.db.entities.HostEntity
 import io.github.lordofpolls.shellwave.core.db.entities.TerminalProfileEntity
 import io.github.lordofpolls.shellwave.core.net.parseMacAddress
+import io.github.lordofpolls.shellwave.feature.home.nextGroupColor
 import io.github.lordofpolls.shellwave.feature.settings.ColorSchemeFields
 import io.github.lordofpolls.shellwave.feature.settings.SettingsRadioGroup
 import io.github.lordofpolls.shellwave.feature.settings.SettingsRow
@@ -83,6 +93,8 @@ import io.github.lordofpolls.shellwave.terminal.DEFAULT_COLOR_SCHEME
 import io.github.lordofpolls.shellwave.terminal.DEFAULT_TERMINAL_PROFILE
 import io.github.lordofpolls.shellwave.ui.design.BackTopBar
 import io.github.lordofpolls.shellwave.ui.design.CollapsibleSection
+import io.github.lordofpolls.shellwave.ui.design.ColorPickerDialog
+import io.github.lordofpolls.shellwave.ui.design.ColorSwatch
 import io.github.lordofpolls.shellwave.ui.design.MachineText
 import io.github.lordofpolls.shellwave.ui.design.rememberFormState
 import kotlinx.coroutines.launch
@@ -123,6 +135,7 @@ fun AddEditHostScreen(
     terminalProfileDao: TerminalProfileDao,
     colorSchemeDao: ColorSchemeDao,
     keyBarLayoutDao: KeyBarLayoutDao,
+    groupDao: GroupDao,
     portForwardDao: PortForwardDao,
     scriptRunner: ScriptRunner,
     sessionManager: SessionManager,
@@ -157,6 +170,11 @@ fun AddEditHostScreen(
     // does at connect time with a clear error.
     var proxyJumpHostId by rememberFormState(existing?.id) { existing?.proxyJumpHostId }
     val allHosts by hostDao.observeAll().collectAsState(initial = emptyList())
+    var groupId by rememberFormState(existing?.id) { existing?.groupId }
+    var color by rememberFormState(existing?.id) { existing?.color }
+    var newGroupDialog by rememberFormState(existing?.id) { false }
+    var customColorDialog by rememberFormState(existing?.id) { false }
+    val groups by groupDao.observeAll().collectAsState(initial = emptyList())
 
     LaunchedEffect(existing?.id, existing?.terminalProfileId) {
         terminalProfileOverride =
@@ -409,6 +427,8 @@ fun AddEditHostScreen(
                             keyBarLayoutId = keyBarLayoutId,
                             proxyJumpHostId = proxyJumpHostId,
                             macAddress = macAddress.ifBlank { null },
+                            groupId = groupId,
+                            color = color,
                         ),
                     )
                 } else {
@@ -425,6 +445,9 @@ fun AddEditHostScreen(
                             keyBarLayoutId = keyBarLayoutId,
                             proxyJumpHostId = proxyJumpHostId,
                             macAddress = macAddress.ifBlank { null },
+                            groupId = groupId,
+                            position = if (existing.groupId != groupId) null else existing.position,
+                            color = color,
                         ),
                     )
                 }
@@ -433,6 +456,42 @@ fun AddEditHostScreen(
                 error = e.message ?: "Failed to save host"
             }
         }
+    }
+
+    if (newGroupDialog) {
+        var name by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { newGroupDialog = false },
+            title = { Text("New group") },
+            text = {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Name") },
+                    singleLine = true,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = name.isNotBlank(),
+                    onClick = {
+                        val typed = name.trim()
+                        scope.launch {
+                            groupId = groupDao.insert(GroupEntity(name = typed, color = nextGroupColor(groups)))
+                            newGroupDialog = false
+                        }
+                    },
+                ) { Text("Create") }
+            },
+            dismissButton = { TextButton(onClick = { newGroupDialog = false }) { Text("Cancel") } },
+        )
+    }
+    if (customColorDialog) {
+        ColorPickerDialog(
+            initial = color ?: GroupEntity.SWATCHES.first(),
+            onPick = { color = it; customColorDialog = false },
+            onDismiss = { customColorDialog = false },
+        )
     }
 
     val editor = overrideEditor
@@ -481,6 +540,28 @@ fun AddEditHostScreen(
                 label = { Text("Label (optional)") },
                 modifier = Modifier.fillMaxWidth()
             )
+            val group = groups.firstOrNull { it.id == groupId }
+            PickerRow(
+                title = "Group",
+                value = {
+                    if (group == null) DimText("No group") else GroupChoice(group)
+                },
+            ) { dismiss ->
+                DropdownMenuItem(
+                    text = { Text("No group") },
+                    onClick = { groupId = null; dismiss() },
+                )
+                groups.forEach { candidate ->
+                    DropdownMenuItem(
+                        text = { GroupChoice(candidate) },
+                        onClick = { groupId = candidate.id; dismiss() },
+                    )
+                }
+                DropdownMenuItem(
+                    text = { Text("+ New group") },
+                    onClick = { newGroupDialog = true; dismiss() },
+                )
+            }
             OutlinedTextField(
                 value = hostname,
                 onValueChange = { hostname = it },
@@ -755,6 +836,38 @@ fun AddEditHostScreen(
                     )
                 }
 
+                Text("Colour", style = MaterialTheme.typography.labelLarge)
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    itemVerticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ColorSwatch(
+                        argb = null,
+                        description = "No colour",
+                        selected = color == null,
+                        onClick = { color = null },
+                    )
+                    GroupEntity.SWATCHES.forEachIndexed { i, swatch ->
+                        ColorSwatch(
+                            argb = swatch,
+                            description = "Colour ${i + 1}",
+                            selected = color == swatch,
+                            onClick = { color = swatch },
+                        )
+                    }
+                    color?.takeIf { it !in GroupEntity.SWATCHES }?.let { custom ->
+                        ColorSwatch(
+                            argb = custom,
+                            description = "Custom colour",
+                            selected = true,
+                            onClick = { customColorDialog = true },
+                        )
+                    }
+                    TextButton(onClick = { customColorDialog = true }) { Text("Custom…") }
+                }
+                DimText("Marks this host in the list. Blank follows its group's colour.")
+
                 val layoutName = keyBarLayouts.firstOrNull { it.id == keyBarLayoutId }?.name
                 PickerRow(
                     title = "Key bar layout",
@@ -890,6 +1003,14 @@ private fun DimText(text: String) {
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
+}
+
+@Composable
+private fun GroupChoice(group: GroupEntity) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Box(Modifier.size(12.dp).clip(CircleShape).background(Color(group.color)))
+        Text(group.name)
+    }
 }
 
 /** A nickname is a human label; the fallback user@host:port is machine-asserted identity. */

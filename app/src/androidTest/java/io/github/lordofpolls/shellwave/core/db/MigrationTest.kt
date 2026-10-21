@@ -297,6 +297,40 @@ class MigrationTest {
         }
     }
 
+    @Test
+    fun migrate9To10KeepsHostsUngroupedAndCreatesGroupsTable() {
+        helper.createDatabase(TEST_DB, 9).use { db ->
+            val values =
+                ContentValues().apply {
+                    put("label", "prod-db")
+                    put("hostname", "10.0.2.2")
+                    put("port", 2222)
+                    put("username", "test")
+                    put("credentialId", 1L)
+                    putNull("lastConnectedAt")
+                    put("createdAt", 1000L)
+                    put("resilientSession", 0)
+                }
+            db.insert("hosts", android.database.sqlite.SQLiteDatabase.CONFLICT_FAIL, values)
+        }
+
+        val migrated = helper.runMigrationsAndValidate(TEST_DB, 10, true, MIGRATION_9_10)
+
+        migrated.query("SELECT hostname, groupId, color, position, connectCount FROM hosts").use { cursor ->
+            assertEquals(1, cursor.count)
+            assertEquals(true, cursor.moveToFirst())
+            assertEquals("10.0.2.2", cursor.getString(cursor.getColumnIndexOrThrow("hostname")))
+            assertEquals(true, cursor.isNull(cursor.getColumnIndexOrThrow("groupId")))
+            assertEquals(true, cursor.isNull(cursor.getColumnIndexOrThrow("color")))
+            assertEquals(true, cursor.isNull(cursor.getColumnIndexOrThrow("position")))
+            assertEquals(0, cursor.getInt(cursor.getColumnIndexOrThrow("connectCount")))
+        }
+        migrated.query("SELECT COUNT(*) FROM host_groups").use { cursor ->
+            assertEquals(true, cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
+        }
+    }
+
     companion object {
         private const val TEST_DB = "migration-test"
     }

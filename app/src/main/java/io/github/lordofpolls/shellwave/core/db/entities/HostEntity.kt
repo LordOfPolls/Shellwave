@@ -56,4 +56,12 @@ data class HostEntity(
     val proxyJumpHostId: Long? = null,
     /** Wake-on-LAN MAC, as typed. Null means the host has no wake action. */
     val macAddress: String? = null,
+    /** Null = ungrouped. No `@ForeignKey`: a group row that vanishes just means ungrouped, and
+     *  HostDao.clearGroup already nulls members before a delete. */
+    val groupId: Long? = null,
+    /** Row accent override. Null falls through to the group's colour. */
+    val color: Int? = null,
+    /** Manual-order slot within this host's section. Null until manual order is seeded. */
+    val position: Int? = null,
+    val connectCount: Int = 0,
 )

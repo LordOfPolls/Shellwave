@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
 import io.github.lordofpolls.shellwave.core.db.entities.HostEntity
 import kotlinx.coroutines.flow.Flow
@@ -45,4 +46,18 @@ interface HostDao {
 
     @Query("UPDATE hosts SET lastConnectedAt = :timestamp WHERE id = :id")
     suspend fun touchLastConnected(id: Long, timestamp: Long)
+
+    @Query("UPDATE hosts SET connectCount = connectCount + 1 WHERE id = :id")
+    suspend fun countConnect(id: Long)
+
+    @Query("UPDATE hosts SET groupId = NULL WHERE groupId = :groupId")
+    suspend fun clearGroup(groupId: Long)
+
+    @Query("UPDATE hosts SET position = :position WHERE id = :id")
+    suspend fun setPosition(id: Long, position: Int)
+
+    @Transaction
+    suspend fun setPositions(positions: Map<Long, Int>) {
+        positions.forEach { (id, position) -> setPosition(id, position) }
+    }
 }

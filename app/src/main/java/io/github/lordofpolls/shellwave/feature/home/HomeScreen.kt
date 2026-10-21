@@ -1,6 +1,8 @@
 package io.github.lordofpolls.shellwave.feature.home
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
@@ -10,12 +12,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.outlined.Sort
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.FileOpen
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Search
@@ -40,26 +48,36 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import io.github.lordofpolls.shellwave.core.db.entities.GroupEntity
 import io.github.lordofpolls.shellwave.core.db.entities.HostEntity
 import io.github.lordofpolls.shellwave.core.db.entities.ScriptEntity
 import io.github.lordofpolls.shellwave.core.net.Reachability
+import io.github.lordofpolls.shellwave.core.prefs.HostListPreferences
+import io.github.lordofpolls.shellwave.core.prefs.HostSort
 import io.github.lordofpolls.shellwave.core.prefs.WidgetPreferences
+import io.github.lordofpolls.shellwave.core.prefs.rememberPrefState
 import io.github.lordofpolls.shellwave.feature.scripts.ScriptMode
 import io.github.lordofpolls.shellwave.ssh.SessionStatus
 import io.github.lordofpolls.shellwave.ssh.SessionSummary
 import io.github.lordofpolls.shellwave.ui.design.ChromeMonoFontFamily
+import io.github.lordofpolls.shellwave.ui.design.ColorPickerDialog
 import io.github.lordofpolls.shellwave.ui.design.EmptyState
+import io.github.lordofpolls.shellwave.ui.design.GroupHeader
 import io.github.lordofpolls.shellwave.ui.design.HostCard
 import io.github.lordofpolls.shellwave.ui.design.HostScriptAction
 import io.github.lordofpolls.shellwave.ui.design.LiveSessionStrip
 import io.github.lordofpolls.shellwave.ui.design.MachineText
 import io.github.lordofpolls.shellwave.ui.design.Wordmark
+import kotlinx.coroutines.launch
 
 /** A search field is inserted above the host list at or beyond this many hosts. */
 private const val SEARCH_FIELD_HOST_THRESHOLD = 8
@@ -114,19 +132,36 @@ fun HomeScreen(
     onWakeHost: (HostEntity) -> Unit = {},
     onRunScript: (ScriptEntity, HostEntity) -> Unit = { _, _ -> },
     onImportSshConfig: () -> Unit = {},
+    groups: List<GroupEntity> = emptyList(),
+    onUpdateGroup: (GroupEntity) -> Unit = {},
+    onDeleteGroup: (GroupEntity) -> Unit = {},
+    onSetHostPositions: suspend (Map<Long, Int>) -> Unit = {},
+    onSetGroupPositions: suspend (Map<Long, Int>) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     // Hoisted because a LazyColumn item leaving composition would take the user's typing with it.
     var hostPendingDelete by remember { mutableStateOf<HostEntity?>(null) }
     var searchQuery by remember { mutableStateOf("") }
     var quickConnectText by remember { mutableStateOf("") }
+    var groupBeingEdited by remember { mutableStateOf<GroupEntity?>(null) }
+    var groupPendingDelete by remember { mutableStateOf<GroupEntity?>(null) }
+    val sort by rememberPrefState { HostListPreferences.sort(it) }
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     // Bumped on every WOL tile change so the `remember` below re-reads WidgetPreferences.
     var wolTileChanges by remember { mutableIntStateOf(0) }
 
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
     val searchVisible = hosts.size >= SEARCH_FIELD_HOST_THRESHOLD
     val visibleHosts = if (searchVisible) hosts.filter { hostMatches(it, searchQuery) } else hosts
+    val searching = searchVisible && searchQuery.isNotBlank()
+    // Built from visibleHosts so a header's count is what is shown under it.
+    val sections = buildSections(visibleHosts, groups, sort).filter {
+        !searching || it.group == null || it.hosts.isNotEmpty()
+    }
+    // A move while filtered would renumber only the visible rows and collide with the hidden ones.
+    val movable = sort == HostSort.MANUAL && !searching
+    val groupIds = sections.mapNotNull { it.group?.id }
 
     Scaffold(
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
@@ -141,7 +176,26 @@ fun HomeScreen(
                 windowInsets = WindowInsets(0, 0, 0, 0),
                 // ssh-config import is a once-per-install action at most, which does not earn
                 // permanent chrome.
-                actions = { HostsOverflow(onImportSshConfig = onImportSshConfig) },
+                actions = {
+                    HostsOverflow(
+                        sort = sort,
+                        onSort = { picked ->
+                            if (picked == HostSort.MANUAL && sort != HostSort.MANUAL) {
+                                // Seeded before the pref flips, or the list renders unseeded for a frame.
+                                scope.launch {
+                                    // Unfiltered, so a search in progress doesn't leave hidden hosts unseeded.
+                                    val shown = buildSections(hosts, groups, sort)
+                                    onSetGroupPositions(positionsFor(shown.mapNotNull { it.group?.id }))
+                                    shown.forEach { onSetHostPositions(positionsFor(it.hosts.map { h -> h.id })) }
+                                    HostListPreferences.setSort(context, picked)
+                                }
+                            } else {
+                                HostListPreferences.setSort(context, picked)
+                            }
+                        },
+                        onImportSshConfig = onImportSshConfig,
+                    )
+                },
                 scrollBehavior = scrollBehavior,
             )
         },
@@ -245,42 +299,86 @@ fun HomeScreen(
                 }
             } else if (visibleHosts.isEmpty()) {
                 item(key = "noMatch") { EmptyState(message = "No hosts match \"$searchQuery\".") }
-            } else {
-                items(visibleHosts, key = { it.id }) { host ->
-                    val session = liveSessions.firstOrNull { it.hostId == host.id }
-                    val isWolTile = remember(host.id, wolTileChanges) {
-                        WidgetPreferences.wolTileHostId(context) == host.id
+            }
+
+            sections.forEach { section ->
+                val group = section.group
+                val hostIds = section.hosts.map { it.id }
+                if (group != null) {
+                    item(key = "group-${group.id}") {
+                        val index = groupIds.indexOf(group.id)
+                        GroupHeader(
+                            name = group.name,
+                            accent = Color(group.color),
+                            count = section.hosts.size,
+                            collapsed = group.collapsed && !searching,
+                            onToggle = { onUpdateGroup(group.copy(collapsed = !group.collapsed)) },
+                            onEdit = { groupBeingEdited = group },
+                            onDelete = { groupPendingDelete = group },
+                            onMoveUp = if (movable && index > 0) {
+                                { scope.launch { onSetGroupPositions(positionsFor(swapped(groupIds, index, -1))) } }
+                            } else null,
+                            onMoveDown = if (movable && index < groupIds.lastIndex) {
+                                { scope.launch { onSetGroupPositions(positionsFor(swapped(groupIds, index, 1))) } }
+                            } else null,
+                        )
                     }
-                    HostCard(
-                        displayName = host.label ?: host.hostname,
-                        identity = "${host.username}@${host.hostname}:${host.port}",
-                        // A CLOSED or FAILED session is not a state of the host - it belongs on the
-                        // Sessions screen, which has room for the error and the Reconnect action.
-                        liveStatus = session?.status?.takeIf { it in TRANSITIONAL_OR_LIVE },
-                        // Null when the probe is off, so the card renders as if the feature did not
-                        // exist. A probed host with no entry yet is UNKNOWN rather than absent: a
-                        // missing marker would read as "not applicable" instead of "not yet".
-                        reachability = if (reachabilityEnabled) reachability[host.id]
-                            ?: Reachability.UNKNOWN else null,
-                        scripts = hostScriptActions(host, scripts, onRunScript),
-                        onClick = {
-                            if (session != null) onOpenSession(session.id) else onConnectSaved(host)
-                        },
-                        onEdit = { onEditHost(host) },
-                        onDuplicate = { onDuplicateHost(host) },
-                        onWake = host.macAddress?.let { { onWakeHost(host) } },
-                        isWolTile = isWolTile,
-                        onUseForWolTile = host.macAddress?.let {
-                            {
-                                WidgetPreferences.setWolTileHostId(
-                                    context,
-                                    if (isWolTile) null else host.id
-                                )
-                                wolTileChanges++
-                            }
-                        },
-                        onDelete = { hostPendingDelete = host },
-                    )
+                } else if (groupIds.isNotEmpty()) {
+                    // Without a header of its own the block reads as more rows of the group above it.
+                    item(key = "ungrouped") {
+                        Text(
+                            "Ungrouped",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            // Lines up with a group's name, past its colour dot.
+                            modifier = Modifier.padding(start = 36.dp, top = 8.dp),
+                        )
+                    }
+                }
+                if (group == null || searching || !group.collapsed) {
+                    itemsIndexed(section.hosts, key = { _, host -> "host-${host.id}" }) { index, host ->
+                        val session = liveSessions.firstOrNull { it.hostId == host.id }
+                        val isWolTile = remember(host.id, wolTileChanges) {
+                            WidgetPreferences.wolTileHostId(context) == host.id
+                        }
+                        HostCard(
+                            displayName = host.label ?: host.hostname,
+                            identity = "${host.username}@${host.hostname}:${host.port}",
+                            // A CLOSED or FAILED session is not a state of the host - it belongs on the
+                            // Sessions screen, which has room for the error and the Reconnect action.
+                            liveStatus = session?.status?.takeIf { it in TRANSITIONAL_OR_LIVE },
+                            // Null when the probe is off, so the card renders as if the feature did not
+                            // exist. A probed host with no entry yet is UNKNOWN rather than absent: a
+                            // missing marker would read as "not applicable" instead of "not yet".
+                            reachability = if (reachabilityEnabled) reachability[host.id]
+                                ?: Reachability.UNKNOWN else null,
+                            scripts = hostScriptActions(host, scripts, onRunScript),
+                            onClick = {
+                                if (session != null) onOpenSession(session.id) else onConnectSaved(host)
+                            },
+                            onEdit = { onEditHost(host) },
+                            onDuplicate = { onDuplicateHost(host) },
+                            onWake = host.macAddress?.let { { onWakeHost(host) } },
+                            isWolTile = isWolTile,
+                            onUseForWolTile = host.macAddress?.let {
+                                {
+                                    WidgetPreferences.setWolTileHostId(
+                                        context,
+                                        if (isWolTile) null else host.id
+                                    )
+                                    wolTileChanges++
+                                }
+                            },
+                            accent = (host.color ?: group?.color)?.let { Color(it) },
+                            onMoveUp = if (movable && index > 0) {
+                                { scope.launch { onSetHostPositions(positionsFor(swapped(hostIds, index, -1))) } }
+                            } else null,
+                            onMoveDown = if (movable && index < hostIds.lastIndex) {
+                                { scope.launch { onSetHostPositions(positionsFor(swapped(hostIds, index, 1))) } }
+                            } else null,
+                            onDelete = { hostPendingDelete = host },
+                        )
+                    }
                 }
             }
         }
@@ -307,6 +405,75 @@ fun HomeScreen(
                     hostPendingDelete = null
                 }) { Text("Cancel") }
             },
+        )
+    }
+
+    groupBeingEdited?.let { group ->
+        GroupEditDialog(
+            group = group,
+            onSave = {
+                onUpdateGroup(it)
+                groupBeingEdited = null
+            },
+            onDismiss = { groupBeingEdited = null },
+        )
+    }
+
+    groupPendingDelete?.let { group ->
+        AlertDialog(
+            onDismissRequest = { groupPendingDelete = null },
+            title = { Text("Delete group?") },
+            text = { Text("Removes \"${group.name}\". Its hosts are kept and become ungrouped.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDeleteGroup(group)
+                    groupPendingDelete = null
+                }) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { groupPendingDelete = null }) { Text("Cancel") } },
+        )
+    }
+}
+
+@Composable
+private fun GroupEditDialog(group: GroupEntity, onSave: (GroupEntity) -> Unit, onDismiss: () -> Unit) {
+    var name by remember { mutableStateOf(group.name) }
+    var color by remember { mutableStateOf(group.color) }
+    var picking by remember { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit group") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                TextButton(onClick = { picking = true }) {
+                    Box(Modifier.size(16.dp).clip(CircleShape).background(Color(color)))
+                    Text("Colour", modifier = Modifier.padding(start = 8.dp))
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = name.isNotBlank(),
+                onClick = { onSave(group.copy(name = name.trim(), color = color)) },
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+    if (picking) {
+        ColorPickerDialog(
+            initial = color,
+            onPick = {
+                color = it
+                picking = false
+            },
+            onDismiss = { picking = false },
         )
     }
 }
@@ -343,20 +510,56 @@ internal fun hostScriptActions(
         }
 
 @Composable
-private fun HostsOverflow(onImportSshConfig: () -> Unit) {
+private fun HostsOverflow(
+    sort: HostSort,
+    onSort: (HostSort) -> Unit,
+    onImportSshConfig: () -> Unit,
+) {
     var expanded by remember { mutableStateOf(false) }
-    IconButton(onClick = { expanded = true }) {
+    // Reset on every open so the menu never reappears mid-submenu.
+    var showingSort by remember { mutableStateOf(false) }
+    IconButton(onClick = { showingSort = false; expanded = true }) {
         Icon(Icons.Outlined.MoreVert, contentDescription = "More options")
     }
     DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-        DropdownMenuItem(
-            text = { Text("Import from ~/.ssh/config") },
-            leadingIcon = { Icon(Icons.Outlined.FileOpen, contentDescription = null) },
-            onClick = {
-                expanded = false
-                onImportSshConfig()
-            },
-        )
+        if (showingSort) {
+            DropdownMenuItem(
+                text = { Text("Back") },
+                leadingIcon = {
+                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = null)
+                },
+                onClick = { showingSort = false },
+            )
+            HostSort.entries.forEach { mode ->
+                DropdownMenuItem(
+                    text = { Text(mode.label) },
+                    trailingIcon = {
+                        if (mode == sort) Icon(Icons.Outlined.Check, contentDescription = "Selected")
+                    },
+                    onClick = {
+                        expanded = false
+                        onSort(mode)
+                    },
+                )
+            }
+        } else {
+            DropdownMenuItem(
+                text = { Text("Sort by") },
+                leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Sort, contentDescription = null) },
+                trailingIcon = {
+                    Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null)
+                },
+                onClick = { showingSort = true },
+            )
+            DropdownMenuItem(
+                text = { Text("Import from ~/.ssh/config") },
+                leadingIcon = { Icon(Icons.Outlined.FileOpen, contentDescription = null) },
+                onClick = {
+                    expanded = false
+                    onImportSshConfig()
+                },
+            )
+        }
     }
 }
 
