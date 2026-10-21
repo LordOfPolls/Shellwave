@@ -86,6 +86,11 @@ fun parsesAsCertificate(certificateLine: String): Boolean {
     }.getOrDefault(false)
 }
 
+fun parsePublicKeyLine(line: String): PublicKey? = runCatching {
+    val blob = Base64.getDecoder().decode(line.trim().split(Regex("\\s+"))[1])
+    Buffer.PlainBuffer(blob).readPublicKey()
+}.getOrNull()
+
 fun opensshPublicKeyLine(publicKey: PublicKey, comment: String = "shellwave"): String {
     val blob = net.schmizz.sshj.common.Buffer.PlainBuffer().putPublicKey(publicKey).compactData
     val b64 = java.util.Base64.getEncoder().encodeToString(blob)

@@ -44,6 +44,15 @@ interface HostDao {
     @Query("SELECT COUNT(*) FROM hosts WHERE credentialId = :credentialId AND id != :excludeHostId")
     suspend fun countOtherHostsUsingCredential(credentialId: Long, excludeHostId: Long): Int
 
+    /**
+     * The authoritative in-use check for deleting a credential. An observed `observeAll()` list
+     * starts empty and so answers "unused" for the first frames after the Keys screen is composed;
+     * `credentialId` is a RESTRICT foreign key, so acting on that answer hits a raw
+     * `SQLiteConstraintException` instead of a block message.
+     */
+    @Query("SELECT COUNT(*) FROM hosts WHERE credentialId = :credentialId")
+    suspend fun countHostsUsingCredential(credentialId: Long): Int
+
     @Query("UPDATE hosts SET lastConnectedAt = :timestamp WHERE id = :id")
     suspend fun touchLastConnected(id: Long, timestamp: Long)
 

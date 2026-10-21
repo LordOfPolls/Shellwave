@@ -80,6 +80,8 @@ private class EmptyHostDao : HostDao {
     override suspend fun countOtherHostsUsingCredential(credentialId: Long, excludeHostId: Long): Int =
         TODO("not used")
 
+    override suspend fun countHostsUsingCredential(credentialId: Long): Int = TODO("not used")
+
     override suspend fun touchLastConnected(id: Long, timestamp: Long) {
         touchCalls.incrementAndGet()
     }

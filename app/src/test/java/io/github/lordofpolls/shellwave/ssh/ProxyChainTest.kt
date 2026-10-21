@@ -24,6 +24,7 @@ private class ProxyChainFakeHostDao(private val hosts: Map<Long, HostEntity>) : 
     override suspend fun delete(host: HostEntity) = TODO()
     override suspend fun getProxyJumpDependents(hostId: Long): List<HostEntity> = TODO()
     override suspend fun countOtherHostsUsingCredential(credentialId: Long, excludeHostId: Long): Int = TODO()
+    override suspend fun countHostsUsingCredential(credentialId: Long): Int = TODO()
     override suspend fun touchLastConnected(id: Long, timestamp: Long) = TODO()
     override suspend fun countConnect(id: Long) = TODO()
 
@@ -39,6 +40,7 @@ private class ProxyChainFakeCredentialDao : CredentialDao {
     override suspend fun insert(credential: CredentialEntity): Long = TODO()
     override suspend fun update(credential: CredentialEntity) = TODO()
     override suspend fun setCertificate(id: Long, certificate: String?) = TODO()
+    override suspend fun setLabel(id: Long, label: String?) = TODO()
     override suspend fun delete(credential: CredentialEntity) = TODO()
 }
 

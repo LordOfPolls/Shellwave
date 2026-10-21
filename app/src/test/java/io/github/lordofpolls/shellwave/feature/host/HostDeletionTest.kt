@@ -1,5 +1,6 @@
 package io.github.lordofpolls.shellwave.feature.host
 
+import io.github.lordofpolls.shellwave.core.crypto.CredentialType
 import io.github.lordofpolls.shellwave.core.db.dao.CredentialDao
 import io.github.lordofpolls.shellwave.core.db.dao.HostDao
 import io.github.lordofpolls.shellwave.core.db.entities.CredentialEntity
@@ -30,6 +31,8 @@ private class FakeHostDao(
     override suspend fun getProxyJumpDependents(hostId: Long): List<HostEntity> = dependents
     override suspend fun countOtherHostsUsingCredential(credentialId: Long, excludeHostId: Long): Int =
         hosts.values.count { it.credentialId == credentialId && it.id != excludeHostId }
+    override suspend fun countHostsUsingCredential(credentialId: Long): Int =
+        hosts.values.count { it.credentialId == credentialId }
     override suspend fun touchLastConnected(id: Long, timestamp: Long) = TODO()
     override suspend fun countConnect(id: Long) = TODO()
 
@@ -47,6 +50,7 @@ private class FakeCredentialDao(private val credentials: MutableMap<Long, Creden
     override suspend fun insert(credential: CredentialEntity): Long = TODO()
     override suspend fun update(credential: CredentialEntity) = TODO()
     override suspend fun setCertificate(id: Long, certificate: String?) = TODO()
+    override suspend fun setLabel(id: Long, label: String?) = TODO()
     override suspend fun delete(credential: CredentialEntity) {
         deleted = credential
         credentials.remove(credential.id)
@@ -121,9 +125,9 @@ class HostDeletionTest {
         assertEquals(true, reason!!.startsWith("Can't delete 203.0.113.5"))
     }
 
-    private fun credential(id: Long) = CredentialEntity(
+    private fun credential(id: Long, type: CredentialType = CredentialType.PASSWORD) = CredentialEntity(
         id = id,
-        type = "PASSWORD",
+        type = type.name,
         label = null,
         keystoreAlias = null,
         secretIv = null,
@@ -135,7 +139,7 @@ class HostDeletionTest {
     )
 
     @Test
-    fun `deleting a host also deletes its credential when no other host uses it`() = runBlocking {
+    fun `deleting a host also deletes its password credential when no other host uses it`() = runBlocking {
         val target = host(1, "target")
         val hostDao = FakeHostDao(mutableMapOf(1L to target))
         val credentialDao = FakeCredentialDao(mutableMapOf(1L to credential(1)))
@@ -145,6 +149,19 @@ class HostDeletionTest {
         assertNull(blockReason)
         assertEquals(target, hostDao.deleted)
         assertEquals(1L, credentialDao.deleted?.id)
+    }
+
+    @Test
+    fun `deleting a host keeps a private key credential even when no other host uses it`() = runBlocking {
+        val target = host(1, "target")
+        val hostDao = FakeHostDao(mutableMapOf(1L to target))
+        val credentialDao = FakeCredentialDao(mutableMapOf(1L to credential(1, CredentialType.PRIVATE_KEY)))
+
+        val blockReason = deleteHostWithCleanup(target, hostDao, credentialDao)
+
+        assertNull(blockReason)
+        assertEquals(target, hostDao.deleted)
+        assertNull(credentialDao.deleted)
     }
 
     @Test

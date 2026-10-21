@@ -1,5 +1,6 @@
 package io.github.lordofpolls.shellwave.feature.host
 
+import io.github.lordofpolls.shellwave.core.crypto.CredentialType
 import io.github.lordofpolls.shellwave.core.db.dao.CredentialDao
 import io.github.lordofpolls.shellwave.core.db.dao.HostDao
 import io.github.lordofpolls.shellwave.core.db.entities.HostEntity
@@ -32,7 +33,12 @@ suspend fun deleteHostWithCleanup(
     // ~/.ssh/config import can attach one credential to several hosts, so this row is not
     // always this host's alone to delete.
     if (hostDao.countOtherHostsUsingCredential(host.credentialId, host.id) == 0) {
-        credentialDao.getById(host.credentialId)?.let { credentialDao.delete(it) }
+        // A key is a user-managed asset with its own screen: it may be registered with GitHub or
+        // selected for forwarding, so deleting a host must not destroy it. Keeping it is also what
+        // stops a future agent key selection from dangling.
+        credentialDao.getById(host.credentialId)
+            ?.takeIf { it.type != CredentialType.PRIVATE_KEY.name }
+            ?.let { credentialDao.delete(it) }
     }
     return null
 }

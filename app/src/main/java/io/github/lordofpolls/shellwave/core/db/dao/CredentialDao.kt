@@ -27,6 +27,10 @@ interface CredentialDao {
     @Query("UPDATE credentials SET certificate = :certificate WHERE id = :id")
     suspend fun setCertificate(id: Long, certificate: String?)
 
+    /** Column-targeted for the same reason as [setCertificate]: renaming a key must never carry a stale copy of the sealed columns back over a reseal. */
+    @Query("UPDATE credentials SET label = :label WHERE id = :id")
+    suspend fun setLabel(id: Long, label: String?)
+
     @Delete
     suspend fun delete(credential: CredentialEntity)
 }

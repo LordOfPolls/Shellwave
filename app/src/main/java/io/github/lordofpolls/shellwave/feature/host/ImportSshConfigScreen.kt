@@ -331,7 +331,7 @@ private fun proxyJumpStatusFor(
     }
 }
 
-private fun credentialLabel(entity: CredentialEntity): String =
+internal fun credentialLabel(entity: CredentialEntity): String =
     entity.label ?: "${entity.type.lowercase().replace('_', ' ')} credential #${entity.id}"
 
 @Composable

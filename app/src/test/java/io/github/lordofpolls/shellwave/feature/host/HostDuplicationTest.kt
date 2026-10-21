@@ -38,6 +38,7 @@ private class FakeDuplicationHostDao(private val hosts: MutableMap<Long, HostEnt
     override suspend fun delete(host: HostEntity) = TODO()
     override suspend fun getProxyJumpDependents(hostId: Long): List<HostEntity> = TODO()
     override suspend fun countOtherHostsUsingCredential(credentialId: Long, excludeHostId: Long): Int = TODO()
+    override suspend fun countHostsUsingCredential(credentialId: Long): Int = TODO()
     override suspend fun touchLastConnected(id: Long, timestamp: Long) = TODO()
     override suspend fun countConnect(id: Long) = TODO()
 

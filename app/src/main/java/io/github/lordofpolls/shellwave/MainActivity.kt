@@ -80,6 +80,7 @@ import io.github.lordofpolls.shellwave.feature.host.AddEditHostScreen
 import io.github.lordofpolls.shellwave.feature.host.ImportSshConfigScreen
 import io.github.lordofpolls.shellwave.feature.host.deleteHostWithCleanup
 import io.github.lordofpolls.shellwave.feature.host.duplicateHost
+import io.github.lordofpolls.shellwave.feature.keys.KeysScreen
 import io.github.lordofpolls.shellwave.feature.nav.AppDestination
 import io.github.lordofpolls.shellwave.feature.nav.isNavAtRoot
 import io.github.lordofpolls.shellwave.feature.nav.popNav
@@ -120,7 +121,7 @@ import javax.inject.Inject
 
 /**
  * Screens pushed on top of whichever [AppDestination] tab is selected, except
- * [Hosts]/[Sessions]/[Scripts]/[Settings], which are also a tab's own root content. They stay
+ * [Hosts]/[Sessions]/[Scripts]/[Keys]/[Settings], which are also a tab's own root content. They stay
  * [Screen] cases and don't fold into [AppDestination] because rendering needs per-instance data an
  * enum cannot carry.
  */
@@ -146,6 +147,8 @@ private sealed class Screen {
     data class AddEditScript(val scriptId: Long?) : Screen()
 
     data class ScriptHistory(val scriptId: Long) : Screen()
+
+    data object Keys : Screen()
 
     data object Settings : Screen()
 
@@ -413,6 +416,7 @@ class MainActivity : FragmentActivity() {
                                 AppDestination.HOSTS -> Screen.Hosts
                                 AppDestination.SESSIONS -> Screen.Sessions
                                 AppDestination.SCRIPTS -> Screen.Scripts
+                                AppDestination.KEYS -> Screen.Keys
                                 AppDestination.SETTINGS -> Screen.Settings
                             }
                     }
@@ -987,6 +991,15 @@ class MainActivity : FragmentActivity() {
                                     KeyBarLayoutsScreen(
                                         keyBarLayoutDao = keyBarLayoutDao,
                                         onBack = { popBack() },
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                }
+
+                                is Screen.Keys -> {
+                                    KeysScreen(
+                                        credentialDao = credentialDao,
+                                        credentialVault = credentialVault,
+                                        hostDao = hostDao,
                                         modifier = Modifier.weight(1f),
                                     )
                                 }

@@ -5,6 +5,7 @@ import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Terminal
+import androidx.compose.material.icons.outlined.VpnKey
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.window.core.layout.WindowSizeClass
 
@@ -12,12 +13,16 @@ import androidx.window.core.layout.WindowSizeClass
  * There is no Tools hub, because a destination should land on content and not a directory of links:
  * key enrolment and port forwards are per-host and sit in the host editor, file transfer is
  * per-session and sits in the terminal overflow.
+ *
+ * Keys is still a destination because it lands on content (the key list), and a stored key is no
+ * longer a per-host enrolment: it is an asset that outlives its hosts and can exist without one.
  */
 enum class AppDestination(val label: String, val icon: ImageVector) {
     HOSTS("Hosts", Icons.Outlined.Dns),
     SESSIONS("Sessions", Icons.Outlined.Terminal),
 
     SCRIPTS("Scripts", Icons.Outlined.Code),
+    KEYS("Keys", Icons.Outlined.VpnKey),
     SETTINGS("Settings", Icons.Outlined.Settings),
 }
 
