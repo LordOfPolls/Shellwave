@@ -78,7 +78,7 @@ class KeyImportCertificateTest {
     }
 
     /** Builds and signs an `ecdsa-sha2-nistp256-cert-v01@openssh.com` user certificate for [subjectPublicKeyLine]. */
-    private fun signCertificate(
+    internal fun signCertificate(
         subjectPublicKeyLine: String,
         caPublicKeyLine: String,
         caPrivateKey: java.security.PrivateKey,

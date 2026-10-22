@@ -66,6 +66,9 @@ private fun describeForwardFailure(e: Throwable): String =
     if (e is java.net.BindException) "Port already in use" else e.message
         ?: "Failed to start forward"
 
+internal const val AGENT_OFF_FOR_TAB =
+    "Agent forwarding is off for this tab. Connect from the host list to forward again."
+
 enum class SessionStatus { CONNECTING, CONNECTED, RECONNECTING, DISCONNECTED, FAILED }
 
 /**
@@ -124,6 +127,8 @@ data class SessionSummary(
      * notification. Empty when nothing has been started this session.
      */
     val tunnels: List<TunnelStatus> = emptyList(),
+    /** True only while keys are really being offered on this connection: not refused, not dropped. */
+    val agentForwarding: Boolean = false,
 )
 
 /**
@@ -179,6 +184,9 @@ constructor(
         val id: Long,
         val spec: ConnectionSpec,
         val label: String,
+        // Outlives a drop so a resilient session re-forwards without asking again, and dies with
+        // the tab. Not on [spec], which the background resolver builds too.
+        @Volatile var agentKeys: List<AgentKey>,
         @Volatile var connection: SshConnection,
         @Volatile var status: SessionStatus,
         @Volatile var error: String? = null,
@@ -189,6 +197,13 @@ constructor(
         @Volatile var connectedAtElapsedRealtime: Long? = null,
         @Volatile var lastSize: TerminalSize? = null,
         @Volatile var started: Boolean = false,
+        // Gates clearing agentKeys on failure: a failed first connect never had a consenting
+        // session to keep them for, but a drop followed by failed retries still does.
+        @Volatile var connectedOnce: Boolean = false,
+        // One notice per entry: a refusing server is asked again on every reconnect.
+        @Volatile var refusalNoticed: Boolean = false,
+        // Per attempt, unlike refusalNoticed: the marker must follow what this connection got.
+        @Volatile var agentRefused: Boolean = false,
         @Volatile var backoffJob: Job? = null,
         // Set fresh by attemptConnect() on every (re)connect. effectiveColorScheme is what
         // SessionSummary publishes and what this entry's emulator colours were last set to;
@@ -218,7 +233,7 @@ constructor(
      * `onMeasured` callback and would sit in CONNECTING forever. Only the process's very first session
      * has no size to reuse, and with one session that session is by definition the one on screen.
      */
-    fun openSession(spec: ConnectionSpec): Long {
+    internal fun openSession(spec: ConnectionSpec, agentKeys: List<AgentKey> = emptyList()): Long {
         val id = nextId.getAndIncrement()
         val connection = connectionFactory(id)
         // Always includes the port, non-default or otherwise: two sessions to the same host on
@@ -228,6 +243,7 @@ constructor(
             id,
             spec,
             "${spec.username}@${spec.hostname}:${spec.port}",
+            agentKeys.toList(),
             connection,
             SessionStatus.CONNECTING
         )
@@ -300,6 +316,7 @@ constructor(
         val entry = entries.remove(id) ?: return
         sessionAlerts.forget(id)
         entry.backoffJob?.cancel()
+        entry.agentKeys = emptyList()
         entry.connection.disconnect()
         (entry.spec.authMethod as? AuthMethod.KeyboardInteractive)?.let {
             keyboardInteractiveGate.cancel(
@@ -382,7 +399,17 @@ constructor(
             context,
             onDisconnected = { clean -> handleDisconnected(id, clean) },
             onForwardStopped = { forwardId, error -> handleForwardStopped(id, forwardId, error) },
+            onAgentForwardingRefused = { handleAgentForwardingRefused(id) },
         )
+
+    internal fun handleAgentForwardingRefused(id: Long) {
+        val entry = entries[id] ?: return
+        entry.agentRefused = true
+        publish()
+        if (entry.refusalNoticed) return
+        entry.refusalNoticed = true
+        sessionAlerts.notice(id, entry.label, "The server refused agent forwarding. Connected without it.")
+    }
 
     /**
      * Manual start of one saved forward against an already-[SessionStatus.CONNECTED] session -
@@ -488,6 +515,7 @@ constructor(
         val myGeneration = entry.generation.incrementAndGet()
         entry.status = SessionStatus.CONNECTING
         entry.error = null
+        entry.agentRefused = false
         // A reconnect is a new connection, so its uptime starts over instead of counting through
         // the gap: see SessionSummary.connectedAtElapsedRealtime.
         entry.connectedAtElapsedRealtime = null
@@ -549,9 +577,11 @@ constructor(
                 cursorBlink = profile.cursorBlink,
                 transcriptRows = profile.scrollbackLines,
                 hops = entry.spec.proxyHops,
+                agentKeys = entry.agentKeys,
             )
             if (entry.generation.get() == myGeneration) {
                 entry.status = SessionStatus.CONNECTED
+                entry.connectedOnce = true
                 entry.error = null
                 // Same generation guard as the status write it accompanies: a stale attempt that
                 // loses the CONNECTED race must not leave a connect instant behind either, or a
@@ -580,9 +610,13 @@ constructor(
                 if (entry.connectCounted.compareAndSet(false, true)) hostDao.countConnect(entry.spec.hostId)
             }
         } catch (e: Exception) {
+            val droppedKeys = !entry.connectedOnce && entry.agentKeys.isNotEmpty()
+            if (droppedKeys) entry.agentKeys = emptyList()
             if (entry.generation.get() == myGeneration) {
                 entry.status = SessionStatus.FAILED
-                entry.error = describeConnectFailure(e, entry.spec.authMethod)
+                // On the error line the user is reading: a notice here can sit behind the keyboard.
+                entry.error = describeConnectFailure(e, entry.spec.authMethod) +
+                        if (droppedKeys) "\n$AGENT_OFF_FOR_TAB" else ""
             }
         } finally {
             // The attempt is over one way or another - see HostVerificationGate's class doc.
@@ -667,6 +701,7 @@ constructor(
                         it.terminalProfileId,
                         it.keyBarLayoutId,
                         it.tunnels.values.toList(),
+                        it.status == SessionStatus.CONNECTED && it.agentKeys.isNotEmpty() && !it.agentRefused,
                     )
                 }
     }

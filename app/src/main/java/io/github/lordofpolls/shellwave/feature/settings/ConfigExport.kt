@@ -73,6 +73,8 @@ fun buildConfigExport(
                 "colorSchemeId" to host.colorSchemeId,
                 "keyBarLayoutId" to host.keyBarLayoutId,
                 "proxyJumpHostId" to host.proxyJumpHostId,
+                // agentForwarding and its key ids are left out: ids don't survive a device move, and
+                // an imported host should start with forwarding off.
                 "macAddress" to host.macAddress,
                 "createdAt" to host.createdAt,
                 "lastConnectedAt" to host.lastConnectedAt,

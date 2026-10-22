@@ -38,6 +38,7 @@ import io.github.lordofpolls.shellwave.core.crypto.CredentialVault
 import io.github.lordofpolls.shellwave.core.db.dao.CredentialDao
 import io.github.lordofpolls.shellwave.core.db.dao.HostDao
 import io.github.lordofpolls.shellwave.core.db.entities.CredentialEntity
+import io.github.lordofpolls.shellwave.feature.keys.credentialLabel
 import io.github.lordofpolls.shellwave.core.db.entities.HostEntity
 import io.github.lordofpolls.shellwave.ssh.ParsedSshConfig
 import io.github.lordofpolls.shellwave.ssh.ParsedSshHost
@@ -158,7 +159,7 @@ fun ImportSshConfigScreen(
                         state.importedPem,
                         state.importedPassphrase.ifBlank { null },
                         it,
-                        state.parsed.alias,
+                        hostKeyLabel(state.parsed.alias),
                         requireBiometric = false,
                         activity
                     )
@@ -331,9 +332,6 @@ private fun proxyJumpStatusFor(
     }
 }
 
-internal fun credentialLabel(entity: CredentialEntity): String =
-    entity.label ?: "${entity.type.lowercase().replace('_', ' ')} credential #${entity.id}"
-
 @Composable
 private fun ImportEntryCard(
     state: ImportEntryState,
@@ -499,7 +497,8 @@ private fun ImportEntryCard(
                             runCatching {
                                 publicKeyLineOf(
                                     state.importedPem,
-                                    state.importedPassphrase.ifBlank { null })
+                                    state.importedPassphrase.ifBlank { null },
+                                    hostKeyLabel(state.parsed.alias))
                             }
                                 .onSuccess { state.importedPublicKeyPreview = it; keyError = null }
                                 .onFailure { keyError = it.message ?: "Could not parse key" }

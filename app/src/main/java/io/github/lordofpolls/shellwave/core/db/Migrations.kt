@@ -98,3 +98,16 @@ val MIGRATION_9_10 =
             db.execSQL("ALTER TABLE hosts ADD COLUMN connectCount INTEGER NOT NULL DEFAULT 0")
         }
     }
+
+/**
+ * `DEFAULT 0` is the security-relevant part, as in [MIGRATION_6_7]. Every existing host predates
+ * agent forwarding, and a default of 1 would start offering keys to servers that were never asked
+ * about it.
+ */
+val MIGRATION_10_11 =
+    object : Migration(10, 11) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE hosts ADD COLUMN agentForwarding INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE hosts ADD COLUMN agentKeyIdsJson TEXT NOT NULL DEFAULT '[]'")
+        }
+    }

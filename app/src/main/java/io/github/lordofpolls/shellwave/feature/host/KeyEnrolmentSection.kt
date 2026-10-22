@@ -62,7 +62,7 @@ fun KeyEnrolmentSection(
                     switched = false
                     scope.launch {
                         try {
-                            val key = generateKeyPair(GeneratedKeyAlgorithm.ED25519)
+                            val key = generateKeyPair(GeneratedKeyAlgorithm.ED25519, hostKeyLabel(host.label))
                             val authMethod = credentialVault.resolve(host.credentialId, activity)
                             val hops = resolveProxyHops(host, hostDao, credentialVault, activity)
                             val outcome =
@@ -98,7 +98,7 @@ fun KeyEnrolmentSection(
                                     key.privateKeyPem,
                                     null,
                                     key.publicKeyLine,
-                                    host.label,
+                                    hostKeyLabel(host.label),
                                     requireBiometric = false,
                                     activity
                                 )

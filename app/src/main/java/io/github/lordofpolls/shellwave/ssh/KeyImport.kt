@@ -42,10 +42,10 @@ suspend fun readKeyText(resolver: ContentResolver, uri: Uri): String =
  * The only choke point on the import path. `AddEditHostScreen.save` refuses to store a key it has
  * no parsed public line for, so a rejection here is a rejection everywhere.
  */
-fun publicKeyLineOf(privateKeyPem: String, passphrase: String?): String {
+fun publicKeyLineOf(privateKeyPem: String, passphrase: String?, label: String? = null): String {
     val passwordFinder = passphrase?.let { PasswordUtils.createOneOff(it.toCharArray()) }
     val keyProvider = SSHClient().loadKeys(privateKeyPem, null, passwordFinder)
-    return opensshPublicKeyLine(keyProvider.public)
+    return opensshPublicKeyLine(keyProvider.public, publicKeyComment(label))
 }
 
 /**
@@ -91,7 +91,16 @@ fun parsePublicKeyLine(line: String): PublicKey? = runCatching {
     Buffer.PlainBuffer(blob).readPublicKey()
 }.getOrNull()
 
-fun opensshPublicKeyLine(publicKey: PublicKey, comment: String = "shellwave"): String {
+/**
+ * A public key line ends at the first newline, so a label with one in it would split the line and
+ * leave the rest looking like a second key.
+ */
+fun publicKeyComment(label: String?): String =
+    label.orEmpty().replace(Regex("[\\p{Cc}\\p{Zl}\\p{Zp}]+"), " ").trim().ifEmpty { DEFAULT_PUBLIC_KEY_COMMENT }
+
+const val DEFAULT_PUBLIC_KEY_COMMENT = "shellwave"
+
+fun opensshPublicKeyLine(publicKey: PublicKey, comment: String = DEFAULT_PUBLIC_KEY_COMMENT): String {
     val blob = net.schmizz.sshj.common.Buffer.PlainBuffer().putPublicKey(publicKey).compactData
     val b64 = java.util.Base64.getEncoder().encodeToString(blob)
     val type = KeyType.fromKey(publicKey).toString()

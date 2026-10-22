@@ -27,6 +27,8 @@ private const val NOTIFICATION_ID_BASE = 10_000
 
 private const val RECOVERY_TIMEOUT_MS = 15_000L
 
+private const val NOTICE_ID_BASE = 1_000_000
+
 /**
  * Announces an unclean drop, and the reconnect that answers it. A banner when the app is
  * backgrounded - an Android 12+ toast from a background app is dropped silently - and a toast when
@@ -47,7 +49,7 @@ open class SessionAlerts @Inject constructor(@ApplicationContext private val con
     open fun dropped(sessionId: Long, label: String) {
         if (!alerted.add(sessionId)) return
         alert(
-            sessionId,
+            notificationId(sessionId),
             title = "$label disconnected",
             body = "Connection lost - reconnecting…",
             autoDismissMs = null,
@@ -57,9 +59,19 @@ open class SessionAlerts @Inject constructor(@ApplicationContext private val con
     open fun reconnected(sessionId: Long, label: String) {
         if (!alerted.remove(sessionId)) return
         alert(
-            sessionId,
+            notificationId(sessionId),
             title = "$label reconnected",
             body = "The session is live again.",
+            autoDismissMs = RECOVERY_TIMEOUT_MS,
+        )
+    }
+
+    // Its own notification id, or a drop or reconnect banner for the same session replaces it unseen.
+    open fun notice(sessionId: Long, label: String, message: String) {
+        alert(
+            NOTICE_ID_BASE + notificationId(sessionId),
+            title = message,
+            body = label,
             autoDismissMs = RECOVERY_TIMEOUT_MS,
         )
     }
@@ -68,15 +80,17 @@ open class SessionAlerts @Inject constructor(@ApplicationContext private val con
         alerted.remove(sessionId)
         scope.launch {
             context.getSystemService(NotificationManager::class.java)
-                ?.cancel(notificationId(sessionId))
+                ?.run {
+                    cancel(notificationId(sessionId))
+                    cancel(NOTICE_ID_BASE + notificationId(sessionId))
+                }
         }
     }
 
-    private fun alert(sessionId: Long, title: String, body: String, autoDismissMs: Long?) {
+    private fun alert(id: Int, title: String, body: String, autoDismissMs: Long?) {
         scope.launch {
             val manager =
                 context.getSystemService(NotificationManager::class.java) ?: return@launch
-            val id = notificationId(sessionId)
             if (ProcessLifecycleOwner.get().lifecycle.currentState
                     .isAtLeast(Lifecycle.State.STARTED)
             ) {

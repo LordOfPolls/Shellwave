@@ -28,6 +28,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.common.StreamCopier
+import net.schmizz.sshj.connection.ConnectionException
 import net.schmizz.sshj.connection.channel.direct.LocalPortForwarder
 import net.schmizz.sshj.connection.channel.direct.Parameters
 import net.schmizz.sshj.connection.channel.direct.Session
@@ -99,6 +100,7 @@ open class SshConnection(
      * `SessionManager.startForwardInternal` needs for that case.
      */
     private val onForwardStopped: (forwardId: Long, error: String?) -> Unit = { _, _ -> },
+    private val onAgentForwardingRefused: () -> Unit = {},
 ) : TerminalOutput() {
 
     private val ssh = SSHClient()
@@ -107,6 +109,13 @@ open class SshConnection(
     private var shell: Session.Shell? = null
     private var readerJob: Job? = null
     private val closing = AtomicBoolean(false)
+
+    @Volatile
+    private var agentKeys: List<AgentKey> = emptyList()
+    @Volatile
+    private var agentOpener: AgentChannelOpener? = null
+    private val agentJobs = ConcurrentHashMap.newKeySet<Job>()
+    private val agentChannels = ConcurrentHashMap.newKeySet<AgentChannel>()
 
     // Every intermediate SSHClient/DirectConnection connect() built to reach `ssh` through, empty
     // for the common no-jump case. Torn down by disconnect() after `ssh` itself, since those
@@ -233,10 +242,13 @@ open class SshConnection(
      * - [Session.Command] has no such method. It also puts the line in the scrollback as though typed,
      * so the fallback to a plain shell is visible.
      *
+     * [agentKeys] are forwarded to the server only if it accepts the request; a refusal connects
+     * without them. The list is copied on entry because the serve loops read it off the UI thread.
+     *
      * `open`, with [disconnect]/[stopAllForwards]: SessionManagerTest substitutes a fake that never
      * touches a real socket, since driving these for real would need a live SSH server.
      */
-    open suspend fun connect(
+    internal open suspend fun connect(
         host: String,
         port: Int,
         username: String,
@@ -249,6 +261,7 @@ open class SshConnection(
         cursorBlink: Boolean = false,
         transcriptRows: Int? = null,
         hops: List<ProxyHop> = emptyList(),
+        agentKeys: List<AgentKey> = emptyList(),
     ) {
         cursorStyleOverride = cursorStyle
         withContext(Dispatchers.IO) {
@@ -264,61 +277,140 @@ open class SshConnection(
                 hostKeyVerifier
             )
 
-            val newSession = ssh.startSession()
-            session = newSession
-            newSession.allocatePTY("xterm-256color", cols, rows, 0, 0, emptyMap())
-            val newShell = newSession.startShell()
-            shell = newShell
-
-            // On Main like every other TerminalEmulator access. Nothing else touches `emulator`
-            // until this returns, so construction alone wouldn't race; keeping it here leaves no
-            // exception to remember.
-            withContext(Dispatchers.Main) {
-                emulator = TerminalEmulator(
-                    this@SshConnection,
-                    cols,
-                    rows,
-                    0,
-                    0,
-                    transcriptRows,
-                    sessionClient
-                )
-                // The engine has no blink timer: this only sets whether the cursor should blink.
-                // SessionsScreen drives the on/off schedule.
-                emulator.setCursorBlinkingEnabled(cursorBlink)
-            }
-
-            if (resilientSession) {
-                val bootstrap = (RESILIENT_SESSION_BOOTSTRAP + "\n").toByteArray(Charsets.UTF_8)
-                newShell.outputStream.write(bootstrap)
-                newShell.outputStream.flush()
-            }
-
-            readerJob = scope.launch(Dispatchers.IO) {
-                val buffer = ByteArray(READ_BUFFER_SIZE)
-                val input = newShell.inputStream
-                try {
-                    while (isActive) {
-                        val read = input.read(buffer)
-                        if (read < 0) break
-                        // withContext suspends until the Main-thread append completes, so reusing
-                        // `buffer` next iteration is safe.
-                        withContext(Dispatchers.Main) { emulator.append(buffer, read) }
-                        logSink?.write(buffer, 0, read)
-                        _outputTick.value++
+            // Everything below runs on an authenticated transport nobody else owns yet. A failure here
+            // would otherwise leave it, its shell and any forwarded agent live until Retry or tab close.
+            try {
+                val newSession: Session =
+                    if (agentKeys.isEmpty()) {
+                        ssh.startSession()
+                    } else {
+                        AgentForwardingSession(ssh.connection, ssh.remoteCharset).also { it.open() }
                     }
-                    if (!closing.get()) onDisconnected(true)
-                } catch (e: IOException) {
-                    Log.i(LOG_TAG, "reader stopped: ${e.message}")
-                    if (!closing.get()) onDisconnected(false)
-                } finally {
-                    // Every path the reader loop can leave by - clean EOF, a socket IOException, or
-                    // being cancelled out from under a blocked read by disconnect() - funnels
-                    // through here, so this is the one place logging is guaranteed to stop with the
-                    // session, not just on an explicit disconnect().
-                    closeLogging()
+                session = newSession
+                newSession.allocatePTY("xterm-256color", cols, rows, 0, 0, emptyMap())
+                if (newSession is AgentForwardingSession) offerAgent(newSession, agentKeys.toList())
+                val newShell = newSession.startShell()
+                shell = newShell
+
+                // On Main like every other TerminalEmulator access. Nothing else touches `emulator`
+                // until this returns, so construction alone wouldn't race; keeping it here leaves no
+                // exception to remember.
+                withContext(Dispatchers.Main) {
+                    emulator = TerminalEmulator(
+                        this@SshConnection,
+                        cols,
+                        rows,
+                        0,
+                        0,
+                        transcriptRows,
+                        sessionClient
+                    )
+                    // The engine has no blink timer: this only sets whether the cursor should blink.
+                    // SessionsScreen drives the on/off schedule.
+                    emulator.setCursorBlinkingEnabled(cursorBlink)
                 }
+
+                if (resilientSession) {
+                    val bootstrap = (RESILIENT_SESSION_BOOTSTRAP + "\n").toByteArray(Charsets.UTF_8)
+                    newShell.outputStream.write(bootstrap)
+                    newShell.outputStream.flush()
+                }
+
+                readerJob = scope.launch(Dispatchers.IO) {
+                    val buffer = ByteArray(READ_BUFFER_SIZE)
+                    val input = newShell.inputStream
+                    try {
+                        while (isActive) {
+                            val read = input.read(buffer)
+                            if (read < 0) break
+                            // withContext suspends until the Main-thread append completes, so reusing
+                            // `buffer` next iteration is safe.
+                            withContext(Dispatchers.Main) { emulator.append(buffer, read) }
+                            logSink?.write(buffer, 0, read)
+                            _outputTick.value++
+                        }
+                        if (!closing.get()) onDisconnected(true)
+                    } catch (e: IOException) {
+                        Log.i(LOG_TAG, "reader stopped: ${e.message}")
+                        if (!closing.get()) onDisconnected(false)
+                    } finally {
+                        // Every path the reader loop can leave by - clean EOF, a socket IOException, or
+                        // being cancelled out from under a blocked read by disconnect() - funnels
+                        // through here, so this is the one place logging is guaranteed to stop with the
+                        // session, not just on an explicit disconnect().
+                        closeLogging()
+                        endAgentForwarding()
+                    }
+                }
+            } catch (t: Throwable) {
+                disconnect()
+                throw t
             }
+        }
+    }
+
+    // The opener is attached before the request so a channel the server opens straight after
+    // accepting cannot arrive unhandled. `closing` is rechecked after attaching because a
+    // disconnect() that ran before agentOpener was set had nothing to forget.
+    private fun offerAgent(forwarding: AgentForwardingSession, keys: List<AgentKey>) {
+        agentKeys = keys
+        val opener = AgentChannelOpener(ssh.connection, ::serveAgentChannel)
+        agentOpener = opener
+        ssh.connection.attach(opener)
+        if (closing.get()) {
+            endAgentForwarding()
+            throw IOException("Connection closed while connecting")
+        }
+        try {
+            forwarding.requestAgentForwarding()
+        } catch (e: ConnectionException) {
+            Log.i(LOG_TAG, "agent forwarding refused: ${e.message}")
+            endAgentForwarding()
+            onAgentForwardingRefused()
+        }
+    }
+
+    // Throwing makes AgentChannelOpener send an open failure, which is how a channel arriving after
+    // teardown is turned away.
+    private fun serveAgentChannel(channel: AgentChannel) {
+        agentChannels.add(channel)
+        if (agentOpener == null || closing.get()) {
+            agentChannels.remove(channel)
+            throw IOException("agent forwarding has ended")
+        }
+        val keys = agentKeys
+        // ponytail: no read timeout, so a channel the server opens and never writes to holds one IO
+        // thread until disconnect; MAX_AGENT_CHANNELS bounds that. sshj's channelReadTimeoutMs is
+        // per SSHClient and would time out the idle shell too, so the upgrade is a per-channel
+        // watchdog that closes the channel.
+        val job = scope.launch(Dispatchers.IO) {
+            try {
+                serveAgent(channel.inputStream, channel.outputStream, keys, ssh.transport.config)
+            } finally {
+                agentChannels.remove(channel)
+                // After teardown, endAgentForwarding() has already queued this channel's close.
+                if (!closing.get()) runCatching { channel.close() }
+            }
+        }
+        agentJobs.add(job)
+        job.invokeOnCompletion { agentJobs.remove(job) }
+    }
+
+    // Forget before cancelling, or a channel can arrive mid-teardown and start a loop nothing will
+    // cancel. Cancelling a job cannot interrupt a loop blocked in a channel read, and a reader that
+    // ends on a clean EOF never reaches ssh.disconnect(), so the serve loops are ended here.
+    // Closing the input stream is a local EOF that frees the read at once; channel.close() alone
+    // waits for the peer's reply, which a hostile server can withhold. If the server then sends more
+    // on that channel, sshj fails the transport: harmless at teardown, and on the refusal path only a
+    // server that opened a channel before refusing can trigger it, ending its own session.
+    private fun endAgentForwarding() {
+        agentOpener?.let { runCatching { ssh.connection.forget(it) } }
+        agentOpener = null
+        agentKeys = emptyList()
+        agentJobs.forEach { it.cancel() }
+        agentChannels.toList().also { agentChannels.clear() }.forEach { channel ->
+            runCatching { channel.inputStream.close() }
+            scope.launch(Dispatchers.IO) { runCatching { channel.close() } }
         }
     }
 
@@ -460,6 +552,7 @@ open class SshConnection(
     open fun disconnect() {
         closing.set(true)
         readerJob?.cancel()
+        endAgentForwarding()
         // Eager, for a prompt "Stop logging"-on-close; the reader loop's own `finally` closes it
         // too (idempotent) for the case a blocked read doesn't unblock until ssh.disconnect() below
         // actually tears down the socket.
@@ -723,6 +816,9 @@ open class SshConnection(
      * the live shell and inherits all of it, and the picker says so per row.
      *
      * [command] runs verbatim, so it arrives substituted and quoted.
+     *
+     * If the session forwards an agent, this exec channel gets no `SSH_AUTH_SOCK`, but the socket the
+     * shell's session created is still on the remote host and readable by the same user.
      */
     suspend fun execCapture(command: String): CaptureResult =
         withContext(Dispatchers.IO) {

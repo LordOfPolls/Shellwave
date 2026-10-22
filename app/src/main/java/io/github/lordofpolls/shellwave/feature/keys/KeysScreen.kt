@@ -31,12 +31,16 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -57,7 +61,7 @@ import io.github.lordofpolls.shellwave.core.crypto.CredentialVault
 import io.github.lordofpolls.shellwave.core.db.dao.CredentialDao
 import io.github.lordofpolls.shellwave.core.db.dao.HostDao
 import io.github.lordofpolls.shellwave.core.db.entities.CredentialEntity
-import io.github.lordofpolls.shellwave.feature.host.credentialLabel
+import io.github.lordofpolls.shellwave.core.db.entities.HostEntity
 import io.github.lordofpolls.shellwave.feature.settings.SettingsSwitch
 import io.github.lordofpolls.shellwave.ssh.GeneratedKeyAlgorithm
 import io.github.lordofpolls.shellwave.ssh.generateKeyPair
@@ -70,6 +74,7 @@ import io.github.lordofpolls.shellwave.ui.design.FingerprintBlock
 import io.github.lordofpolls.shellwave.ui.design.RadioRow
 import io.github.lordofpolls.shellwave.ui.design.rememberFormState
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -93,23 +98,37 @@ fun KeysScreen(
 
     val keys = credentialDao.observeAll().collectAsState(initial = emptyList()).value
         .filter { it.type == CredentialType.PRIVATE_KEY.name }
-    val hosts by hostDao.observeAll().collectAsState(initial = emptyList())
+    val hostsOrNull by hostDao.observeAll().collectAsState<List<HostEntity>, List<HostEntity>?>(initial = null)
+    val hosts = hostsOrNull.orEmpty()
 
     var addMenuOpen by remember { mutableStateOf(false) }
     var generating by remember { mutableStateOf(false) }
     var importing by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf<CredentialEntity?>(null) }
     var deleting by remember { mutableStateOf<CredentialEntity?>(null) }
+    var removingUnused by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(message) {
+        message?.let {
+            snackbarHostState.showSnackbar(it)
+            message = null
+        }
+    }
 
     Scaffold(
         modifier = modifier,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("Keys") },
                 windowInsets = WindowInsets(0, 0, 0, 0),
                 actions = {
+                    // Kept out of the "Add key" menu: a removal is not where anyone looks for one.
+                    if (hostsOrNull != null && unusedKeys(keys, hosts).isNotEmpty()) {
+                        TextButton(onClick = { removingUnused = true }) { Text("Remove unused") }
+                    }
                     IconButton(onClick = { addMenuOpen = true }) {
                         Icon(Icons.Outlined.Add, contentDescription = "Add key")
                     }
@@ -128,14 +147,6 @@ fun KeysScreen(
         },
     ) { innerPadding ->
         Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
-            message?.let {
-                Text(
-                    it,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(start = 16.dp, top = 8.dp, end = 16.dp),
-                )
-            }
             if (keys.isEmpty()) {
                 EmptyState(
                     message = "No keys yet.",
@@ -152,7 +163,7 @@ fun KeysScreen(
                     items(keys, key = { it.id }) { key ->
                         KeyCard(
                             key = key,
-                            hostCount = hosts.count { it.credentialId == key.id },
+                            usage = keyUsageSummary(key.id, hosts),
                             onCopy = {
                                 message = null
                                 scope.launch {
@@ -182,7 +193,7 @@ fun KeysScreen(
             onDismiss = { generating = false },
             onConfirm = { label, _, algorithm, requireBiometric ->
                 runCatching {
-                    val generated = withContext(Dispatchers.Default) { generateKeyPair(algorithm) }
+                    val generated = withContext(Dispatchers.Default) { generateKeyPair(algorithm, label) }
                     credentialVault.storePrivateKey(
                         generated.privateKeyPem,
                         null,
@@ -216,7 +227,7 @@ fun KeysScreen(
             onDismiss = { importing = false },
             onConfirm = { label, passphrase, _, requireBiometric ->
                 runCatching {
-                    val publicKeyLine = publicKeyLineOf(pickedPem.value, passphrase)
+                    val publicKeyLine = publicKeyLineOf(pickedPem.value, passphrase, label)
                     credentialVault.storePrivateKey(
                         pickedPem.value,
                         passphrase,
@@ -261,13 +272,72 @@ fun KeysScreen(
         )
     }
 
+    if (removingUnused) {
+        // Fresh queries, not the observed lists - see HostDao.countHostsUsingCredential.
+        val unused by produceState<List<CredentialEntity>?>(null) {
+            val privateKeys = credentialDao.observeAll().first().filter { it.type == CredentialType.PRIVATE_KEY.name }
+            value = unusedKeys(privateKeys, hostDao.observeAll().first())
+        }
+        val listed = unused
+        AlertDialog(
+            onDismissRequest = { removingUnused = false },
+            title = { Text("Remove unused keys?") },
+            text = {
+                Text(
+                    when {
+                        listed == null -> "Checking which keys are unused…"
+                        listed.isEmpty() -> "Every key is in use now. Nothing to remove."
+                        else -> listed.joinToString("\n") { credentialLabel(it) } +
+                            "\n\nThese private keys are deleted from this device for good. That includes " +
+                            "keys picked only on hosts with forwarding off, and keys you haven't used yet. " +
+                            "Public keys you've already registered elsewhere stay valid."
+                    },
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !listed.isNullOrEmpty(),
+                    onClick = {
+                        removingUnused = false
+                        scope.launch {
+                            val removable = unusedKeys(listed.orEmpty(), hostDao.observeAll().first())
+                            val gainedUse = listed.orEmpty().size - removable.size
+                            val failures = removable.mapNotNull { key ->
+                                runCatching { credentialDao.delete(key) }.exceptionOrNull()?.let { credentialLabel(key) to it }
+                            }
+                            message = listOfNotNull(
+                                "Kept $gainedUse that gained a use since you looked.".takeIf { gainedUse > 0 },
+                                failures.firstOrNull()?.let { (label, e) ->
+                                    "Couldn't delete $label: ${e.message}" +
+                                        if (failures.size > 1) " (and ${failures.size - 1} more)" else ""
+                                },
+                            ).joinToString(" ").ifEmpty { null }
+                        }
+                    },
+                ) { Text("Remove") }
+            },
+            dismissButton = { TextButton(onClick = { removingUnused = false }) { Text("Cancel") } },
+        )
+    }
+
     deleting?.let { key ->
+        // A fresh query, not the observed list - see HostDao.countHostsUsingCredential.
+        val forwardedBy by produceState<List<HostEntity>?>(null, key.id) {
+            value = hostsForwardingKey(key.id, hostDao.observeAll().first())
+        }
         AlertDialog(
             onDismissRequest = { deleting = null },
             title = { Text("Delete ${credentialLabel(key)}?") },
-            text = { Text("The private key is removed from this device. Public keys you've already registered elsewhere stay valid.") },
+            text = {
+                Text(
+                    listOfNotNull(
+                        "The private key is removed from this device. Public keys you've already registered elsewhere stay valid.",
+                        forwardedBy?.let(::keyDeleteForwardingWarning),
+                    ).joinToString("\n\n"),
+                )
+            },
             confirmButton = {
-                TextButton(onClick = {
+                TextButton(enabled = forwardedBy != null, onClick = {
                     deleting = null
                     scope.launch {
                         // Re-checked against the database, not the observed host list: that list
@@ -297,7 +367,7 @@ fun KeysScreen(
 @Composable
 private fun KeyCard(
     key: CredentialEntity,
-    hostCount: Int,
+    usage: String,
     onCopy: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
@@ -314,13 +384,9 @@ private fun KeyCard(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(credentialLabel(key), style = MaterialTheme.typography.titleSmall)
                     Text(
-                        listOfNotNull(
-                            key.publicKeyText?.substringBefore(' '),
-                            if (hostCount == 0) "Unused" else "Used by $hostCount ${if (hostCount == 1) "host" else "hosts"}",
-                            // A CA-signed key is accepted wherever that CA is trusted, not just by
-                            // the hosts listed above, so the count alone understates its reach.
-                            "Certificate".takeIf { key.certificate != null },
-                        ).joinToString(" · "),
+                        // A CA-signed key is accepted wherever that CA is trusted, not just by the
+                        // hosts counted here, so the count alone understates its reach.
+                        listOf(keyDescription(key), usage).filter { it.isNotEmpty() }.joinToString(" · "),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -386,7 +452,7 @@ private fun AddKeyDialog(
                 )
                 algorithms.forEach { option ->
                     RadioRow(selected = algorithm == option, onClick = { algorithm = option }) {
-                        Text(option.name.replace('_', ' ').lowercase())
+                        Text(option.label)
                     }
                 }
                 if (importPicker != null) {

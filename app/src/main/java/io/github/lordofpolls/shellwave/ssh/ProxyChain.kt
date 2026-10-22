@@ -66,6 +66,8 @@ internal fun connectChainAndAuthenticate(
     }
     val clients = mutableListOf<SSHClient>()
     val channels = mutableListOf<DirectConnection>()
+    // Agent forwarding is attached to finalSsh alone, by the caller. Each hop is its own SSHClient
+    // with its own key exchange, so a jump host sees neither a forwarded channel nor a signature.
     try {
         var previous: SSHClient? = null
         for (hop in hops) {

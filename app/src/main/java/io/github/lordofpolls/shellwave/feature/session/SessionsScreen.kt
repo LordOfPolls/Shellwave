@@ -237,6 +237,7 @@ fun SessionsScreen(
                         id = summary.id,
                         name = sessionDisplayName(summary.hostId, summary.label, hosts),
                         status = summary.status,
+                        agentForwarding = summary.agentForwarding,
                     )
                 },
             selectedId = selectedId,

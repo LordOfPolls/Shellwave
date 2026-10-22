@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -24,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowDropDown
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -58,16 +60,22 @@ import androidx.fragment.app.FragmentActivity
 import io.github.lordofpolls.shellwave.core.crypto.CredentialType
 import io.github.lordofpolls.shellwave.core.crypto.CredentialVault
 import io.github.lordofpolls.shellwave.core.db.dao.ColorSchemeDao
+import io.github.lordofpolls.shellwave.core.db.dao.CredentialDao
 import io.github.lordofpolls.shellwave.core.db.dao.GroupDao
 import io.github.lordofpolls.shellwave.core.db.dao.HostDao
 import io.github.lordofpolls.shellwave.core.db.dao.KeyBarLayoutDao
 import io.github.lordofpolls.shellwave.core.db.dao.PortForwardDao
 import io.github.lordofpolls.shellwave.core.db.dao.TerminalProfileDao
 import io.github.lordofpolls.shellwave.core.db.entities.ColorSchemeEntity
+import io.github.lordofpolls.shellwave.core.db.entities.CredentialEntity
 import io.github.lordofpolls.shellwave.core.db.entities.GroupEntity
 import io.github.lordofpolls.shellwave.core.db.entities.HostEntity
+import io.github.lordofpolls.shellwave.core.db.entities.decodeAgentKeyIds
+import io.github.lordofpolls.shellwave.core.db.entities.encodeAgentKeyIds
 import io.github.lordofpolls.shellwave.core.db.entities.TerminalProfileEntity
 import io.github.lordofpolls.shellwave.core.net.parseMacAddress
+import io.github.lordofpolls.shellwave.feature.keys.credentialLabel
+import io.github.lordofpolls.shellwave.feature.keys.keyDescription
 import io.github.lordofpolls.shellwave.feature.home.nextGroupColor
 import io.github.lordofpolls.shellwave.feature.settings.ColorSchemeFields
 import io.github.lordofpolls.shellwave.feature.settings.SettingsRadioGroup
@@ -96,10 +104,11 @@ import io.github.lordofpolls.shellwave.ui.design.CollapsibleSection
 import io.github.lordofpolls.shellwave.ui.design.ColorPickerDialog
 import io.github.lordofpolls.shellwave.ui.design.ColorSwatch
 import io.github.lordofpolls.shellwave.ui.design.MachineText
+import io.github.lordofpolls.shellwave.ui.design.RadioRow
 import io.github.lordofpolls.shellwave.ui.design.rememberFormState
 import kotlinx.coroutines.launch
 
-private enum class AuthKind { PASSWORD, IMPORT_KEY, GENERATE_KEY, KEYBOARD_INTERACTIVE }
+internal enum class AuthKind { PASSWORD, STORED_KEY, IMPORT_KEY, GENERATE_KEY, KEYBOARD_INTERACTIVE }
 
 private enum class OverrideEditor(val title: String) {
     TERMINAL_PROFILE("Terminal profile"),
@@ -108,12 +117,15 @@ private enum class OverrideEditor(val title: String) {
 
 /**
  * Add or edit a host. Editing seals a fresh credential and repoints the host at it; the previous
- * credential row is left orphaned rather than chased down and deleted.
+ * credential row is left orphaned rather than chased down and deleted. [AuthKind.STORED_KEY] is the
+ * exception: it points the host at a key from the Keys screen and seals nothing, and switching away
+ * from it never touches that row.
  *
  * [originalAuthKind] seeds the radio selection from the stored CredentialType. Without it the
  * screen always opened on `AuthKind.PASSWORD`, which left Save disabled for any non-password host
- * until a secret was re-entered. Generated and imported keys share one stored type, so both show as
- * "Import key".
+ * until a secret was re-entered. A private key with a sealed secret shows as "Stored key", since
+ * every such key is on the Keys screen; one without (a config import) shows as "Import key" so its
+ * key can be entered.
  *
  * [keepExistingCredential] lets Save succeed without re-pasting a key or retyping an untouched
  * password. Resealing a private key would seal an empty one, since the decrypted material is never
@@ -131,6 +143,7 @@ fun AddEditHostScreen(
     existing: HostEntity?,
     hostDao: HostDao,
     credentialVault: CredentialVault,
+    credentialDao: CredentialDao,
     keyEnrolment: KeyEnrolment,
     terminalProfileDao: TerminalProfileDao,
     colorSchemeDao: ColorSchemeDao,
@@ -154,6 +167,13 @@ fun AddEditHostScreen(
     var requireBiometric by rememberFormState(existing?.id) { false }
     var resilientSession by rememberFormState(existing?.id) { existing?.resilientSession ?: false }
     var macAddress by rememberFormState(existing?.id) { existing?.macAddress.orEmpty() }
+    var agentForwarding by rememberFormState(existing?.id) { existing?.agentForwarding ?: false }
+    var agentKeyIds by rememberFormState(existing?.id) {
+        existing?.let { decodeAgentKeyIds(it.agentKeyIdsJson) } ?: emptyList()
+    }
+    val storedKeysOrNull by credentialDao.observeAll().collectAsState<List<CredentialEntity>, List<CredentialEntity>?>(initial = null)
+    val storedKeys = storedKeysOrNull.orEmpty()
+    var storedKeyId by rememberFormState<Long?>(existing?.id) { null }
     var detectingMac by remember { mutableStateOf(false) }
     var overrideEditor by rememberFormState<OverrideEditor?>(existing?.id) { null }
 
@@ -237,6 +257,7 @@ fun AddEditHostScreen(
     var certificateTouched by rememberFormState(existing?.id) { false }
     var certificateError by remember { mutableStateOf<String?>(null) }
     var certificateNote by remember { mutableStateOf<String?>(null) }
+    var certificateDropped by remember { mutableStateOf(false) }
     // The stored key's own public line, for the ed25519 certificate note when editing without
     // having re-typed the key (so importedPublicKeyPreview is still empty).
     var existingPublicKeyText by rememberFormState<String?>(existing?.id) { null }
@@ -253,9 +274,11 @@ fun AddEditHostScreen(
         val kind =
             when (summary.type) {
                 CredentialType.PASSWORD -> AuthKind.PASSWORD
-                CredentialType.PRIVATE_KEY -> AuthKind.IMPORT_KEY
+                CredentialType.PRIVATE_KEY ->
+                    if (summary.hasStoredSecret) AuthKind.STORED_KEY else AuthKind.IMPORT_KEY
                 CredentialType.KEYBOARD_INTERACTIVE -> AuthKind.KEYBOARD_INTERACTIVE
             }
+        if (kind == AuthKind.STORED_KEY) storedKeyId = credentialId
         authKind = kind
         originalAuthKind = kind
         storedSecretPresent = summary.hasStoredSecret
@@ -270,14 +293,27 @@ fun AddEditHostScreen(
         existing != null && authKind == originalAuthKind && storedSecretPresent &&
                 when (authKind) {
                     AuthKind.PASSWORD -> password.isEmpty()
+                    AuthKind.STORED_KEY -> false
                     AuthKind.IMPORT_KEY -> importedPem.isBlank()
                     AuthKind.GENERATE_KEY -> generatedKey == null
                     AuthKind.KEYBOARD_INTERACTIVE -> true
                 }
 
+    // The certificate state is shared by the import and stored-key forms, so a form switch or a
+    // different stored key must not inherit what was picked for the other.
+    fun resetCertificate(certificate: String?) {
+        // Sticky: picking a stored key resets again with nothing touched, which must not hide the notice.
+        if (certificateTouched && importedCertificate != null) certificateDropped = true
+        importedCertificate = certificate
+        certificateTouched = false
+        certificateError = null
+        certificateNote = null
+    }
+
     // A rotated key must not silently carry over a certificate picked for the old one.
     fun setImportedPem(pem: String) {
         importedPem = pem
+        certificateDropped = false
         if (!certificateTouched) importedCertificate = null
     }
 
@@ -295,17 +331,22 @@ fun AddEditHostScreen(
     val pickCertificate =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri == null) return@rememberLauncherForActivityResult
+            val pickedFor = authKind
+            val pickedKeyId = storedKeyId
+            fun stale() = authKind != pickedFor || storedKeyId != pickedKeyId
             scope.launch {
                 certificateNote = null
+                certificateDropped = false
                 val text = runCatching { readKeyText(activity.contentResolver, uri) }
                     .onFailure { certificateError = it.message ?: "Could not read that file" }
                     .getOrNull() ?: return@launch
+                if (stale()) return@launch
 
                 when {
                     // Load key and certificate together the way SshAuth will; sshj does not check
                     // they match, only that the pair loads. The standalone parse fallback exists
                     // because sshj drops a certificate on an ed25519 key (see loadKeysWithCertificate).
-                    importedPem.isNotBlank() -> {
+                    importedPem.isNotBlank() && authKind != AuthKind.STORED_KEY -> {
                         val matches = runCatching {
                             loadKeysWithCertificate(
                                 importedPem,
@@ -324,10 +365,13 @@ fun AddEditHostScreen(
                     // biometric-gated key that can't be unsealed right now, or the ed25519 key-match
                     // limitation above, falls back to a standalone parse - the certificate/key match
                     // is then only checked for real at connect time.
-                    keepExistingCredential -> {
+                    keepExistingCredential || (authKind == AuthKind.STORED_KEY && storedKeyId != null) -> {
+                        val keyId = (if (pickedFor == AuthKind.STORED_KEY) pickedKeyId else existing?.credentialId)
+                            ?: return@launch
                         val authMethod =
-                            runCatching { credentialVault.resolve(existing!!.credentialId, activity) }
+                            runCatching { credentialVault.resolve(keyId, activity) }
                                 .getOrNull() as? AuthMethod.PrivateKey
+                        if (stale()) return@launch
                         val matches = authMethod != null && runCatching {
                             loadKeysWithCertificate(
                                 authMethod.privateKeyPem,
@@ -350,11 +394,56 @@ fun AddEditHostScreen(
             }
         }
 
+    val loginKeys = storedKeys.filter {
+        it.type == CredentialType.PRIVATE_KEY.name && it.secretCiphertext != null
+    }
+
+    @Composable
+    fun CertificateControls(publicKeyLine: String?) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Button(onClick = { pickCertificate.launch(arrayOf("*/*")) }) {
+                Text("Certificate (optional)")
+            }
+            if (importedCertificate != null) {
+                TextButton(onClick = {
+                    importedCertificate = null
+                    certificateTouched = true
+                    certificateError = null
+                    certificateNote = null
+                    certificateDropped = false
+                }) {
+                    Text("Clear")
+                }
+            }
+        }
+        certificateError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+        certificateNote?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+        if (certificateDropped) {
+            Text("Certificate cleared: it belonged to the previous key.", style = MaterialTheme.typography.bodySmall)
+        }
+        if (importedCertificate != null) {
+            Text("Certificate loaded - offered instead of the bare key.", style = MaterialTheme.typography.bodySmall)
+            // sshj 0.40.0 can't attach a certificate to an ed25519 openssh-key-v1 PEM
+            // loaded from a string - see KeyImport.loadKeysWithCertificate's KDoc.
+            if (publicKeyLine?.startsWith("ssh-ed25519 ") == true) {
+                Text(
+                    "ed25519 keys can't carry a certificate in this app yet (a known sshj limitation) - it will be ignored.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+    }
+
     fun canSave(): Boolean =
         hostname.isNotBlank() && username.isNotBlank() && port.toIntOrNull() != null &&
                 (keepExistingCredential ||
                         when (authKind) {
                             AuthKind.PASSWORD -> password.isNotEmpty()
+                            AuthKind.STORED_KEY -> loginKeys.any { it.id == storedKeyId }
                             AuthKind.IMPORT_KEY -> importedPublicKeyPreview != null
                             AuthKind.GENERATE_KEY -> generatedKey != null
                             AuthKind.KEYBOARD_INTERACTIVE -> true
@@ -368,47 +457,55 @@ fun AddEditHostScreen(
         }
         scope.launch {
             try {
+                val plan = planCredentialSave(
+                    authKind = authKind,
+                    storedKeyId = storedKeyId,
+                    keepExistingCredential = keepExistingCredential,
+                    certificateTouched = certificateTouched,
+                    existingCredentialId = existing?.credentialId,
+                ) ?: return@launch
+                plan.certificateTargetId?.let { credentialVault.setCertificate(it, importedCertificate) }
                 val credentialId =
-                    if (keepExistingCredential) {
-                        if (certificateTouched) {
-                            credentialVault.setCertificate(existing!!.credentialId, importedCertificate)
-                        }
-                        existing!!.credentialId
-                    } else {
-                        when (authKind) {
-                            AuthKind.PASSWORD -> credentialVault.storePassword(
-                                password,
-                                label.ifBlank { null },
-                                requireBiometric,
-                                activity
-                            )
-
-                            AuthKind.IMPORT_KEY ->
-                                credentialVault.storePrivateKey(
-                                    importedPem,
-                                    importedPassphrase.ifBlank { null },
-                                    importedPublicKeyPreview ?: return@launch,
-                                    label.ifBlank { null },
-                                    requireBiometric,
-                                    activity,
-                                    importedCertificate,
-                                )
-
-                            AuthKind.GENERATE_KEY -> {
-                                val key = generatedKey ?: return@launch
-                                credentialVault.storePrivateKey(
-                                    key.privateKeyPem,
-                                    null,
-                                    key.publicKeyLine,
+                    when (val choice = plan.credential) {
+                        is CredentialChoice.Existing -> choice.id
+                        is CredentialChoice.Stored -> choice.id
+                        CredentialChoice.SealNew ->
+                            when (authKind) {
+                                AuthKind.PASSWORD -> credentialVault.storePassword(
+                                    password,
                                     label.ifBlank { null },
                                     requireBiometric,
                                     activity
                                 )
-                            }
 
-                            AuthKind.KEYBOARD_INTERACTIVE -> credentialVault.storeKeyboardInteractive(
-                                label.ifBlank { null })
-                        }
+                                AuthKind.IMPORT_KEY ->
+                                    credentialVault.storePrivateKey(
+                                        importedPem,
+                                        importedPassphrase.ifBlank { null },
+                                        importedPublicKeyPreview ?: return@launch,
+                                        hostKeyLabel(label),
+                                        requireBiometric,
+                                        activity,
+                                        importedCertificate,
+                                    )
+
+                                AuthKind.GENERATE_KEY -> {
+                                    val key = generatedKey ?: return@launch
+                                    credentialVault.storePrivateKey(
+                                        key.privateKeyPem,
+                                        null,
+                                        key.publicKeyLine,
+                                        hostKeyLabel(label),
+                                        requireBiometric,
+                                        activity
+                                    )
+                                }
+
+                                AuthKind.KEYBOARD_INTERACTIVE -> credentialVault.storeKeyboardInteractive(
+                                    label.ifBlank { null })
+
+                                AuthKind.STORED_KEY -> return@launch
+                            }
                     }
                 val now = System.currentTimeMillis()
                 if (existing == null) {
@@ -429,6 +526,8 @@ fun AddEditHostScreen(
                             macAddress = macAddress.ifBlank { null },
                             groupId = groupId,
                             color = color,
+                            agentForwarding = agentForwarding,
+                            agentKeyIdsJson = encodeAgentKeyIds(agentKeyIds),
                         ),
                     )
                 } else {
@@ -448,6 +547,8 @@ fun AddEditHostScreen(
                             groupId = groupId,
                             position = if (existing.groupId != groupId) null else existing.position,
                             color = color,
+                            agentForwarding = agentForwarding,
+                            agentKeyIdsJson = encodeAgentKeyIds(agentKeyIds),
                         ),
                     )
                 }
@@ -604,11 +705,45 @@ fun AddEditHostScreen(
                     options = AuthKind.entries,
                     selected = authKind,
                     labelOf = { it.label() },
-                    onSelect = { authKind = it },
+                    onSelect = {
+                        val leavingStoredKey = authKind == AuthKind.STORED_KEY
+                        authKind = it
+                        if (it == AuthKind.STORED_KEY) {
+                            resetCertificate(loginKeys.firstOrNull { key -> key.id == storedKeyId }?.certificate)
+                        } else if (leavingStoredKey) {
+                            resetCertificate(null)
+                        }
+                    },
                 )
             }
 
             when (authKind) {
+                AuthKind.STORED_KEY -> {
+                    if (storedKeysOrNull != null && loginKeys.isEmpty()) {
+                        DimText(
+                            if (storedKeys.any { it.type == CredentialType.PRIVATE_KEY.name }) {
+                                "No keys that can sign in yet. Add one on the Keys tab."
+                            } else {
+                                "No keys yet. Add one on the Keys tab."
+                            },
+                        )
+                    }
+                    loginKeys.forEach { key ->
+                        RadioRow(
+                            selected = key.id == storedKeyId,
+                            onClick = {
+                                if (storedKeyId != key.id) resetCertificate(key.certificate)
+                                storedKeyId = key.id
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { KeyChoice(key) }
+                    }
+                    loginKeys.firstOrNull { it.id == storedKeyId }?.let { key ->
+                        CertificateControls(key.publicKeyText)
+                        DimText("A certificate belongs to the key, so this applies to every host that uses it.")
+                    }
+                }
+
                 AuthKind.PASSWORD ->
                     OutlinedTextField(
                         value = password,
@@ -651,7 +786,8 @@ fun AddEditHostScreen(
                             runCatching {
                                 publicKeyLineOf(
                                     importedPem,
-                                    importedPassphrase.ifBlank { null })
+                                    importedPassphrase.ifBlank { null },
+                                    hostKeyLabel(label))
                             }
                                 .onSuccess { importedPublicKeyPreview = it; error = null }
                                 .onFailure { error = it.message ?: "Could not parse key" }
@@ -670,52 +806,21 @@ fun AddEditHostScreen(
                         }
                     }
 
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Button(onClick = { pickCertificate.launch(arrayOf("*/*")) }) {
-                            Text("Certificate (optional)")
-                        }
-                        if (importedCertificate != null) {
-                            TextButton(onClick = {
-                                importedCertificate = null
-                                certificateTouched = true
-                                certificateError = null
-                                certificateNote = null
-                            }) {
-                                Text("Clear")
-                            }
-                        }
-                    }
-                    certificateError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-                    certificateNote?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-                    if (importedCertificate != null) {
-                        Text("Certificate loaded - offered instead of the bare key.", style = MaterialTheme.typography.bodySmall)
-                        // sshj 0.40.0 can't attach a certificate to an ed25519 openssh-key-v1 PEM
-                        // loaded from a string - see KeyImport.loadKeysWithCertificate's KDoc.
-                        if ((importedPublicKeyPreview ?: existingPublicKeyText)?.startsWith("ssh-ed25519 ") == true) {
-                            Text(
-                                "ed25519 keys can't carry a certificate in this app yet (a known sshj limitation) - it will be ignored.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error,
-                            )
-                        }
-                    }
+                    CertificateControls(importedPublicKeyPreview ?: existingPublicKeyText)
                 }
 
                 AuthKind.GENERATE_KEY -> {
                     Text("Generate:", style = MaterialTheme.typography.bodySmall)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = {
-                            generatedKey = generateKeyPair(GeneratedKeyAlgorithm.ED25519)
-                        }) { Text("ed25519") }
+                            generatedKey = generateKeyPair(GeneratedKeyAlgorithm.ED25519, hostKeyLabel(label))
+                        }) { Text(GeneratedKeyAlgorithm.ED25519.label) }
                         Button(onClick = {
-                            generatedKey = generateKeyPair(GeneratedKeyAlgorithm.RSA)
-                        }) { Text("RSA") }
+                            generatedKey = generateKeyPair(GeneratedKeyAlgorithm.RSA, hostKeyLabel(label))
+                        }) { Text(GeneratedKeyAlgorithm.RSA.label) }
                         Button(onClick = {
-                            generatedKey = generateKeyPair(GeneratedKeyAlgorithm.ECDSA_P256)
-                        }) { Text("ECDSA") }
+                            generatedKey = generateKeyPair(GeneratedKeyAlgorithm.ECDSA_P256, hostKeyLabel(label))
+                        }) { Text(GeneratedKeyAlgorithm.ECDSA_P256.label) }
                     }
                     generatedKey?.let { key ->
                         Text(
@@ -744,7 +849,7 @@ fun AddEditHostScreen(
                     )
             }
 
-            if (authKind != AuthKind.KEYBOARD_INTERACTIVE) {
+            if (authKind != AuthKind.KEYBOARD_INTERACTIVE && authKind != AuthKind.STORED_KEY) {
                 SettingsSwitch(
                     title = "Require biometric unlock",
                     description =
@@ -805,6 +910,43 @@ fun AddEditHostScreen(
                     checked = resilientSession,
                     onCheckedChange = { resilientSession = it },
                 )
+
+                SettingsSwitch(
+                    title = "Agent forwarding",
+                    description = "You confirm each key when you press Connect, and they stay forwarded " +
+                            "until you close the tab. Anything on the host running as you, and root, can " +
+                            "use them while you're connected.",
+                    checked = agentForwarding,
+                    onCheckedChange = { agentForwarding = it },
+                )
+                if (agentForwarding) {
+                    val privateKeys = storedKeys.filter { it.type == CredentialType.PRIVATE_KEY.name }
+                    Text("Keys to forward", style = MaterialTheme.typography.labelLarge)
+                    privateKeys.forEach { key ->
+                        val picked = key.id in agentKeyIds
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 16.dp)
+                                .toggleable(
+                                    value = picked,
+                                    role = Role.Checkbox,
+                                    onValueChange = { agentKeyIds = if (it) agentKeyIds + key.id else agentKeyIds - key.id },
+                                ),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(checked = picked, onCheckedChange = null)
+                            KeyChoice(key, forwarded = true)
+                        }
+                    }
+                    if (storedKeysOrNull != null) {
+                        if (privateKeys.isEmpty()) {
+                            DimText("No keys yet. Add one on the Keys tab; until then nothing will be forwarded.")
+                        } else if (privateKeys.none { it.id in agentKeyIds }) {
+                            DimText("No keys selected: nothing will be forwarded.")
+                        }
+                    }
+                }
             }
 
             CollapsibleSection("Appearance") {
@@ -963,6 +1105,28 @@ fun AddEditHostScreen(
     }
 }
 
+internal fun hostKeyLabel(hostLabel: String?): String? =
+    hostLabel?.takeIf { it.isNotBlank() }?.let { "$it key" }
+
+@Composable
+private fun KeyChoice(key: CredentialEntity, forwarded: Boolean = false) {
+    Column(modifier = Modifier.padding(start = 8.dp)) {
+        Text(credentialLabel(key), style = MaterialTheme.typography.titleSmall)
+        Text(
+            keyDescription(key, forwarded),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (key.certificate != null && !forwarded) {
+            Text(
+                "Accepted wherever its CA is trusted, not just here.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+    }
+}
+
 private const val DEFAULT_KEY_BAR_LAYOUT = "Default (Esc, Tab, arrows)"
 
 @Composable
@@ -1027,6 +1191,7 @@ private fun HostChoice(host: HostEntity) {
 private fun AuthKind.label(): String =
     when (this) {
         AuthKind.PASSWORD -> "Password"
+        AuthKind.STORED_KEY -> "Stored key"
         AuthKind.IMPORT_KEY -> "Import key"
         AuthKind.GENERATE_KEY -> "Generate key"
         AuthKind.KEYBOARD_INTERACTIVE -> "Keyboard-interactive"

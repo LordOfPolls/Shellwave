@@ -58,6 +58,7 @@ terminal the full width.
   credential. The private key never leaves the device.
 - Password, private key (imported or generated on device), and keyboard-interactive auth.
 - Local and remote port forwarding, SOCKS5, ProxyJump chaining, `~/.ssh/config` import.
+- SSH agent forwarding from the keys stored in the app.
 - Saved scripts, run from the app, a widget, an app shortcut, a Quick Settings tile, or another app.
 - SFTP upload and download.
 - Per-host terminal profile, colour scheme and key bar layout, each overriding a global default.

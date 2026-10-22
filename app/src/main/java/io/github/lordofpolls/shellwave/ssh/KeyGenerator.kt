@@ -19,7 +19,8 @@ import java.security.interfaces.ECPublicKey
 import java.security.spec.ECGenParameterSpec
 import java.util.Base64
 
-enum class GeneratedKeyAlgorithm { ED25519, RSA, ECDSA_P256 }
+/** [label] is what both screens show; ECDSA is P-256 only, so the curve is left out of it. */
+enum class GeneratedKeyAlgorithm(val label: String) { ED25519("ed25519"), RSA("RSA"), ECDSA_P256("ECDSA") }
 
 data class GeneratedKey(val privateKeyPem: String, val publicKeyLine: String)
 
@@ -34,7 +35,8 @@ data class GeneratedKey(val privateKeyPem: String, val publicKeyLine: String)
  * The PEM is unencrypted at the file level either way; VaultCrypto protects it at rest. An imported
  * key keeps whatever passphrase it arrived with.
  */
-fun generateKeyPair(algorithm: GeneratedKeyAlgorithm): GeneratedKey {
+fun generateKeyPair(algorithm: GeneratedKeyAlgorithm, label: String? = null): GeneratedKey {
+    val comment = publicKeyComment(label)
     val keyPairGenerator =
         when (algorithm) {
             GeneratedKeyAlgorithm.ED25519 -> KeyPairGenerator.getInstance("Ed25519")
@@ -46,15 +48,14 @@ fun generateKeyPair(algorithm: GeneratedKeyAlgorithm): GeneratedKey {
     val keyPair = keyPairGenerator.generateKeyPair()
     val pem =
         when (algorithm) {
-            GeneratedKeyAlgorithm.ED25519 -> opensshV1PrivateKeyPem(keyPair)
+            GeneratedKeyAlgorithm.ED25519 -> opensshV1PrivateKeyPem(keyPair, comment)
             GeneratedKeyAlgorithm.RSA -> pkcs8Pem(keyPair.private.encoded)
             GeneratedKeyAlgorithm.ECDSA_P256 -> pkcs8Pem(ecPkcs8WithoutInnerParams(keyPair))
         }
-    return GeneratedKey(privateKeyPem = pem, publicKeyLine = opensshPublicKeyLine(keyPair.public))
+    return GeneratedKey(privateKeyPem = pem, publicKeyLine = opensshPublicKeyLine(keyPair.public, comment))
 }
 
 private const val RSA_KEY_SIZE_BITS = 3072
-private const val OPENSSH_V1_COMMENT = "shellwave"
 private const val OPENSSH_V1_CIPHER_BLOCK_SIZE = 8
 private val OPENSSH_V1_AUTH_MAGIC = "openssh-key-v1".toByteArray(Charsets.US_ASCII) + byteArrayOf(0)
 
@@ -99,7 +100,7 @@ private fun ed25519RawKeyMaterial(keyPair: KeyPair): Pair<ByteArray, ByteArray> 
     return params.encoded to params.generatePublicKey().encoded
 }
 
-private fun opensshV1PrivateKeyPem(keyPair: KeyPair): String {
+private fun opensshV1PrivateKeyPem(keyPair: KeyPair, comment: String): String {
     val (seed, rawPublic) = ed25519RawKeyMaterial(keyPair)
     val publicKeyBlob = Buffer.PlainBuffer().putPublicKey(keyPair.public).compactData
 
@@ -111,7 +112,7 @@ private fun opensshV1PrivateKeyPem(keyPair: KeyPair): String {
             .putString("ssh-ed25519")
             .putString(rawPublic)
             .putString(seed + rawPublic)
-            .putString(OPENSSH_V1_COMMENT)
+            .putString(comment)
     val unpaddedLength = privateSection.compactData.size
     val paddingLength =
         (OPENSSH_V1_CIPHER_BLOCK_SIZE - unpaddedLength % OPENSSH_V1_CIPHER_BLOCK_SIZE) % OPENSSH_V1_CIPHER_BLOCK_SIZE

@@ -18,6 +18,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -28,7 +29,12 @@ import io.github.lordofpolls.shellwave.ssh.SessionStatus
 import java.util.Locale
 
 /** Not SessionSummary: that owns a live connection. */
-data class SessionChipModel(val id: Long, val name: String, val status: SessionStatus)
+data class SessionChipModel(
+    val id: Long,
+    val name: String,
+    val status: SessionStatus,
+    val agentForwarding: Boolean = false,
+)
 
 /**
  * The terminal's top strip: tap switches session, long-press closes, a trailing `+` opens Hosts as
@@ -111,7 +117,7 @@ private fun SessionChip(
                     selected = isSelected
                     // Colour is invisible to TalkBack, so without this the chip announces a
                     // session's name and selection state but never its condition.
-                    stateDescription = word
+                    stateDescription = if (session.agentForwarding) "$word, agent forwarded" else word
                 },
         shape = MaterialTheme.shapes.small,
         color = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -129,6 +135,8 @@ private fun SessionChip(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            // Silent here: the chip's stateDescription already says it, and the merged label would repeat it.
+            if (session.agentForwarding) AgentMarker(Modifier.clearAndSetSemantics {})
         }
     }
 }

@@ -24,3 +24,13 @@ fun keyDeleteBlockReason(keyName: String, usedByCount: Int): String? {
     val hosts = if (usedByCount == 1) "host" else "hosts"
     return "Can't delete $keyName: still used by $usedByCount $hosts. Switch the host's login to another credential first."
 }
+
+/**
+ * Never a block: a forwarding id that outlives its key fails closed, because it is simply not
+ * offered at connect and ids are never reused.
+ */
+fun keyDeleteForwardingWarning(forwardedBy: List<HostEntity>): String? {
+    if (forwardedBy.isEmpty()) return null
+    val names = forwardedBy.joinToString(", ") { it.label ?: it.hostname }
+    return "Forwarded to $names. They'll stop offering it."
+}

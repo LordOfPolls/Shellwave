@@ -119,6 +119,9 @@ constructor(
      * The keyboard-interactive refusal applies to every hop, jump hosts included, and is checked before
      * anything is connected - a bastion needing a prompt is exactly as unanswerable as the target
      * needing one, and finding out on hop 2 would mean hanging mid-chain.
+     *
+     * It never forwards an agent: it takes no keys and dials a client with no agent opener, so there
+     * is no refusal to write.
      */
     suspend fun runCaptureBackground(
         runLabel: String,
@@ -255,6 +258,8 @@ internal class BackgroundKnownHostsVerifier(file: File) : OpenSSHKnownHosts(file
  */
 internal suspend fun execAndCollect(ssh: SSHClient, command: String): CaptureResult =
     coroutineScope {
+        // Must stay the plain call: the forwarding session subclass here would extend agent
+        // forwarding into the headless runner.
         val session = ssh.startSession()
         try {
             val cmd = session.exec(command)

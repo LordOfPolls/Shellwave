@@ -64,4 +64,16 @@ data class HostEntity(
     /** Manual-order slot within this host's section. Null until manual order is seeded. */
     val position: Int? = null,
     val connectCount: Int = 0,
+    val agentForwarding: Boolean = false,
+    /**
+     * JSON array of credential ids, one column and no join table: ids come from AUTOINCREMENT so one is
+     * never reused, and an id whose key was deleted is simply not offered. See [decodeAgentKeyIds].
+     */
+    val agentKeyIdsJson: String = "[]",
 )
+
+fun encodeAgentKeyIds(ids: List<Long>): String = ids.joinToString(",", "[", "]")
+
+/** Unparseable entries are dropped, which fails closed: a key that cannot be named is not offered. */
+fun decodeAgentKeyIds(json: String): List<Long> =
+    json.trim().removeSurrounding("[", "]").split(',').mapNotNull { it.trim().toLongOrNull() }

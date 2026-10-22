@@ -331,6 +331,35 @@ class MigrationTest {
         }
     }
 
+    @Test
+    fun migrate10To11LeavesAgentForwardingOffForExistingHosts() {
+        helper.createDatabase(TEST_DB, 10).use { db ->
+            val values =
+                ContentValues().apply {
+                    put("label", "prod-db")
+                    put("hostname", "10.0.2.2")
+                    put("port", 2222)
+                    put("username", "test")
+                    put("credentialId", 1L)
+                    putNull("lastConnectedAt")
+                    put("createdAt", 1000L)
+                    put("resilientSession", 0)
+                    put("connectCount", 0)
+                }
+            db.insert("hosts", android.database.sqlite.SQLiteDatabase.CONFLICT_FAIL, values)
+        }
+
+        val migrated = helper.runMigrationsAndValidate(TEST_DB, 11, true, MIGRATION_10_11)
+
+        migrated.query("SELECT hostname, agentForwarding, agentKeyIdsJson FROM hosts").use { cursor ->
+            assertEquals(1, cursor.count)
+            assertEquals(true, cursor.moveToFirst())
+            assertEquals("10.0.2.2", cursor.getString(cursor.getColumnIndexOrThrow("hostname")))
+            assertEquals(0, cursor.getInt(cursor.getColumnIndexOrThrow("agentForwarding")))
+            assertEquals("[]", cursor.getString(cursor.getColumnIndexOrThrow("agentKeyIdsJson")))
+        }
+    }
+
     companion object {
         private const val TEST_DB = "migration-test"
     }

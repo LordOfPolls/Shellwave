@@ -28,6 +28,7 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
+import java.security.KeyPairGenerator
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -51,10 +52,16 @@ private class FakeContext(private val tempDir: File) : ContextWrapper(null) {
  * which has no working implementation on the plain JVM this test runs on (no Robolectric, no
  * kotlinx-coroutines-test in this project - see SessionAlerts.kt's `open` markers).
  */
-private class NoopSessionAlerts(context: Context) : SessionAlerts(context) {
+private class NoopSessionAlerts(
+    context: Context,
+    val notices: MutableList<String> = mutableListOf(),
+) : SessionAlerts(context) {
     override fun dropped(sessionId: Long, label: String) = Unit
     override fun reconnected(sessionId: Long, label: String) = Unit
     override fun forget(sessionId: Long) = Unit
+    override fun notice(sessionId: Long, label: String, message: String) {
+        notices += message
+    }
 }
 
 private class EmptyHostDao : HostDao {
@@ -152,6 +159,9 @@ private class FakeSshConnection(
     @Volatile
     var connectStarted = false
 
+    @Volatile
+    var agentKeysSeen: List<AgentKey>? = null
+
     override suspend fun connect(
         host: String,
         port: Int,
@@ -165,7 +175,9 @@ private class FakeSshConnection(
         cursorBlink: Boolean,
         transcriptRows: Int?,
         hops: List<ProxyHop>,
+        agentKeys: List<AgentKey>,
     ) {
+        agentKeysSeen = agentKeys
         connectStarted = true
         connectGate.await()
         connectError?.let { throw it }
@@ -182,6 +194,8 @@ private class FakeSshConnection(
 
 class SessionManagerTest {
 
+    private val notices = CopyOnWriteArrayList<String>()
+
     private fun newManager(tempDir: File, hostDao: EmptyHostDao = EmptyHostDao()): SessionManager {
         val context = FakeContext(tempDir)
         return SessionManager(
@@ -192,7 +206,7 @@ class SessionManagerTest {
             FakePortForwardDao(),
             HostVerificationGate(),
             KeyboardInteractiveGate(),
-            NoopSessionAlerts(context),
+            NoopSessionAlerts(context, notices),
         )
     }
 
@@ -221,6 +235,142 @@ class SessionManagerTest {
             Long::class.javaPrimitiveType,
             Boolean::class.javaPrimitiveType,
         ).apply { isAccessible = true }.invoke(manager, id, clean)
+    }
+
+    @Test
+    fun agentKeys_surviveADropAndFailedRetriesButNotAFailedFirstConnect() {
+        val tempDir = createTempDir()
+        val manager = newManager(tempDir)
+        val connections = CopyOnWriteArrayList<FakeSshConnection>()
+        manager.connectionFactory = { _ ->
+            FakeSshConnection(
+                CoroutineScope(SupervisorJob() + Dispatchers.Default),
+                FakeContext(tempDir),
+            ).also { connections += it }
+        }
+        val pair = KeyPairGenerator.getInstance("Ed25519").generateKeyPair()
+        val keys = listOf(AgentKey(pair.private, pair.public, "laptop"))
+
+        fun awaitConnect(index: Int) =
+            waitUntil(message = "timed out waiting for connect() #$index") {
+                connections.size > index && connections[index].connectStarted
+            }
+
+        fun failConnect(index: Int, id: Long) {
+            connections[index].connectError = java.io.IOException("boom")
+            connections[index].connectGate.complete(Unit)
+            waitUntil(message = "timed out waiting for FAILED") { summaryOf(manager, id).status == SessionStatus.FAILED }
+        }
+
+        val keptId = manager.openSession(spec(), keys)
+        manager.beginConnectIfNeeded(keptId, 80, 24, 8, 16)
+        awaitConnect(0)
+        assertEquals(1, connections[0].agentKeysSeen?.size)
+        connections[0].connectGate.complete(Unit)
+        waitUntil(message = "timed out waiting for CONNECTED") { summaryOf(manager, keptId).status == SessionStatus.CONNECTED }
+        handleDisconnected(manager, keptId, clean = true)
+
+        manager.reconnectNow(keptId)
+        awaitConnect(1)
+        assertEquals(1, connections[1].agentKeysSeen?.size)
+        failConnect(1, keptId)
+        assertFalse(summaryOf(manager, keptId).error!!.contains(AGENT_OFF_FOR_TAB))
+        manager.reconnectNow(keptId)
+        awaitConnect(2)
+        assertEquals(1, connections[2].agentKeysSeen?.size)
+        assertTrue(notices.isEmpty())
+
+        val failedId = manager.openSession(spec(), keys)
+        manager.beginConnectIfNeeded(failedId, 80, 24, 8, 16)
+        awaitConnect(3)
+        failConnect(3, failedId)
+        assertTrue(summaryOf(manager, failedId).error!!.contains(AGENT_OFF_FOR_TAB))
+        manager.reconnectNow(failedId)
+        awaitConnect(4)
+        assertEquals(0, connections[4].agentKeysSeen?.size)
+        assertTrue(notices.isEmpty())
+    }
+
+    private class Forwarding(val manager: SessionManager, val id: Long, val connection: FakeSshConnection)
+
+    private fun openForwarding(keys: List<AgentKey>, beforeConnected: (SessionManager, Long) -> Unit = { _, _ -> }): Forwarding {
+        val tempDir = createTempDir()
+        val manager = newManager(tempDir)
+        var fake: FakeSshConnection? = null
+        manager.connectionFactory = { _ ->
+            FakeSshConnection(CoroutineScope(SupervisorJob() + Dispatchers.Default), FakeContext(tempDir)).also { fake = it }
+        }
+        val id = manager.openSession(spec(), keys)
+        manager.beginConnectIfNeeded(id, 80, 24, 8, 16)
+        waitUntil(message = "timed out waiting for connect()") { fake?.connectStarted == true }
+        beforeConnected(manager, id)
+        fake!!.connectGate.complete(Unit)
+        waitUntil(message = "timed out waiting for CONNECTED") { summaryOf(manager, id).status == SessionStatus.CONNECTED }
+        return Forwarding(manager, id, fake!!)
+    }
+
+    private fun oneKey(): List<AgentKey> {
+        val pair = KeyPairGenerator.getInstance("Ed25519").generateKeyPair()
+        return listOf(AgentKey(pair.private, pair.public, "laptop"))
+    }
+
+    @Test
+    fun agentMarker_showsOnlyForAConnectedSessionThatIsReallyForwarding() {
+        val live = openForwarding(oneKey())
+        assertTrue(summaryOf(live.manager, live.id).agentForwarding)
+
+        handleDisconnected(live.manager, live.id, clean = true)
+        assertFalse(summaryOf(live.manager, live.id).agentForwarding)
+    }
+
+    @Test
+    fun agentMarker_returnsWhenAReconnectIsNotRefused() {
+        val tempDir = createTempDir()
+        val manager = newManager(tempDir)
+        val connections = CopyOnWriteArrayList<FakeSshConnection>()
+        manager.connectionFactory = { _ ->
+            FakeSshConnection(CoroutineScope(SupervisorJob() + Dispatchers.Default), FakeContext(tempDir))
+                .also { connections += it }
+        }
+        val id = manager.openSession(spec(), oneKey())
+
+        fun connect(index: Int, refuse: Boolean) {
+            waitUntil(message = "timed out waiting for connect() #$index") {
+                connections.size > index && connections[index].connectStarted
+            }
+            if (refuse) manager.handleAgentForwardingRefused(id)
+            connections[index].connectGate.complete(Unit)
+            waitUntil(message = "timed out waiting for CONNECTED") { summaryOf(manager, id).status == SessionStatus.CONNECTED }
+        }
+
+        manager.beginConnectIfNeeded(id, 80, 24, 8, 16)
+        connect(0, refuse = true)
+        assertFalse(summaryOf(manager, id).agentForwarding)
+        handleDisconnected(manager, id, clean = true)
+        manager.reconnectNow(id)
+        connect(1, refuse = false)
+        assertTrue(summaryOf(manager, id).agentForwarding)
+    }
+
+    @Test
+    fun agentMarker_isAbsentWhenTheServerRefusedOrThereAreNoKeys() {
+        val refused = openForwarding(oneKey()) { manager, id -> manager.handleAgentForwardingRefused(id) }
+        assertFalse(summaryOf(refused.manager, refused.id).agentForwarding)
+
+        val none = openForwarding(emptyList())
+        assertFalse(summaryOf(none.manager, none.id).agentForwarding)
+    }
+
+    @Test
+    fun agentForwardingRefusalIsNoticedOncePerSession() {
+        val tempDir = createTempDir()
+        val manager = newManager(tempDir)
+        manager.connectionFactory = { _ ->
+            FakeSshConnection(CoroutineScope(SupervisorJob() + Dispatchers.Default), FakeContext(tempDir))
+        }
+        val id = manager.openSession(spec())
+        repeat(2) { manager.handleAgentForwardingRefused(id) }
+        assertEquals(1, notices.size)
     }
 
     /**

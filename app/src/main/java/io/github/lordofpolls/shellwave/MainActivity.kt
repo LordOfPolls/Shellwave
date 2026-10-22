@@ -47,6 +47,7 @@ import androidx.fragment.app.FragmentActivity
 import dagger.hilt.android.AndroidEntryPoint
 import io.github.lordofpolls.shellwave.core.billing.SupporterBilling
 import io.github.lordofpolls.shellwave.core.billing.SupporterState
+import io.github.lordofpolls.shellwave.core.crypto.CredentialType
 import io.github.lordofpolls.shellwave.core.crypto.CredentialVault
 import io.github.lordofpolls.shellwave.core.crypto.isBiometricCancellation
 import io.github.lordofpolls.shellwave.core.db.dao.ColorSchemeDao
@@ -58,7 +59,9 @@ import io.github.lordofpolls.shellwave.core.db.dao.PortForwardDao
 import io.github.lordofpolls.shellwave.core.db.dao.ScriptDao
 import io.github.lordofpolls.shellwave.core.db.dao.ScriptRunDao
 import io.github.lordofpolls.shellwave.core.db.dao.TerminalProfileDao
+import io.github.lordofpolls.shellwave.core.db.entities.CredentialEntity
 import io.github.lordofpolls.shellwave.core.db.entities.HostEntity
+import io.github.lordofpolls.shellwave.core.db.entities.decodeAgentKeyIds
 import io.github.lordofpolls.shellwave.core.net.HostReachabilityProbe
 import io.github.lordofpolls.shellwave.core.net.sendMagicPacket
 import io.github.lordofpolls.shellwave.core.prefs.AppearancePreferences
@@ -67,6 +70,10 @@ import io.github.lordofpolls.shellwave.core.prefs.ReachabilityPreferences
 import io.github.lordofpolls.shellwave.core.prefs.SupportPreferences
 import io.github.lordofpolls.shellwave.core.prefs.rememberPrefState
 import io.github.lordofpolls.shellwave.core.prefs.ThemeMode
+import io.github.lordofpolls.shellwave.core.ui.AgentConsentRequest
+import io.github.lordofpolls.shellwave.core.ui.agentConsentRequestSaver
+import io.github.lordofpolls.shellwave.core.ui.AgentForwardingDialog
+import io.github.lordofpolls.shellwave.core.ui.offeredAgentKeys
 import io.github.lordofpolls.shellwave.core.ui.HostVerificationDialog
 import io.github.lordofpolls.shellwave.core.ui.KeyboardInteractiveDialog
 import io.github.lordofpolls.shellwave.core.ui.QuickConnectPasswordDialog
@@ -102,6 +109,8 @@ import io.github.lordofpolls.shellwave.feature.settings.KnownHostsScreen
 import io.github.lordofpolls.shellwave.feature.settings.LicenseScreen
 import io.github.lordofpolls.shellwave.feature.settings.SettingsScreen
 import io.github.lordofpolls.shellwave.feature.settings.TerminalSettingsScreen
+import io.github.lordofpolls.shellwave.service.SessionAlerts
+import io.github.lordofpolls.shellwave.ssh.AgentKey
 import io.github.lordofpolls.shellwave.ssh.AuthMethod
 import io.github.lordofpolls.shellwave.ssh.ConnectionSpec
 import io.github.lordofpolls.shellwave.ssh.HostVerificationGate
@@ -111,6 +120,7 @@ import io.github.lordofpolls.shellwave.ssh.KeyboardInteractiveGate
 import io.github.lordofpolls.shellwave.ssh.ScriptRunner
 import io.github.lordofpolls.shellwave.ssh.SessionManager
 import io.github.lordofpolls.shellwave.ssh.SessionStatus
+import io.github.lordofpolls.shellwave.ssh.resolveAgentKeys
 import io.github.lordofpolls.shellwave.ssh.resolveConnectionSpec
 import io.github.lordofpolls.shellwave.terminal.DEFAULT_COLOR_SCHEME
 import io.github.lordofpolls.shellwave.ui.design.ShellwaveTheme
@@ -175,6 +185,8 @@ private data class SavedHostOffer(
     val target: QuickConnectTarget,
     val matches: List<HostEntity>,
 )
+
+private data class PendingAgentConsent(val host: HostEntity, val keys: List<CredentialEntity>)
 
 /**
  * A quick-connect password the user asked to keep, held until its session authenticates or fails.
@@ -258,6 +270,8 @@ class MainActivity : FragmentActivity() {
     lateinit var reachabilityProbe: HostReachabilityProbe
 
     @Inject lateinit var supporterBilling: SupporterBilling
+
+    @Inject lateinit var sessionAlerts: SessionAlerts
 
     private val requestLocalNetworkPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
@@ -392,6 +406,13 @@ class MainActivity : FragmentActivity() {
                 // the attempt it belongs to, and saved instance state would put a plaintext
                 // credential somewhere the vault does not control.
                 var pendingCredentialSave by remember { mutableStateOf<PendingCredentialSave?>(null) }
+                // Only ids are saved, so the Activity being recreated (fold, rotation) does not eat
+                // the prompt. The host and keys are re-read from the database on restore and the
+                // user answers the dialog again; the saver drops it after process death.
+                var agentConsentRequest by rememberSaveable(stateSaver = agentConsentRequestSaver()) {
+                    mutableStateOf<AgentConsentRequest?>(null)
+                }
+                var pendingAgentConsent by remember { mutableStateOf<PendingAgentConsent?>(null) }
                 // Set when a specific session is tapped, rather than always landing on the first
                 // one.
                 var targetSessionId by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -424,9 +445,11 @@ class MainActivity : FragmentActivity() {
                 // Recording the id matters: leaving `targetSessionId` on whatever was last tapped
                 // means connecting to a second host opens the first, with the second running unseen
                 // behind it.
-                fun openSession(spec: ConnectionSpec) {
-                    targetSessionId = sessionManager.openSession(spec)
+                fun openSession(spec: ConnectionSpec, agentKeys: List<AgentKey> = emptyList()): Long {
+                    val id = sessionManager.openSession(spec, agentKeys)
+                    targetSessionId = id
                     openTerminal()
+                    return id
                 }
 
                 val scriptRunController =
@@ -450,8 +473,14 @@ class MainActivity : FragmentActivity() {
                  * Hoisted out of `HomeScreen`'s `onConnectSaved` so the quick-connect offer runs the same path. A
                  * near-copy would drift - quietly losing proxy hops, say - and a host that connects from one button
                  * and fails from the other is the result.
+                 *
+                 * Skips the agent consent prompt: only [connectSaved] and the dialog's answers may call it.
                  */
-                fun connectSaved(host: HostEntity) {
+                fun connectSavedResolved(
+                    host: HostEntity,
+                    approvedKeys: List<CredentialEntity> = emptyList(),
+                    notice: String? = null,
+                ) {
                     scope.launch {
                         try {
                             val spec = resolveConnectionSpec(
@@ -460,13 +489,65 @@ class MainActivity : FragmentActivity() {
                                 credentialVault,
                                 this@MainActivity
                             )
-                            openSession(spec)
+                            // A key that cannot be unsealed costs the forwarding, never the connection.
+                            val agentKeys = try {
+                                resolveAgentKeys(approvedKeys, credentialVault, this@MainActivity)
+                            } catch (e: Exception) {
+                                if (!e.isBiometricCancellation()) scriptRunController.reportError(
+                                    "Couldn't unlock a key to forward, so this connection has no agent forwarding: " +
+                                            (e.message ?: "unknown error")
+                                )
+                                emptyList()
+                            }
+                            val id = openSession(spec, agentKeys)
+                            notice?.let { sessionAlerts.notice(id, spec.hostname, it) }
                         } catch (e: Exception) {
-                            // Same rationale as the openHostRequested LaunchedEffect above.
+                            // A cancelled biometric prompt is the user changing their mind; only a
+                            // genuine failure (lockout, no credential) gets surfaced.
                             if (!e.isBiometricCancellation()) scriptRunController.reportError(
                                 e.message ?: "Could not unlock this host's saved credential"
                             )
                         }
+                    }
+                }
+
+                // A selected key that no longer exists is not offered, so a deleted key can never be
+                // forwarded.
+                fun connectSaved(host: HostEntity) {
+                    scope.launch {
+                        val offered = offeredAgentKeys(host, decodeAgentKeyIds(host.agentKeyIdsJson), credentialDao::getById)
+                        if (offered.isEmpty()) {
+                            // Forwarding is on but nothing can be offered: connect, but say so, or the
+                            // switch reads as working.
+                            val name = host.label?.takeIf { it.isNotBlank() } ?: host.hostname
+                            connectSavedResolved(
+                                host,
+                                notice = "No keys to forward for $name. Pick one in host settings."
+                                    .takeIf { host.agentForwarding },
+                            )
+                        } else {
+                            agentConsentRequest = AgentConsentRequest(host.id, offered.map { it.id })
+                            pendingAgentConsent = PendingAgentConsent(host, offered)
+                        }
+                    }
+                }
+
+                fun clearAgentConsent() {
+                    agentConsentRequest = null
+                    pendingAgentConsent = null
+                }
+
+                LaunchedEffect(Unit) {
+                    val request = agentConsentRequest
+                    if (request == null || pendingAgentConsent != null) return@LaunchedEffect
+                    val host = hostDao.getById(request.hostId)
+                    val offered = offeredAgentKeys(host, request.keyIds, credentialDao::getById)
+                    // A tap on another host while this was reading owns the prompt now.
+                    if (agentConsentRequest != request || pendingAgentConsent != null) return@LaunchedEffect
+                    if (host == null || offered.isEmpty()) {
+                        agentConsentRequest = null
+                    } else {
+                        pendingAgentConsent = PendingAgentConsent(host, offered)
                     }
                 }
 
@@ -595,24 +676,7 @@ class MainActivity : FragmentActivity() {
                 val openHostRequestedState by openHostRequested
                 LaunchedEffect(openHostRequestedState) {
                     if (openHostRequestedState >= 0) {
-                        val host = hostDao.getById(openHostRequestedState)
-                        if (host != null) {
-                            try {
-                                val spec = resolveConnectionSpec(
-                                    host,
-                                    hostDao,
-                                    credentialVault,
-                                    this@MainActivity
-                                )
-                                openSession(spec)
-                            } catch (e: Exception) {
-                                // A cancelled biometric prompt is the user changing their mind;
-                                // only a genuine failure (lockout, no credential) gets surfaced.
-                                if (!e.isBiometricCancellation()) scriptRunController.reportError(
-                                    e.message ?: "Could not unlock this host's saved credential"
-                                )
-                            }
-                        }
+                        hostDao.getById(openHostRequestedState)?.let { connectSaved(it) }
                         openHostRequested.value = -1L
                     }
                 }
@@ -744,6 +808,7 @@ class MainActivity : FragmentActivity() {
                                         hostDao = hostDao,
                                         groupDao = groupDao,
                                         credentialVault = credentialVault,
+                                        credentialDao = credentialDao,
                                         keyEnrolment = keyEnrolment,
                                         terminalProfileDao = terminalProfileDao,
                                         colorSchemeDao = colorSchemeDao,
@@ -1056,6 +1121,21 @@ class MainActivity : FragmentActivity() {
                                     pendingQuickConnect = offer.target
                                 },
                                 onCancel = { pendingSavedHostOffer = null },
+                            )
+                        }
+
+                        pendingAgentConsent?.let { consent ->
+                            AgentForwardingDialog(
+                                hostName = consent.host.label?.takeIf { it.isNotBlank() } ?: consent.host.hostname,
+                                keys = consent.keys,
+                                onForward = { approved ->
+                                    clearAgentConsent()
+                                    connectSavedResolved(consent.host, approved)
+                                },
+                                onWithoutForwarding = {
+                                    clearAgentConsent()
+                                    connectSavedResolved(consent.host)
+                                },
                             )
                         }
 

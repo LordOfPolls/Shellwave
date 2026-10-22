@@ -80,6 +80,7 @@ fun SessionCard(
                     modifier = Modifier.weight(1f),
                 )
                 StatusMarker(summary.status)
+                if (summary.agentForwarding) AgentMarker()
                 if (uptime != null) {
                     // Tabular figures keep a column of uptimes in step as the digits tick over.
                     MachineText(
