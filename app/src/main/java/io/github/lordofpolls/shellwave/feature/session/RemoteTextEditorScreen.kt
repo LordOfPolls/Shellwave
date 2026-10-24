@@ -7,9 +7,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Check
@@ -295,7 +299,14 @@ fun RemoteTextEditorScreen(
 
             loaded == null -> EmptyState(message = loadFailure.orEmpty(), modifier = Modifier.fillMaxSize())
 
-            else -> AndroidView(factory = { editor }, modifier = Modifier.fillMaxSize())
+            // This screen sits on the sub-stack, so the Scaffold hands it the whole window below
+            // the status bar: the editor has to pad for the keyboard and nav bar itself.
+            else -> AndroidView(
+                factory = { editor },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom)),
+            )
         }
     }
 
