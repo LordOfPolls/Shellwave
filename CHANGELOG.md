@@ -1,6 +1,25 @@
 # Changelog
 
 
+## 1.9.1 - 2026-10-24
+
+### New
+- Group, colour and reorder saved hosts
+- Manage SSH keys independently of hosts
+- Forward the SSH agent with per-host keys and connect-time consent
+- Edit remote text files in the SFTP browser
+
+### Fixed
+- Keep the keyboard and nav bar off the remote text editor
+
+### Internal
+- Bump sshj to 0.41.2
+
+### Documentation
+- Caption and reorder the screenshots, add a feature graphic
+
+[Every commit in this release](https://github.com/LordOfPolls/Shellwave/compare/1.8.0...1.9.1)
+
 ## 1.8.0 - 2026-10-18
 
 ### New
