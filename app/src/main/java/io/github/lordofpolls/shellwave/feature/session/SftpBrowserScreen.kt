@@ -22,6 +22,7 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.DriveFileRenameOutline
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
@@ -75,8 +76,10 @@ import java.util.Date
 fun SftpBrowserScreen(
     connection: SshConnection,
     onBack: () -> Unit,
+    onEdit: (RemoteEntry) -> Unit,
     modifier: Modifier = Modifier,
     startPath: String = ".",
+    onPathChange: (String) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val fileTransferController = rememberFileTransferController()
@@ -118,6 +121,7 @@ fun SftpBrowserScreen(
     }
 
     LaunchedEffect(path) {
+        onPathChange(path)
         // Not the suspending scrollToItem: the LazyColumn isn't composed yet while the
         // full-screen spinner is up (it's only in the `else` branch below), so scrollToItem
         // would await a scroll mutex that never gets attached and hang forever.
@@ -230,6 +234,7 @@ fun SftpBrowserScreen(
                                             if (entry.path in selected) selected - entry.path else selected + entry.path
 
                                     entry.isDirectory -> path = entry.path
+                                    else -> onEdit(entry)
                                 }
                             },
                             onLongClick = { selected = selected + entry.path },
@@ -243,6 +248,10 @@ fun SftpBrowserScreen(
                             onDelete = {
                                 menuFor = null
                                 deleting = entry
+                            },
+                            onEdit = {
+                                menuFor = null
+                                onEdit(entry)
                             },
                             onDownload = {
                                 menuFor = null
@@ -437,6 +446,7 @@ private fun SftpEntryRow(
     onDismissMenu: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
+    onEdit: () -> Unit,
     onDownload: () -> Unit,
 ) {
     Row(
@@ -484,6 +494,11 @@ private fun SftpEntryRow(
                         onClick = onRename,
                     )
                     if (!entry.isDirectory) {
+                        DropdownMenuItem(
+                            text = { Text("Edit") },
+                            leadingIcon = { Icon(Icons.Outlined.Edit, contentDescription = null) },
+                            onClick = onEdit,
+                        )
                         DropdownMenuItem(
                             text = { Text("Download") },
                             leadingIcon = {

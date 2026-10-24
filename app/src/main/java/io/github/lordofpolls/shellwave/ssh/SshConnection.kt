@@ -36,14 +36,18 @@ import net.schmizz.sshj.connection.channel.forwarded.RemotePortForwarder
 import net.schmizz.sshj.connection.channel.forwarded.SocketForwardingConnectListener
 import net.schmizz.sshj.sftp.FileAttributes
 import net.schmizz.sshj.sftp.FileMode
+import net.schmizz.sshj.sftp.OpenMode
 import net.schmizz.sshj.transport.verification.HostKeyVerifier
 import net.schmizz.sshj.xfer.FileTransfer
 import net.schmizz.sshj.xfer.TransferListener
 import java.io.Closeable
+import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.io.InputStream
 import java.io.OutputStream
 import java.net.InetSocketAddress
 import java.net.ServerSocket
+import java.util.EnumSet
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -949,6 +953,78 @@ open class SshConnection(
                 Result.failure(e)
             }
         }
+
+    suspend fun readRemoteText(path: String): Result<RemoteText> =
+        withContext(Dispatchers.IO) {
+            try {
+                ssh.newSFTPClient().use { sftp ->
+                    val attrs = sftp.stat(path)
+                    // Anything but a regular file: a directory, but also /dev/zero or a FIFO, whose
+                    // stat size is 0 and whose read never ends.
+                    if (attrs.type != FileMode.Type.REGULAR) throw RemoteFileNotText("this isn't a regular file")
+                    if (attrs.size > MAX_REMOTE_TEXT_BYTES) throw RemoteFileNotText("the file is larger than 2 MiB")
+                    val bytes =
+                        sftp.open(path).use { file ->
+                            file.ReadAheadRemoteFileInputStream(16).use { readAtMost(it, MAX_REMOTE_TEXT_BYTES) }
+                        }
+                    Result.success(RemoteTextCodec.decode(bytes, attrs.mtime))
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: IOException) {
+                Result.failure(e)
+            } catch (e: IllegalStateException) {
+                Result.failure(e)
+            }
+        }
+
+    /**
+     * Writes through the path in place (`TRUNC`, not temp-and-rename) so mode, owner, hard links and a
+     * symlink all survive. The cost is that a connection drop mid-write leaves a truncated file, which
+     * is why the editor keeps the buffer and leaves Save enabled on failure.
+     *
+     * [expectedMtime] of -1 skips the conflict check.
+     */
+    suspend fun writeRemoteText(path: String, bytes: ByteArray, expectedMtime: Long): Result<Long> =
+        withContext(Dispatchers.IO) {
+            try {
+                ssh.newSFTPClient().use { sftp ->
+                    if (expectedMtime != -1L) {
+                        val before = sftp.stat(path).mtime
+                        if (before != expectedMtime) return@use Result.failure(RemoteFileChanged(before))
+                    }
+                    sftp.open(path, EnumSet.of(OpenMode.WRITE, OpenMode.CREAT, OpenMode.TRUNC)).use { file ->
+                        // One write() call is one SFTP packet, and OpenSSH drops the connection on
+                        // anything over 256 KiB - after TRUNC has already emptied the file.
+                        file.RemoteFileOutputStream(0L, 16).use { bytes.inputStream().copyTo(it, 32 * 1024) }
+                    }
+                    val after = sftp.stat(path)
+                    if (after.size != bytes.size.toLong()) {
+                        Result.failure(IOException("Saved, but the server now reports ${after.size} bytes for a ${bytes.size}-byte file - the write looks incomplete"))
+                    } else {
+                        Result.success(after.mtime)
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: IOException) {
+                Result.failure(e)
+            } catch (e: IllegalStateException) {
+                Result.failure(e)
+            }
+        }
+
+    /** The stat size is advisory: the file can grow between stat and read. */
+    private fun readAtMost(input: InputStream, limit: Long): ByteArray {
+        val out = ByteArrayOutputStream()
+        val buffer = ByteArray(32 * 1024)
+        while (true) {
+            val n = input.read(buffer)
+            if (n < 0) return out.toByteArray()
+            if (out.size() + n > limit) throw RemoteFileNotText("the file is larger than 2 MiB")
+            out.write(buffer, 0, n)
+        }
+    }
 
     /**
      * Closes [activeTransfer], the SFTP client actually doing the copy, which aborts its blocked

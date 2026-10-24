@@ -1,0 +1,45 @@
+{
+  "languages": [
+    {
+      "grammar": "textmate/shellscript/shell-unix-bash.tmLanguage.json",
+      "name": "shellscript",
+      "scopeName": "source.shell",
+      "languageConfiguration": "textmate/shellscript/language-configuration.json"
+    },
+    {
+      "grammar": "textmate/python/MagicPython.tmLanguage.json",
+      "name": "python",
+      "scopeName": "source.python",
+      "languageConfiguration": "textmate/python/language-configuration.json"
+    },
+    {
+      "grammar": "textmate/yaml/yaml.tmLanguage.json",
+      "name": "yaml",
+      "scopeName": "source.yaml",
+      "languageConfiguration": "textmate/yaml/language-configuration.json"
+    },
+    {
+      "grammar": "textmate/json/JSON.tmLanguage.json",
+      "name": "json",
+      "scopeName": "source.json",
+      "languageConfiguration": "textmate/json/language-configuration.json"
+    },
+    {
+      "grammar": "textmate/toml/toml.tmLanguage.json",
+      "name": "toml",
+      "scopeName": "source.toml",
+      "languageConfiguration": "textmate/toml/language-configuration.json"
+    },
+    {
+      "grammar": "textmate/ini/ini.tmLanguage.json",
+      "name": "ini",
+      "scopeName": "source.ini"
+    },
+    {
+      "grammar": "textmate/docker/docker.tmLanguage.json",
+      "name": "dockerfile",
+      "scopeName": "source.dockerfile",
+      "languageConfiguration": "textmate/docker/language-configuration.json"
+    }
+  ]
+}

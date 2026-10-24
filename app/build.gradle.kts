@@ -231,6 +231,9 @@ dependencies {
     implementation(libs.bouncycastle.bcpkix)
     implementation(libs.sshj)
     implementation(libs.slf4j.android)
+    implementation(platform(libs.sora.editor.bom))
+    implementation(libs.sora.editor)
+    implementation(libs.sora.language.textmate)
 
     // A View-system library in an otherwise Compose-only app, for one call site
     // (SchemeHarmonizer.harmonizeColor): material-color-utilities' `Blend.harmonize` ships here,

@@ -99,6 +99,7 @@ import io.github.lordofpolls.shellwave.feature.scripts.ScriptRunDialogs
 import io.github.lordofpolls.shellwave.feature.scripts.ScriptTemplates
 import io.github.lordofpolls.shellwave.feature.scripts.ScriptsScreen
 import io.github.lordofpolls.shellwave.feature.scripts.rememberScriptRunController
+import io.github.lordofpolls.shellwave.feature.session.RemoteTextEditorScreen
 import io.github.lordofpolls.shellwave.feature.session.SessionsListScreen
 import io.github.lordofpolls.shellwave.feature.session.SessionsScreen
 import io.github.lordofpolls.shellwave.feature.session.SftpBrowserScreen
@@ -173,6 +174,8 @@ private sealed class Screen {
     data object ImportSshConfig : Screen()
 
     data class SftpBrowser(val sessionId: Long) : Screen()
+
+    data class RemoteEdit(val sessionId: Long, val path: String) : Screen()
 }
 
 /**
@@ -417,6 +420,8 @@ class MainActivity : FragmentActivity() {
                 // one.
                 var targetSessionId by rememberSaveable { mutableStateOf<Long?>(null) }
                 var browsingSessionId by rememberSaveable { mutableStateOf<Long?>(null) }
+                var editingRemotePath by rememberSaveable { mutableStateOf<String?>(null) }
+                var browsingPath by rememberSaveable { mutableStateOf(".") }
                 val scope = rememberCoroutineScope()
 
                 val summaries by sessionManager.summaries.collectAsState()
@@ -431,6 +436,12 @@ class MainActivity : FragmentActivity() {
                         "license" -> Screen.License
                         "importSshConfig" -> Screen.ImportSshConfig
                         "sftpBrowser" -> browsingSessionId?.let { Screen.SftpBrowser(it) } ?: Screen.Terminal
+                        "remoteEdit" -> {
+                            val sessionId = browsingSessionId
+                            val remotePath = editingRemotePath
+                            if (sessionId != null && remotePath != null) Screen.RemoteEdit(sessionId, remotePath)
+                            else Screen.Terminal
+                        }
                         "terminal" -> Screen.Terminal
                         else ->
                             when (destination) {
@@ -866,6 +877,7 @@ class MainActivity : FragmentActivity() {
                                             )
                                         },
                                         onBrowseFiles = { sessionId, _ ->
+                                            if (sessionId != browsingSessionId) browsingPath = "."
                                             browsingSessionId = sessionId
                                             push("sftpBrowser")
                                         },
@@ -1047,9 +1059,26 @@ class MainActivity : FragmentActivity() {
                                         SftpBrowserScreen(
                                             connection = connection,
                                             onBack = { popBack() },
+                                            onEdit = { entry ->
+                                                editingRemotePath = entry.path
+                                                push("remoteEdit")
+                                            },
                                             modifier = Modifier.weight(1f),
+                                            startPath = browsingPath,
+                                            onPathChange = { browsingPath = it },
                                         )
                                     }
+                                }
+
+                                is Screen.RemoteEdit -> {
+                                    RemoteTextEditorScreen(
+                                        connection = summaries.firstOrNull { it.id == current.sessionId }?.connection,
+                                        sessionId = current.sessionId,
+                                        path = current.path,
+                                        onBack = { popBack() },
+                                        darkTheme = darkTheme,
+                                        modifier = Modifier.weight(1f),
+                                    )
                                 }
 
                                 is Screen.KeyBarLayouts -> {

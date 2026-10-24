@@ -11,6 +11,7 @@ kotlinxSerializationJson = "1.11.0"
 desugarJdkLibs = "2.1.5"
 bouncycastle = "1.85"
 sshj = "0.41.2"
+soraEditor = "0.24.6"
 slf4jAndroid = "1.7.36"
 androidxCore = "1.18.0"
 androidxAnnotation = "1.10.0"
@@ -62,6 +63,9 @@ android-desugar-jdk-libs = { group = "com.android.tools", name = "desugar_jdk_li
 bouncycastle-bcprov = { group = "org.bouncycastle", name = "bcprov-jdk18on", version.ref = "bouncycastle" }
 bouncycastle-bcpkix = { group = "org.bouncycastle", name = "bcpkix-jdk18on", version.ref = "bouncycastle" }
 sshj = { group = "com.hierynomus", name = "sshj", version.ref = "sshj" }
+sora-editor-bom = { group = "io.github.rosemoe", name = "editor-bom", version.ref = "soraEditor" }
+sora-editor = { group = "io.github.rosemoe", name = "editor" }
+sora-language-textmate = { group = "io.github.rosemoe", name = "language-textmate" }
 slf4j-android = { group = "org.slf4j", name = "slf4j-android", version.ref = "slf4jAndroid" }
 json = { group = "org.json", name = "json", version.ref = "json" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }

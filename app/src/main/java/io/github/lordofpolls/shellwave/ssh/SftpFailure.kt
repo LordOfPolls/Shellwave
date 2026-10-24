@@ -3,7 +3,7 @@ package io.github.lordofpolls.shellwave.ssh
 import net.schmizz.sshj.sftp.Response.StatusCode
 import net.schmizz.sshj.sftp.SFTPException
 
-internal enum class SftpOp { List, Rename, Delete, DeleteDir, MakeDir, Upload, Download, Stat }
+internal enum class SftpOp { List, Rename, Delete, DeleteDir, MakeDir, Upload, Download, Stat, Write }
 
 /**
  * OpenSSH collapses most errnos - `ENOTEMPTY`, `EEXIST`, `ENOSPC`, `EDQUOT`, `EISDIR` among them -
@@ -61,7 +61,7 @@ private fun permissionSubject(op: SftpOp, path: String): String =
         SftpOp.Rename, SftpOp.Delete, SftpOp.DeleteDir, SftpOp.MakeDir, SftpOp.Upload ->
             parentDirectoryOf(path)
 
-        SftpOp.List, SftpOp.Download, SftpOp.Stat -> path
+        SftpOp.List, SftpOp.Download, SftpOp.Stat, SftpOp.Write -> path
     }
 
 private fun failureReasonFor(op: SftpOp): String =
@@ -71,7 +71,7 @@ private fun failureReasonFor(op: SftpOp): String =
         SftpOp.Rename ->
             "the server refused; the new name may already exist, or the two paths may be on different filesystems."
 
-        SftpOp.Upload -> "the server refused the write; the disk may be full, over quota, or read-only."
+        SftpOp.Upload, SftpOp.Write -> "the server refused the write; the disk may be full, over quota, or read-only."
         SftpOp.List, SftpOp.Delete, SftpOp.Download, SftpOp.Stat ->
             "the server refused without saying why."
     }

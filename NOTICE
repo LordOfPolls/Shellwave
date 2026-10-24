@@ -103,8 +103,9 @@ so its full text is reproduced per font rather than merely named:
 Third-party libraries (module :app)
 ----------------------------------------
 Compiled into the app as dependencies (see gradle/libs.versions.toml and app/build.gradle.kts),
-each under its own permissive licence, none of which is GPLv3 and none of which requires
-reproducing full licence text here (unlike the OFL fonts above, which do):
+each under its own licence, none of which is GPLv3. The permissive ones don't require
+reproducing full licence text here (unlike the OFL fonts above and the LGPL library below,
+whose full text is in licenses/):
 
   sshj - SSH/SFTP client used for every connection this app makes
     https://github.com/hierynomus/sshj
@@ -119,8 +120,54 @@ reproducing full licence text here (unlike the OFL fonts above, which do):
     https://www.slf4j.org/
     Licence: MIT License
 
+  sora-editor (io.github.rosemoe:editor, language-textmate) - code editor widget behind the
+  remote file editor
+    https://github.com/Rosemoe/sora-editor
+    Licence: LGPL-2.1-or-later - full text in licenses/LGPL-2.1.txt
+
   AndroidX / Jetpack (Compose UI, Material 3, Material 3 Adaptive, Room, Hilt/Dagger, Glance,
   Biometric, Window, Fragment, Activity, Core, Lifecycle) - the UI toolkit and platform libraries
   this app is built on
     https://developer.android.com/jetpack
     Licence: Apache License, Version 2.0
+
+TextMate grammars and themes (module :app)
+----------------------------------------
+  TextMate grammars and colour themes bundled under assets/textmate/, as redistributed in the
+  Visual Studio Code repository (MIT, Copyright (c) Microsoft Corporation); each grammar file
+  keeps its upstream provenance header
+    https://github.com/microsoft/vscode
+    Licence: MIT License
+
+  docker grammar (assets/textmate/docker/), from the Moby project via the same repository
+    (Copyright 2013-2018 Docker, Inc.)
+    https://github.com/moby/moby
+    Licence: Apache License, Version 2.0
+
+  toml grammar (assets/textmate/toml/), from the Taplo project
+    (MIT, Copyright (c) 2020 Ferenc Tamás)
+    https://github.com/tamasfe/taplo
+    Licence: MIT License
+
+  The MIT text below applies to the VS Code and toml entries above, reproduced once:
+
+    Copyright (c) 2015 - present Microsoft Corporation
+    Copyright (c) 2020 Ferenc Tamás
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
