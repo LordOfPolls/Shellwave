@@ -16,6 +16,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -37,11 +38,12 @@ fun ScriptRunDialogs(
     hosts: List<HostEntity>,
     modifier: Modifier = Modifier
 ) {
+    val requestId = controller.pendingRequestId
     controller.pendingHostChoice?.let { script ->
         ChooseHostDialog(
             script = script,
             hosts = hosts,
-            onChoose = { host -> controller.chooseHost(script, host.id) },
+            onChoose = { host -> controller.chooseHost(script, host.id, requestId) },
             onDismiss = controller::dismiss,
         )
     }
@@ -52,19 +54,21 @@ fun ScriptRunDialogs(
             if (script.confirmBeforeRun) {
                 ConfirmRunDialog(
                     script = script,
-                    onConfirm = { controller.confirmRun(script, emptyMap()) },
+                    onConfirm = { controller.confirmRun(script, emptyMap(), requestId) },
                     onDismiss = controller::dismiss
                 )
             } else {
                 // No params and no confirmation required - the tap that opened this already was the
                 // confirmation.
-                controller.confirmRun(script, emptyMap())
+                LaunchedEffect(requestId) {
+                    controller.confirmRun(script, emptyMap(), requestId)
+                }
             }
         } else {
             RunParamsDialog(
                 script = script,
                 params = params,
-                onRun = { values -> controller.confirmRun(script, values) },
+                onRun = { values -> controller.confirmRun(script, values, requestId) },
                 onDismiss = controller::dismiss
             )
         }
