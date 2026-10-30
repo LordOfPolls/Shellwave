@@ -33,7 +33,7 @@ private val SchematicDarkColors = darkColorScheme(
 
 /**
  * Nothing design tokens. Monochrome surfaces and text; the signal red is `primary` so it lands
- * only on live and selected things (FAB, switches, focus rings, the wordmark tilde) while
+ * only on live and selected things (switches, focus rings, the wordmark tilde) while
  * `secondaryContainer` stays grey so the nav pill and tonal buttons don't compete with it.
  */
 private val NothingDarkColors = darkColorScheme(

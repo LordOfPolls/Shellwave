@@ -13,12 +13,14 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -33,7 +35,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.adaptive.currentWindowAdaptiveInfoV2
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -45,6 +49,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
 import androidx.fragment.app.FragmentActivity
 import dagger.hilt.android.AndroidEntryPoint
 import io.github.lordofpolls.shellwave.core.billing.SupporterBilling
@@ -101,6 +106,7 @@ import io.github.lordofpolls.shellwave.feature.scripts.ScriptRunDialogs
 import io.github.lordofpolls.shellwave.feature.scripts.ScriptTemplates
 import io.github.lordofpolls.shellwave.feature.scripts.ScriptsScreen
 import io.github.lordofpolls.shellwave.feature.scripts.rememberScriptRunController
+import io.github.lordofpolls.shellwave.feature.scripts.unlockFailureMessage
 import io.github.lordofpolls.shellwave.feature.session.RemoteTextEditorScreen
 import io.github.lordofpolls.shellwave.feature.session.SessionsListScreen
 import io.github.lordofpolls.shellwave.feature.session.SessionsScreen
@@ -126,7 +132,9 @@ import io.github.lordofpolls.shellwave.ssh.SessionStatus
 import io.github.lordofpolls.shellwave.ssh.resolveAgentKeys
 import io.github.lordofpolls.shellwave.ssh.resolveConnectionSpec
 import io.github.lordofpolls.shellwave.terminal.DEFAULT_COLOR_SCHEME
+import io.github.lordofpolls.shellwave.ui.design.LocalReadableInset
 import io.github.lordofpolls.shellwave.ui.design.ShellwaveTheme
+import io.github.lordofpolls.shellwave.ui.design.readableInset
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.io.File
@@ -318,7 +326,11 @@ class MainActivity : FragmentActivity() {
                         this,
                         Manifest.permission.POST_NOTIFICATIONS
                     ) == PackageManager.PERMISSION_GRANTED
-        if (!notificationsGranted.value) requestNotificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        // Fresh launches only: dismissing the prompt is not a denial, so asking on every recreation
+        // brought it back after each theme change or fold.
+        if (!notificationsGranted.value && savedInstanceState == null) {
+            requestNotificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
 
         setContent {
             // Disk stays the source of truth; rememberPrefState re-reads on any change.
@@ -346,6 +358,17 @@ class MainActivity : FragmentActivity() {
                     ThemeMode.LIGHT -> false
                     ThemeMode.DARK -> true
                 }
+
+            // enableEdgeToEdge() picks the bar icon tint from the system's night mode, which is the
+            // wrong bit whenever the theme-mode setting overrides it: forcing Light under a dark
+            // system left white status-bar icons on a white app. Set via the insets controller, not
+            // the statusBarColor/navigationBarColor setters deprecated in API 35.
+            SideEffect {
+                WindowCompat.getInsetsController(window, window.decorView).apply {
+                    isAppearanceLightStatusBars = !darkTheme
+                    isAppearanceLightNavigationBars = !darkTheme
+                }
+            }
 
             ShellwaveTheme(darkTheme = darkTheme, colourTheme = colourTheme) {
                 // A pair instead of one flat back stack, so a tab switch and a push-within-a-tab
@@ -508,7 +531,8 @@ class MainActivity : FragmentActivity() {
                             } catch (e: Exception) {
                                 if (!e.isBiometricCancellation()) scriptRunController.reportError(
                                     "Couldn't unlock a key to forward, so this connection has no agent forwarding: " +
-                                            (e.message ?: "unknown error")
+                                            (e.message ?: "unknown error"),
+                                    title = "Agent forwarding is off",
                                 )
                                 emptyList()
                             }
@@ -518,7 +542,8 @@ class MainActivity : FragmentActivity() {
                             // A cancelled biometric prompt is the user changing their mind; only a
                             // genuine failure (lockout, no credential) gets surfaced.
                             if (!e.isBiometricCancellation()) scriptRunController.reportError(
-                                e.message ?: "Could not unlock this host's saved credential"
+                                unlockFailureMessage(e),
+                                title = "Couldn't unlock credential",
                             )
                         }
                     }
@@ -582,6 +607,8 @@ class MainActivity : FragmentActivity() {
                 // rendered once at the top of the composition, so a run started anywhere resolves
                 // wherever the user ends up.
                 val hostsForScriptPicker by hostDao.observeAll()
+                    .collectAsState(initial = emptyList())
+                val groupsForScriptPicker by groupDao.observeAll()
                     .collectAsState(initial = emptyList())
 
                 // Null until Settings' first edit inserts a row, in which case SessionsScreen falls
@@ -722,425 +749,441 @@ class MainActivity : FragmentActivity() {
 
                 // Identical either way; only the surrounding chrome differs by width class.
                 val screenContent: @Composable (PaddingValues) -> Unit = { innerPadding ->
-                    Box(modifier = Modifier
+                    BoxWithConstraints(modifier = Modifier
                         .fillMaxSize()
                         .padding(innerPadding)) {
-                        Column(modifier = Modifier.fillMaxSize()) {
-                            val notificationsBannerVisible by notificationsGranted
-                            // Never over the terminal, whose chrome is fixed at two strips - this
-                            // made a third, pushing the grid down. It loses nothing by being
-                            // absent: it is about sessions running in the background, which is not
-                            // what you are looking at.
-                            if (!notificationsBannerVisible && summaries.isNotEmpty() && screen !is Screen.Terminal) {
-                                NotificationsDeniedBanner()
-                            }
-                            when (val current = screen) {
-                                is Screen.Hosts -> {
-                                    val hosts by hostDao.observeAll()
-                                        .collectAsState(initial = emptyList())
-                                    val recents by hostDao.observeRecents()
-                                        .collectAsState(initial = emptyList())
-                                    val scripts by scriptDao.observeAll()
-                                        .collectAsState(initial = emptyList())
-                                    val groups by groupDao.observeAll()
-                                        .collectAsState(initial = emptyList())
-                                    HomeScreen(
-                                        hosts = hosts,
-                                        recents = recents,
-                                        groups = groups,
-                                        onUpdateGroup = { scope.launch { groupDao.update(it) } },
-                                        onDeleteGroup = { g ->
-                                            scope.launch {
-                                                hostDao.clearGroup(g.id)
-                                                groupDao.delete(g)
-                                            }
-                                        },
-                                        onSetHostPositions = { hostDao.setPositions(it) },
-                                        onSetGroupPositions = { groupDao.setPositions(it) },
-                                        scripts = scripts,
-                                        liveSessions = summaries,
-                                        onQuickConnect = { target: QuickConnectTarget ->
-                                            // Offer the saved credential instead of asking for a
-                                            // password the vault already holds. `hosts` is the same
-                                            // observeAll() the cards are drawn from, so the offer
-                                            // can never rest on a staler list than the screen.
-                                            val matches = savedHostsMatching(target, hosts)
-                                            if (matches.isEmpty()) {
-                                                pendingQuickConnect = target
-                                            } else {
-                                                pendingSavedHostOffer =
-                                                    SavedHostOffer(target, matches)
-                                            }
-                                        },
-                                        onOpenSession = { id ->
-                                            targetSessionId = id
-                                            openTerminal()
-                                        },
-                                        onOpenSessionList = { selectDestination(AppDestination.SESSIONS) },
-                                        onConnectSaved = { host -> connectSaved(host) },
-                                        onAddHost = {
-                                            editingHostId = -1L
-                                            push("addEdit")
-                                        },
-                                        onEditHost = {
-                                            editingHostId = it.id
-                                            push("addEdit")
-                                        },
-                                        onDeleteHost = { host ->
-                                            scope.launch {
-                                                deleteHostWithCleanup(host, hostDao, credentialDao)
-                                                    ?.let { scriptRunController.reportError(it) }
-                                            }
-                                        },
-                                        onDuplicateHost = { host ->
-                                            scope.launch {
-                                                duplicateHost(
-                                                    host,
-                                                    hostDao,
-                                                    terminalProfileDao,
-                                                    colorSchemeDao,
-                                                    portForwardDao,
-                                                )
-                                            }
-                                        },
-                                        onWakeHost = { host ->
-                                            scope.launch {
-                                                val message =
-                                                    runCatching { sendMagicPacket(host.macAddress.orEmpty()) }
-                                                        .fold(
-                                                            { "Wake packet sent to ${host.label ?: host.hostname}" },
-                                                            { it.message ?: "Couldn't send the wake packet" },
-                                                        )
-                                                Toast.makeText(
-                                                    this@MainActivity,
-                                                    message,
-                                                    Toast.LENGTH_SHORT
-                                                ).show()
-                                            }
-                                        },
-                                        reachability = reachability,
-                                        reachabilityEnabled = reachabilityEnabled,
-                                        onRunScript = { script, host ->
-                                            scriptRunController.request(
-                                                script,
-                                                hostId = host.id
-                                            )
-                                        },
-                                        onImportSshConfig = { push("importSshConfig") },
-                                        modifier = Modifier.weight(1f),
-                                    )
+                        val fullWidth =
+                            screen is Screen.Terminal || screen is Screen.SftpBrowser || screen is Screen.RemoteEdit
+                        CompositionLocalProvider(
+                            LocalReadableInset provides if (fullWidth) 0.dp else readableInset(maxWidth),
+                        ) {
+                            Column(
+                                modifier =
+                                    if (fullWidth) Modifier.fillMaxSize()
+                                    else Modifier
+                                        .fillMaxSize()
+                                        .consumeWindowInsets(innerPadding)
+                                        .imePadding()
+                            ) {
+                                val notificationsBannerVisible by notificationsGranted
+                                // Never over the terminal, whose chrome is fixed at two strips - this
+                                // made a third, pushing the grid down. It loses nothing by being
+                                // absent: it is about sessions running in the background, which is not
+                                // what you are looking at.
+                                if (!notificationsBannerVisible && summaries.isNotEmpty() && screen !is Screen.Terminal) {
+                                    NotificationsDeniedBanner()
                                 }
-
-                                is Screen.AddEditHost -> {
-                                    val hosts by hostDao.observeAll()
-                                        .collectAsState(initial = emptyList())
-                                    AddEditHostScreen(
-                                        existing = hosts.firstOrNull { it.id == current.hostId },
-                                        hostDao = hostDao,
-                                        groupDao = groupDao,
-                                        credentialVault = credentialVault,
-                                        credentialDao = credentialDao,
-                                        keyEnrolment = keyEnrolment,
-                                        terminalProfileDao = terminalProfileDao,
-                                        colorSchemeDao = colorSchemeDao,
-                                        keyBarLayoutDao = keyBarLayoutDao,
-                                        portForwardDao = portForwardDao,
-                                        scriptRunner = scriptRunner,
-                                        sessionManager = sessionManager,
-                                        onDone = { popBack() },
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                }
-
-                                is Screen.Sessions -> {
-                                    // Only for resolving each session's display name:
-                                    // SessionSummary carries a hostId; the row itself never travels
-                                    // with it.
-                                    val hosts by hostDao.observeAll()
-                                        .collectAsState(initial = emptyList())
-                                    SessionsListScreen(
-                                        summaries = summaries,
-                                        hosts = hosts,
-                                        onOpenSession = { id ->
-                                            targetSessionId = id
-                                            openTerminal()
-                                        },
-                                        onReconnect = sessionManager::reconnectNow,
-                                        onClose = sessionManager::closeSession,
-                                        onOpenHosts = { selectDestination(AppDestination.HOSTS) },
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                }
-
-                                is Screen.Terminal -> {
-                                    val scripts by scriptDao.observeAll()
-                                        .collectAsState(initial = emptyList())
-                                    val sendToCurrentScripts =
-                                        scripts.filter { runCatching { ScriptMode.valueOf(it.mode) }.getOrNull() == ScriptMode.SEND_TO_CURRENT }
-                                    // Unfiltered by host: which ones suit the selected session is a
-                                    // question only SessionsScreen can answer.
-                                    val captureScripts =
-                                        scripts.filter { runCatching { ScriptMode.valueOf(it.mode) }.getOrNull() == ScriptMode.CAPTURE }
-                                    val hosts by hostDao.observeAll()
-                                        .collectAsState(initial = emptyList())
-                                    SessionsScreen(
-                                        sessionManager = sessionManager,
-                                        hosts = hosts,
-                                        onNewSession = { selectDestination(AppDestination.HOSTS) },
-                                        initialSessionId = targetSessionId,
-                                        sendToCurrentScripts = sendToCurrentScripts,
-                                        captureScripts = captureScripts,
-                                        onRunScript = { script, connection ->
-                                            scriptRunController.request(
-                                                script,
-                                                connection
-                                            )
-                                        },
-                                        onBrowseFiles = { sessionId, _ ->
-                                            if (sessionId != browsingSessionId) browsingPath = "."
-                                            browsingSessionId = sessionId
-                                            push("sftpBrowser")
-                                        },
-                                        terminalProfile = terminalProfile,
-                                        terminalProfileDao = terminalProfileDao,
-                                        keyBarLayoutDao = keyBarLayoutDao,
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                }
-
-                                is Screen.Scripts -> {
-                                    val scripts by scriptDao.observeAll()
-                                        .collectAsState(initial = emptyList())
-                                    val hosts by hostDao.observeAll()
-                                        .collectAsState(initial = emptyList())
-                                    ScriptsScreen(
-                                        scripts = scripts,
-                                        hosts = hosts,
-                                        onRun = { scriptRunController.request(it) },
-                                        onAdd = {
-                                            editingScriptId = -1L
-                                            prefillTemplateName = null
-                                            push("addEditScript")
-                                        },
-                                        onEdit = {
-                                            editingScriptId = it.id
-                                            prefillTemplateName = null
-                                            push("addEditScript")
-                                        },
-                                        onDelete = { script ->
-                                            scope.launch {
-                                                scriptDao.delete(
-                                                    script
-                                                )
-                                            }
-                                        },
-                                        onHistory = {
-                                            historyScriptId = it.id
-                                            push("scriptHistory")
-                                        },
-                                        modifier = Modifier.weight(1f),
-                                        onAddFromTemplate = { template ->
-                                            editingScriptId = -1L
-                                            prefillTemplateName = template.name
-                                            push("addEditScript")
-                                        },
-                                    )
-                                }
-
-                                is Screen.AddEditScript -> {
-                                    val scripts by scriptDao.observeAll()
-                                        .collectAsState(initial = emptyList())
-                                    val hosts by hostDao.observeAll()
-                                        .collectAsState(initial = emptyList())
-                                    // Once per template rather than per composition: the editor
-                                    // keys its field state on this value, and toEntity() stamps
-                                    // createdAt with the current time, so a fresh entity each
-                                    // recomposition would reset the form under the user's fingers.
-                                    val prefill = remember(prefillTemplateName) {
-                                        ScriptTemplates.ALL.firstOrNull { it.name == prefillTemplateName }
-                                            ?.toEntity()
-                                    }
-                                    ScriptEditorScreen(
-                                        existing = scripts.firstOrNull { it.id == current.scriptId },
-                                        hosts = hosts,
-                                        scriptDao = scriptDao,
-                                        onDone = { popBack() },
-                                        modifier = Modifier.weight(1f),
-                                        prefill = prefill,
-                                    )
-                                }
-
-                                is Screen.ScriptHistory -> {
-                                    val scripts by scriptDao.observeAll()
-                                        .collectAsState(initial = emptyList())
-                                    val runs by scriptRunDao.observeForScript(current.scriptId)
-                                        .collectAsState(initial = emptyList())
-                                    RunHistoryScreen(
-                                        scriptName = scripts.firstOrNull { it.id == current.scriptId }?.name
-                                            ?: "Script",
-                                        runs = runs,
-                                        onBack = { popBack() },
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                }
-
-                                is Screen.Settings -> {
-                                    SettingsScreen(
-                                        colourTheme = colourTheme,
-                                        onColourThemeChange = {
-                                            AppearancePreferences.setColourTheme(
-                                                this@MainActivity,
-                                                it
-                                            )
-                                        },
-                                        themeMode = themeMode,
-                                        onThemeModeChange = {
-                                            AppearancePreferences.setThemeMode(
-                                                this@MainActivity,
-                                                it
-                                            )
-                                        },
-                                        exactSchemeColours = exactSchemeColours,
-                                        onExactSchemeColoursChange = {
-                                            AppearancePreferences.setExactSchemeColours(
-                                                this@MainActivity,
-                                                it
-                                            )
-                                        },
-                                        // Each writes its pref and restarts the probe, which
-                                        // re-reads all three.
-                                        reachabilityEnabled = reachabilityEnabled,
-                                        onReachabilityEnabledChange = {
-                                            ReachabilityPreferences.setEnabled(
-                                                this@MainActivity,
-                                                it
-                                            )
-                                            reachabilityProbe.start()
-                                        },
-                                        reachabilityInterval = reachabilityInterval,
-                                        onReachabilityIntervalChange = {
-                                            ReachabilityPreferences.setInterval(
-                                                this@MainActivity,
-                                                it
-                                            )
-                                            reachabilityProbe.start()
-                                        },
-                                        reachabilityMetered = reachabilityMetered,
-                                        onReachabilityMeteredChange = {
-                                            ReachabilityPreferences.setAllowsMetered(
-                                                this@MainActivity,
-                                                it
-                                            )
-                                            reachabilityProbe.start()
-                                        },
-                                        automationEnabled = automationEnabled,
-                                        onAutomationEnabledChange = {
-                                            AutomationPreferences.setEnabled(this@MainActivity, it)
-                                        },
-                                        automationToken = automationToken,
-                                        onRegenerateAutomationToken = {
-                                            AutomationPreferences.regenerateToken(this@MainActivity)
-                                        },
-                                        onOpenTerminalSettings = { push("terminalSettings") },
-                                        onOpenKnownHosts = { push("knownHosts") },
-                                        onExportConfig = configExporter::writeTo,
-                                        onImportConfig = { uri ->
-                                            configImporter.readFrom(uri).also {
-                                                // rememberPrefState already reflects the imported
-                                                // values; only the probe needs a deliberate kick.
-                                                reachabilityProbe.start()
-                                            }
-                                        },
-                                        onOpenLicenses = { push("license") },
-                                        supporterState = supporterState,
-                                        onBecomeSupporter = { purchaseOptionId -> supporterBilling.launchPurchase(this@MainActivity, purchaseOptionId) },
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                }
-
-                                is Screen.TerminalSettings -> {
-                                    TerminalSettingsScreen(
-                                        terminalProfileDao = terminalProfileDao,
-                                        colorSchemeDao = colorSchemeDao,
-                                        onOpenKeyBarLayouts = { push("keyBarLayouts") },
-                                        onBack = { popBack() },
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                }
-
-                                is Screen.SftpBrowser -> {
-                                    val connection =
-                                        summaries.firstOrNull { it.id == current.sessionId }?.connection
-                                    if (connection == null) {
-                                        // The session closed while this screen was open - nothing
-                                        // left to browse.
-                                        LaunchedEffect(Unit) { popBack() }
-                                    } else {
-                                        SftpBrowserScreen(
-                                            connection = connection,
-                                            onBack = { popBack() },
-                                            onEdit = { entry ->
-                                                editingRemotePath = entry.path
-                                                push("remoteEdit")
+                                when (val current = screen) {
+                                    is Screen.Hosts -> {
+                                        val hosts by hostDao.observeAll()
+                                            .collectAsState(initial = emptyList())
+                                        val recents by hostDao.observeRecents()
+                                            .collectAsState(initial = emptyList())
+                                        val scripts by scriptDao.observeAll()
+                                            .collectAsState(initial = emptyList())
+                                        val groups by groupDao.observeAll()
+                                            .collectAsState(initial = emptyList())
+                                        HomeScreen(
+                                            hosts = hosts,
+                                            recents = recents,
+                                            groups = groups,
+                                            onUpdateGroup = { scope.launch { groupDao.update(it) } },
+                                            onDeleteGroup = { g ->
+                                                scope.launch {
+                                                    hostDao.clearGroup(g.id)
+                                                    groupDao.delete(g)
+                                                }
                                             },
+                                            onSetHostPositions = { hostDao.setPositions(it) },
+                                            onSetGroupPositions = { groupDao.setPositions(it) },
+                                            onMoveToGroup = { host, groupId ->
+                                                scope.launch { hostDao.update(host.copy(groupId = groupId, position = null)) }
+                                            },
+                                            scripts = scripts,
+                                            liveSessions = summaries,
+                                            onQuickConnect = { target: QuickConnectTarget ->
+                                                // Offer the saved credential instead of asking for a
+                                                // password the vault already holds. `hosts` is the same
+                                                // observeAll() the cards are drawn from, so the offer
+                                                // can never rest on a staler list than the screen.
+                                                val matches = savedHostsMatching(target, hosts)
+                                                if (matches.isEmpty()) {
+                                                    pendingQuickConnect = target
+                                                } else {
+                                                    pendingSavedHostOffer =
+                                                        SavedHostOffer(target, matches)
+                                                }
+                                            },
+                                            onOpenSession = { id ->
+                                                targetSessionId = id
+                                                openTerminal()
+                                            },
+                                            onOpenSessionList = { selectDestination(AppDestination.SESSIONS) },
+                                            onConnectSaved = { host -> connectSaved(host) },
+                                            onAddHost = {
+                                                editingHostId = -1L
+                                                push("addEdit")
+                                            },
+                                            onEditHost = {
+                                                editingHostId = it.id
+                                                push("addEdit")
+                                            },
+                                            onDeleteHost = { host ->
+                                                scope.launch {
+                                                    deleteHostWithCleanup(host, hostDao, credentialDao)
+                                                        ?.let { scriptRunController.reportError(it, title = "Couldn't delete host") }
+                                                }
+                                            },
+                                            onDuplicateHost = { host ->
+                                                scope.launch {
+                                                    duplicateHost(
+                                                        host,
+                                                        hostDao,
+                                                        terminalProfileDao,
+                                                        colorSchemeDao,
+                                                        portForwardDao,
+                                                    )
+                                                }
+                                            },
+                                            onWakeHost = { host ->
+                                                scope.launch {
+                                                    val message =
+                                                        runCatching { sendMagicPacket(host.macAddress.orEmpty()) }
+                                                            .fold(
+                                                                { "Wake packet sent to ${host.label ?: host.hostname}" },
+                                                                { it.message ?: "Couldn't send the wake packet" },
+                                                            )
+                                                    Toast.makeText(
+                                                        this@MainActivity,
+                                                        message,
+                                                        Toast.LENGTH_SHORT
+                                                    ).show()
+                                                }
+                                            },
+                                            reachability = reachability,
+                                            reachabilityEnabled = reachabilityEnabled,
+                                            onRunScript = { script, host ->
+                                                scriptRunController.request(
+                                                    script,
+                                                    hostId = host.id
+                                                )
+                                            },
+                                            onImportSshConfig = { push("importSshConfig") },
                                             modifier = Modifier.weight(1f),
-                                            startPath = browsingPath,
-                                            onPathChange = { browsingPath = it },
                                         )
                                     }
-                                }
 
-                                is Screen.RemoteEdit -> {
-                                    RemoteTextEditorScreen(
-                                        connection = summaries.firstOrNull { it.id == current.sessionId }?.connection,
-                                        sessionId = current.sessionId,
-                                        path = current.path,
-                                        onBack = { popBack() },
-                                        darkTheme = darkTheme,
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                }
+                                    is Screen.AddEditHost -> {
+                                        val hosts by hostDao.observeAll()
+                                            .collectAsState(initial = emptyList())
+                                        AddEditHostScreen(
+                                            existing = hosts.firstOrNull { it.id == current.hostId },
+                                            hostDao = hostDao,
+                                            groupDao = groupDao,
+                                            credentialVault = credentialVault,
+                                            credentialDao = credentialDao,
+                                            keyEnrolment = keyEnrolment,
+                                            terminalProfileDao = terminalProfileDao,
+                                            colorSchemeDao = colorSchemeDao,
+                                            keyBarLayoutDao = keyBarLayoutDao,
+                                            portForwardDao = portForwardDao,
+                                            scriptRunner = scriptRunner,
+                                            sessionManager = sessionManager,
+                                            onDone = { popBack() },
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                    }
 
-                                is Screen.KeyBarLayouts -> {
-                                    KeyBarLayoutsScreen(
-                                        keyBarLayoutDao = keyBarLayoutDao,
-                                        onBack = { popBack() },
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                }
+                                    is Screen.Sessions -> {
+                                        // Only for resolving each session's display name:
+                                        // SessionSummary carries a hostId; the row itself never travels
+                                        // with it.
+                                        val hosts by hostDao.observeAll()
+                                            .collectAsState(initial = emptyList())
+                                        SessionsListScreen(
+                                            summaries = summaries,
+                                            hosts = hosts,
+                                            onOpenSession = { id ->
+                                                targetSessionId = id
+                                                openTerminal()
+                                            },
+                                            onReconnect = sessionManager::reconnectNow,
+                                            onClose = sessionManager::closeSession,
+                                            onOpenHosts = { selectDestination(AppDestination.HOSTS) },
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                    }
 
-                                is Screen.Keys -> {
-                                    KeysScreen(
-                                        credentialDao = credentialDao,
-                                        credentialVault = credentialVault,
-                                        hostDao = hostDao,
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                }
+                                    is Screen.Terminal -> {
+                                        val scripts by scriptDao.observeAll()
+                                            .collectAsState(initial = emptyList())
+                                        val sendToCurrentScripts =
+                                            scripts.filter { runCatching { ScriptMode.valueOf(it.mode) }.getOrNull() == ScriptMode.SEND_TO_CURRENT }
+                                        // Unfiltered by host: which ones suit the selected session is a
+                                        // question only SessionsScreen can answer.
+                                        val captureScripts =
+                                            scripts.filter { runCatching { ScriptMode.valueOf(it.mode) }.getOrNull() == ScriptMode.CAPTURE }
+                                        val hosts by hostDao.observeAll()
+                                            .collectAsState(initial = emptyList())
+                                        SessionsScreen(
+                                            sessionManager = sessionManager,
+                                            hosts = hosts,
+                                            onNewSession = { selectDestination(AppDestination.HOSTS) },
+                                            initialSessionId = targetSessionId,
+                                            sendToCurrentScripts = sendToCurrentScripts,
+                                            captureScripts = captureScripts,
+                                            onRunScript = { script, connection ->
+                                                scriptRunController.request(
+                                                    script,
+                                                    connection
+                                                )
+                                            },
+                                            onBrowseFiles = { sessionId, _ ->
+                                                if (sessionId != browsingSessionId) browsingPath = "."
+                                                browsingSessionId = sessionId
+                                                push("sftpBrowser")
+                                            },
+                                            terminalProfile = terminalProfile,
+                                            terminalProfileDao = terminalProfileDao,
+                                            keyBarLayoutDao = keyBarLayoutDao,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                    }
 
-                                is Screen.KnownHosts -> {
-                                    KnownHostsScreen(
-                                        knownHostsFile = File(filesDir, KNOWN_HOSTS_FILE_NAME),
-                                        onBack = { popBack() },
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                }
+                                    is Screen.Scripts -> {
+                                        val scripts by scriptDao.observeAll()
+                                            .collectAsState(initial = emptyList())
+                                        val hosts by hostDao.observeAll()
+                                            .collectAsState(initial = emptyList())
+                                        ScriptsScreen(
+                                            scripts = scripts,
+                                            hosts = hosts,
+                                            onRun = { scriptRunController.request(it) },
+                                            onAdd = {
+                                                editingScriptId = -1L
+                                                prefillTemplateName = null
+                                                push("addEditScript")
+                                            },
+                                            onEdit = {
+                                                editingScriptId = it.id
+                                                prefillTemplateName = null
+                                                push("addEditScript")
+                                            },
+                                            onDelete = { script ->
+                                                scope.launch {
+                                                    scriptDao.delete(
+                                                        script
+                                                    )
+                                                }
+                                            },
+                                            onHistory = {
+                                                historyScriptId = it.id
+                                                push("scriptHistory")
+                                            },
+                                            modifier = Modifier.weight(1f),
+                                            onAddFromTemplate = { template ->
+                                                editingScriptId = -1L
+                                                prefillTemplateName = template.name
+                                                push("addEditScript")
+                                            },
+                                        )
+                                    }
 
-                                is Screen.License -> {
-                                    LicenseScreen(
-                                        onBack = { popBack() },
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                }
+                                    is Screen.AddEditScript -> {
+                                        val scripts by scriptDao.observeAll()
+                                            .collectAsState(initial = emptyList())
+                                        val hosts by hostDao.observeAll()
+                                            .collectAsState(initial = emptyList())
+                                        // Once per template rather than per composition: the editor
+                                        // keys its field state on this value, and toEntity() stamps
+                                        // createdAt with the current time, so a fresh entity each
+                                        // recomposition would reset the form under the user's fingers.
+                                        val prefill = remember(prefillTemplateName) {
+                                            ScriptTemplates.ALL.firstOrNull { it.name == prefillTemplateName }
+                                                ?.toEntity()
+                                        }
+                                        ScriptEditorScreen(
+                                            existing = scripts.firstOrNull { it.id == current.scriptId },
+                                            hosts = hosts,
+                                            scriptDao = scriptDao,
+                                            onDone = { popBack() },
+                                            modifier = Modifier.weight(1f),
+                                            prefill = prefill,
+                                        )
+                                    }
 
-                                is Screen.ImportSshConfig -> {
-                                    ImportSshConfigScreen(
-                                        hostDao = hostDao,
-                                        credentialDao = credentialDao,
-                                        credentialVault = credentialVault,
-                                        onDone = { popBack() },
-                                        modifier = Modifier.weight(1f),
-                                    )
+                                    is Screen.ScriptHistory -> {
+                                        val scripts by scriptDao.observeAll()
+                                            .collectAsState(initial = emptyList())
+                                        val runs by scriptRunDao.observeForScript(current.scriptId)
+                                            .collectAsState(initial = emptyList())
+                                        RunHistoryScreen(
+                                            scriptName = scripts.firstOrNull { it.id == current.scriptId }?.name
+                                                ?: "Script",
+                                            runs = runs,
+                                            onBack = { popBack() },
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                    }
+
+                                    is Screen.Settings -> {
+                                        SettingsScreen(
+                                            colourTheme = colourTheme,
+                                            onColourThemeChange = {
+                                                AppearancePreferences.setColourTheme(
+                                                    this@MainActivity,
+                                                    it
+                                                )
+                                            },
+                                            themeMode = themeMode,
+                                            onThemeModeChange = {
+                                                AppearancePreferences.setThemeMode(
+                                                    this@MainActivity,
+                                                    it
+                                                )
+                                            },
+                                            exactSchemeColours = exactSchemeColours,
+                                            onExactSchemeColoursChange = {
+                                                AppearancePreferences.setExactSchemeColours(
+                                                    this@MainActivity,
+                                                    it
+                                                )
+                                            },
+                                            // Each writes its pref and restarts the probe, which
+                                            // re-reads all three.
+                                            reachabilityEnabled = reachabilityEnabled,
+                                            onReachabilityEnabledChange = {
+                                                ReachabilityPreferences.setEnabled(
+                                                    this@MainActivity,
+                                                    it
+                                                )
+                                                reachabilityProbe.start()
+                                            },
+                                            reachabilityInterval = reachabilityInterval,
+                                            onReachabilityIntervalChange = {
+                                                ReachabilityPreferences.setInterval(
+                                                    this@MainActivity,
+                                                    it
+                                                )
+                                                reachabilityProbe.start()
+                                            },
+                                            reachabilityMetered = reachabilityMetered,
+                                            onReachabilityMeteredChange = {
+                                                ReachabilityPreferences.setAllowsMetered(
+                                                    this@MainActivity,
+                                                    it
+                                                )
+                                                reachabilityProbe.start()
+                                            },
+                                            automationEnabled = automationEnabled,
+                                            onAutomationEnabledChange = {
+                                                AutomationPreferences.setEnabled(this@MainActivity, it)
+                                            },
+                                            automationToken = automationToken,
+                                            onRegenerateAutomationToken = {
+                                                AutomationPreferences.regenerateToken(this@MainActivity)
+                                            },
+                                            onOpenTerminalSettings = { push("terminalSettings") },
+                                            onOpenKnownHosts = { push("knownHosts") },
+                                            onExportConfig = configExporter::writeTo,
+                                            onImportConfig = { uri ->
+                                                configImporter.readFrom(uri).also {
+                                                    // rememberPrefState already reflects the imported
+                                                    // values; only the probe needs a deliberate kick.
+                                                    reachabilityProbe.start()
+                                                }
+                                            },
+                                            onOpenLicenses = { push("license") },
+                                            supporterState = supporterState,
+                                            onBecomeSupporter = { purchaseOptionId -> supporterBilling.launchPurchase(this@MainActivity, purchaseOptionId) },
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                    }
+
+                                    is Screen.TerminalSettings -> {
+                                        TerminalSettingsScreen(
+                                            terminalProfileDao = terminalProfileDao,
+                                            colorSchemeDao = colorSchemeDao,
+                                            onOpenKeyBarLayouts = { push("keyBarLayouts") },
+                                            onBack = { popBack() },
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                    }
+
+                                    is Screen.SftpBrowser -> {
+                                        val connection =
+                                            summaries.firstOrNull { it.id == current.sessionId }?.connection
+                                        if (connection == null) {
+                                            // The session closed while this screen was open - nothing
+                                            // left to browse.
+                                            LaunchedEffect(Unit) { popBack() }
+                                        } else {
+                                            SftpBrowserScreen(
+                                                connection = connection,
+                                                onBack = { popBack() },
+                                                onEdit = { entry ->
+                                                    editingRemotePath = entry.path
+                                                    push("remoteEdit")
+                                                },
+                                                modifier = Modifier.weight(1f),
+                                                startPath = browsingPath,
+                                                onPathChange = { browsingPath = it },
+                                            )
+                                        }
+                                    }
+
+                                    is Screen.RemoteEdit -> {
+                                        RemoteTextEditorScreen(
+                                            connection = summaries.firstOrNull { it.id == current.sessionId }?.connection,
+                                            sessionId = current.sessionId,
+                                            path = current.path,
+                                            onBack = { popBack() },
+                                            darkTheme = darkTheme,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                    }
+
+                                    is Screen.KeyBarLayouts -> {
+                                        KeyBarLayoutsScreen(
+                                            keyBarLayoutDao = keyBarLayoutDao,
+                                            onBack = { popBack() },
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                    }
+
+                                    is Screen.Keys -> {
+                                        KeysScreen(
+                                            credentialDao = credentialDao,
+                                            credentialVault = credentialVault,
+                                            hostDao = hostDao,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                    }
+
+                                    is Screen.KnownHosts -> {
+                                        KnownHostsScreen(
+                                            knownHostsFile = File(filesDir, KNOWN_HOSTS_FILE_NAME),
+                                            onBack = { popBack() },
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                    }
+
+                                    is Screen.License -> {
+                                        LicenseScreen(
+                                            onBack = { popBack() },
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                    }
+
+                                    is Screen.ImportSshConfig -> {
+                                        ImportSshConfigScreen(
+                                            hostDao = hostDao,
+                                            credentialDao = credentialDao,
+                                            credentialVault = credentialVault,
+                                            onDone = { popBack() },
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1153,7 +1196,13 @@ class MainActivity : FragmentActivity() {
                         pendingKeyboardInteractive.values.firstOrNull()
                             ?.let { KeyboardInteractiveDialog(it) }
 
-                        ScriptRunDialogs(scriptRunController, hostsForScriptPicker)
+                        ScriptRunDialogs(
+                            scriptRunController,
+                            hostsForScriptPicker,
+                            groupsForScriptPicker,
+                            // A tab switch drops the sub-stack, so never offered over a pushed screen.
+                            onOpenHosts = { selectDestination(AppDestination.HOSTS) }.takeIf { subStack.isEmpty() },
+                        )
 
                         // Never shown alongside the password prompt: "Enter password" hands the
                         // same target to it.
@@ -1340,11 +1389,12 @@ private fun NotificationsDeniedBanner(modifier: Modifier = Modifier) {
     Card(
         modifier = modifier
             .fillMaxWidth()
+            .padding(horizontal = LocalReadableInset.current)
             .padding(8.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
         Text(
-            "Notifications are off - running sessions won't show a status. Enable them in system settings to see it.",
+            "Notifications are off - running sessions won't show a status, and widget and tile script results only flash up briefly. Enable them in system settings.",
             modifier = Modifier.padding(12.dp),
             style = MaterialTheme.typography.bodySmall,
         )

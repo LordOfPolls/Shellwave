@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import io.github.lordofpolls.shellwave.core.db.entities.HostEntity
 import io.github.lordofpolls.shellwave.ssh.SessionSummary
 import io.github.lordofpolls.shellwave.ui.design.EmptyState
+import io.github.lordofpolls.shellwave.ui.design.LocalReadableInset
 import io.github.lordofpolls.shellwave.ui.design.SessionCard
 
 /**
@@ -65,7 +66,7 @@ fun SessionsListScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding),
-                contentPadding = PaddingValues(16.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp + LocalReadableInset.current, vertical = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(summaries, key = { it.id }) { summary ->
@@ -73,7 +74,7 @@ fun SessionsListScreen(
                         name = sessionDisplayName(summary.hostId, summary.label, hosts),
                         summary = summary,
                         // Selection is a wide-window concept; the overview has no such property.
-                        selected = false,
+                        selected = null,
                         onClick = { onOpenSession(summary.id) },
                         onReconnect = { onReconnect(summary.id) },
                         onClose = { onClose(summary.id) },

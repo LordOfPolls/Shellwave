@@ -1,6 +1,7 @@
 package io.github.lordofpolls.shellwave.ui.design
 
 import android.os.SystemClock
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -39,12 +40,15 @@ import kotlinx.coroutines.delay
  * The error text shows for FAILED but not RECONNECTING. A red paragraph flickering in and out on
  * each backoff attempt reads as a fault to act on when it is the retry machinery working; once the
  * retries give up it is there in full, unclamped.
+ *
+ * A null [selected] is a card with no selection to report, so TalkBack does not read it as an
+ * unchecked radio button.
  */
 @Composable
 fun SessionCard(
     name: String,
     summary: SessionSummary,
-    selected: Boolean,
+    selected: Boolean?,
     onClick: () -> Unit,
     onReconnect: () -> Unit,
     onClose: () -> Unit,
@@ -56,10 +60,13 @@ fun SessionCard(
         modifier =
             modifier
                 .fillMaxWidth()
-                .selectable(selected = selected, onClick = onClick, role = Role.RadioButton),
+                .then(
+                    if (selected == null) Modifier.clickable(onClick = onClick)
+                    else Modifier.selectable(selected = selected, onClick = onClick, role = Role.RadioButton)
+                ),
         colors =
             CardDefaults.cardColors(
-                containerColor = if (selected) MaterialTheme.colorScheme.secondaryContainer else CardDefaults.cardColors().containerColor,
+                containerColor = if (selected == true) MaterialTheme.colorScheme.secondaryContainer else CardDefaults.cardColors().containerColor,
             ),
     ) {
         Column(

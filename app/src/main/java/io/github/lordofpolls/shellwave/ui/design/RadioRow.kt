@@ -2,6 +2,8 @@ package io.github.lordofpolls.shellwave.ui.design
 
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.minimumInteractiveComponentSize
@@ -9,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.unit.dp
 
 /**
  * A radio button and its label as one selectable hit target, so the label is tappable and
@@ -29,6 +32,7 @@ fun RadioRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         RadioButton(selected = selected, onClick = null)
+        Spacer(modifier = Modifier.width(8.dp))
         content()
     }
 }
