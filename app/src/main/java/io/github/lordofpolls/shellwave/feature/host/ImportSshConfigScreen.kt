@@ -15,6 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -46,17 +47,27 @@ import io.github.lordofpolls.shellwave.ssh.parseSshConfig
 import io.github.lordofpolls.shellwave.ssh.publicKeyLineOf
 import io.github.lordofpolls.shellwave.ssh.readKeyText
 import io.github.lordofpolls.shellwave.ui.design.BackTopBar
+import io.github.lordofpolls.shellwave.ui.design.LocalReadableInset
+import io.github.lordofpolls.shellwave.ui.design.PickerRow
 import io.github.lordofpolls.shellwave.ui.design.RadioRow
 import kotlinx.coroutines.launch
 
 /** How a previewed entry gets its mandatory HostEntity.credentialId - see this file's class doc. */
-private enum class EntryCredentialChoice { EXISTING, PASSWORD, IMPORT_KEY, KEYBOARD_INTERACTIVE }
+internal enum class EntryCredentialChoice { EXISTING, PASSWORD, IMPORT_KEY, KEYBOARD_INTERACTIVE }
+
+internal fun defaultCredentialChoice(savedIds: List<Long>): Pair<EntryCredentialChoice, Long?> =
+    if (savedIds.isEmpty()) EntryCredentialChoice.PASSWORD to null
+    else EntryCredentialChoice.EXISTING to savedIds.singleOrNull()
 
 /**
  * A plain observable holder instead of a data class copied on every keystroke, so each entry's card
  * recomposes independently.
  */
-private class ImportEntryState(val parsed: ParsedSshHost, alreadyImported: Boolean) {
+private class ImportEntryState(
+    val parsed: ParsedSshHost,
+    alreadyImported: Boolean,
+    savedCredentialIds: List<Long>,
+) {
     var selected by mutableStateOf(!alreadyImported)
     val alreadyImported = alreadyImported
 
@@ -66,8 +77,9 @@ private class ImportEntryState(val parsed: ParsedSshHost, alreadyImported: Boole
     var usernameOverride by mutableStateOf(parsed.user.orEmpty())
     var portOverride by mutableStateOf((parsed.port ?: 22).toString())
 
-    var credentialChoice by mutableStateOf(EntryCredentialChoice.EXISTING)
-    var existingCredentialId by mutableStateOf<Long?>(null)
+    private val defaultChoice = defaultCredentialChoice(savedCredentialIds)
+    var credentialChoice by mutableStateOf(defaultChoice.first)
+    var existingCredentialId by mutableStateOf(defaultChoice.second)
     var password by mutableStateOf("")
     var importedPem by mutableStateOf("")
     var importedPassphrase by mutableStateOf("")
@@ -134,7 +146,7 @@ fun ImportSshConfigScreen(
                             it.hostname == host.hostName && it.port == (host.port
                                 ?: 22) && it.username == host.user
                         }
-                        ImportEntryState(host, alreadyImported = duplicate)
+                        ImportEntryState(host, alreadyImported = duplicate, savedCredentialIds = existingCredentials.map { it.id })
                     }
                 }.onFailure { readError = it.message ?: "Could not read that file" }
             }
@@ -228,10 +240,19 @@ fun ImportSshConfigScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
+                .padding(horizontal = LocalReadableInset.current)
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             if (importSummary == null) {
+                if (parsed == null) {
+                    Text(
+                        "Pick your ~/.ssh/config and Shellwave lists its Host entries. " +
+                                "Passwords and keys aren't in that file, so you choose a credential for each one. " +
+                                "Nothing is saved until you confirm.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
                 Button(onClick = { pickDocument.launch(arrayOf("*/*")) }) { Text(if (parsed == null) "Pick config file" else "Pick a different file") }
                 readError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
 
@@ -340,12 +361,20 @@ private fun ImportEntryCard(
 ) {
     val activity = LocalActivity.current as FragmentActivity
     val scope = rememberCoroutineScope()
+    var keyError by remember { mutableStateOf<String?>(null) }
     val pickKeyFile =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null) {
                 scope.launch {
                     runCatching { readKeyText(activity.contentResolver, uri) }
-                        .onSuccess { state.importedPem = it; state.importedPublicKeyPreview = null }
+                        .onSuccess {
+                            state.importedPem = it
+                            state.importedPublicKeyPreview = null
+                            keyError = null
+                        }
+                        .onFailure {
+                            keyError = "Couldn't read that file. Pick it again, or paste the key into the field below."
+                        }
                 }
             }
         }
@@ -446,12 +475,21 @@ private fun ImportEntryCard(
                             style = MaterialTheme.typography.bodySmall
                         )
                     } else {
-                        existingCredentials.forEach { credential ->
-                            RadioRow(
-                                selected = state.existingCredentialId == credential.id,
-                                onClick = { state.existingCredentialId = credential.id },
-                            ) {
-                                Text(credentialLabel(credential))
+                        PickerRow(
+                            title = "Saved credential",
+                            value = {
+                                Text(
+                                    existingCredentials.firstOrNull { it.id == state.existingCredentialId }
+                                        ?.let { credentialLabel(it) } ?: "Choose one",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            },
+                        ) { dismiss ->
+                            existingCredentials.forEach { credential ->
+                                DropdownMenuItem(
+                                    text = { Text(credentialLabel(credential)) },
+                                    onClick = { state.existingCredentialId = credential.id; dismiss() },
+                                )
                             }
                         }
                     }
@@ -473,12 +511,14 @@ private fun ImportEntryCard(
                         "OpenSSH, PEM/PKCS#8 or PuTTY .ppk.",
                         style = MaterialTheme.typography.bodySmall,
                     )
+                    keyError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     OutlinedTextField(
                         value = state.importedPem,
                         onValueChange = {
                             state.importedPem = it; state.importedPublicKeyPreview = null
                         },
                         label = { Text("Or paste private key") },
+                        keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
                         modifier = Modifier.fillMaxWidth(),
                         minLines = 3,
                     )
@@ -491,7 +531,6 @@ private fun ImportEntryCard(
                         visualTransformation = PasswordVisualTransformation(),
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    var keyError by remember { mutableStateOf<String?>(null) }
                     Button(
                         onClick = {
                             runCatching {
@@ -511,7 +550,6 @@ private fun ImportEntryCard(
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
-                    keyError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 }
 
                 EntryCredentialChoice.KEYBOARD_INTERACTIVE ->
