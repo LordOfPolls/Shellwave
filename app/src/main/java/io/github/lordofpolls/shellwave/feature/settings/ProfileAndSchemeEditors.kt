@@ -6,7 +6,14 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,25 +24,39 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import io.github.lordofpolls.shellwave.core.db.entities.ColorSchemeEntity
 import io.github.lordofpolls.shellwave.core.db.entities.TerminalProfileEntity
 import io.github.lordofpolls.shellwave.terminal.BuiltInColorSchemes
+import io.github.lordofpolls.shellwave.terminal.DEFAULT_COLOR_SCHEME
 import io.github.lordofpolls.shellwave.terminal.FONT_SIZE_SP_RANGE
 import io.github.lordofpolls.shellwave.terminal.LINE_HEIGHT_MULTIPLIER_RANGE
 import io.github.lordofpolls.shellwave.terminal.SCROLLBACK_LINES_RANGE
@@ -44,8 +65,10 @@ import io.github.lordofpolls.shellwave.terminal.TerminalFontFamily
 import io.github.lordofpolls.shellwave.terminal.ansiColors
 import io.github.lordofpolls.shellwave.terminal.autoCursorColorFor
 import io.github.lordofpolls.shellwave.terminal.parseHexColorOrNull
+import io.github.lordofpolls.shellwave.terminal.resolveTerminalTypeface
 import io.github.lordofpolls.shellwave.terminal.selectionHighlightColor
 import io.github.lordofpolls.shellwave.terminal.toHexColorString
+import io.github.lordofpolls.shellwave.ui.design.ColorPickerDialog
 import io.github.lordofpolls.shellwave.ui.design.RadioRow
 import kotlin.math.roundToInt
 
@@ -58,7 +81,8 @@ import kotlin.math.roundToInt
 @Composable
 internal fun TerminalProfileFields(
     profile: TerminalProfileEntity,
-    onChange: (TerminalProfileEntity) -> Unit
+    onChange: (TerminalProfileEntity) -> Unit,
+    previewScheme: ColorSchemeEntity = DEFAULT_COLOR_SCHEME,
 ) {
     val context = LocalContext.current
     val pickCustomFont =
@@ -82,6 +106,7 @@ internal fun TerminalProfileFields(
         }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        TerminalProfilePreview(profile = profile, scheme = previewScheme)
         Text("Font family", style = MaterialTheme.typography.labelLarge)
         val currentFamily = TerminalFontFamily.fromStored(profile.fontFamily)
         TerminalFontFamily.entries.forEach { family ->
@@ -122,6 +147,7 @@ internal fun TerminalProfileFields(
             onValueChange = { onChange(profile.copy(fontSizeSp = it)) },
             valueRange = FONT_SIZE_SP_RANGE,
             steps = (FONT_SIZE_SP_RANGE.endInclusive - FONT_SIZE_SP_RANGE.start).roundToInt() - 1,
+            modifier = Modifier.semantics { contentDescription = "Font size" },
         )
 
         Text(
@@ -132,6 +158,7 @@ internal fun TerminalProfileFields(
             value = profile.lineHeightMultiplier,
             onValueChange = { onChange(profile.copy(lineHeightMultiplier = it)) },
             valueRange = LINE_HEIGHT_MULTIPLIER_RANGE,
+            modifier = Modifier.semantics { contentDescription = "Line height" },
         )
 
         Text("Cursor style", style = MaterialTheme.typography.labelLarge)
@@ -145,16 +172,12 @@ internal fun TerminalProfileFields(
             }
         }
 
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Cursor blink", style = MaterialTheme.typography.labelLarge)
-            Switch(
-                checked = profile.cursorBlink,
-                onCheckedChange = { onChange(profile.copy(cursorBlink = it)) })
-        }
+        SettingsSwitch(
+            title = "Cursor blink",
+            description = null,
+            checked = profile.cursorBlink,
+            onCheckedChange = { onChange(profile.copy(cursorBlink = it)) },
+        )
 
         ScrollbackField(
             scrollbackLines = profile.scrollbackLines,
@@ -178,16 +201,50 @@ internal fun ColorSchemeFields(scheme: ColorSchemeEntity, onChange: (ColorScheme
     fun edit(transform: ColorSchemeEntity.() -> ColorSchemeEntity) {
         onChange(scheme.transform().copy(isBuiltIn = false, name = "Custom"))
     }
+    var pendingBuiltInName by rememberSaveable { mutableStateOf<String?>(null) }
+
+    @Composable
+    fun SchemeColorField(
+        label: String,
+        color: Int,
+        withColor: ColorSchemeEntity.(Int) -> ColorSchemeEntity,
+        trailing: (@Composable () -> Unit)? = null,
+    ) = ColorHexField(
+        label = label,
+        color = color,
+        onValid = { edit { withColor(it) } },
+        preview = { ColorSchemePreview(scheme = scheme.withColor(it), modifier = Modifier.fillMaxWidth()) },
+        trailing = trailing,
+    )
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Built-in", style = MaterialTheme.typography.labelLarge)
         BuiltInColorSchemes.ALL.forEach { builtin ->
             RadioRow(
                 selected = scheme.isBuiltIn && scheme.name == builtin.name,
-                onClick = { onChange(builtin.copy(id = scheme.id)) },
+                onClick = {
+                    if (scheme.isBuiltIn) onChange(builtin.copy(id = scheme.id))
+                    else pendingBuiltInName = builtin.name
+                },
             ) {
                 Text(builtin.name)
             }
+        }
+        BuiltInColorSchemes.ALL.firstOrNull { it.name == pendingBuiltInName }?.let { builtin ->
+            AlertDialog(
+                onDismissRequest = { pendingBuiltInName = null },
+                title = { Text("Replace your custom colours?") },
+                text = { Text("Your edited colours are overwritten with ${builtin.name}. This can't be undone.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        pendingBuiltInName = null
+                        onChange(builtin.copy(id = scheme.id))
+                    }) { Text("Replace") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { pendingBuiltInName = null }) { Text("Cancel") }
+                },
+            )
         }
         if (!scheme.isBuiltIn) {
             Text(
@@ -203,18 +260,12 @@ internal fun ColorSchemeFields(scheme: ColorSchemeEntity, onChange: (ColorScheme
             "Foreground / background / cursor / selection",
             style = MaterialTheme.typography.labelLarge
         )
-        ColorHexField(
-            label = "Foreground",
-            color = scheme.foreground,
-            onValid = { edit { copy(foreground = it) } })
-        ColorHexField(
-            label = "Background",
-            color = scheme.background,
-            onValid = { edit { copy(background = it) } })
-        ColorHexField(
-            label = "Cursor",
-            color = scheme.cursor,
-            onValid = { edit { copy(cursor = it) } },
+        SchemeColorField("Foreground", scheme.foreground, { copy(foreground = it) })
+        SchemeColorField("Background", scheme.background, { copy(background = it) })
+        SchemeColorField(
+            "Cursor",
+            scheme.cursor,
+            { copy(cursor = it) },
             trailing = {
                 TextButton(onClick = { edit { copy(cursor = autoCursorColorFor(background)) } }) {
                     Text(
@@ -223,50 +274,43 @@ internal fun ColorSchemeFields(scheme: ColorSchemeEntity, onChange: (ColorScheme
                 }
             },
         )
-        ColorHexField(
-            label = "Selection",
-            color = scheme.selection,
-            onValid = { edit { copy(selection = it) } })
+        SchemeColorField("Selection", scheme.selection, { copy(selection = it) })
 
         Text("ANSI colours", style = MaterialTheme.typography.labelLarge)
         val ansi = scheme.ansiColors()
         ANSI_COLOR_NAMES.forEachIndexed { index, name ->
-            ColorHexField(
-                label = "$index $name",
-                color = ansi[index],
-                onValid = { newColor ->
-                    edit {
-                        val updatedAnsi = ansiColors()
-                        updatedAnsi[index] = newColor
-                        copy(ansiColorsCsv = updatedAnsi.joinToString(",") { it.toHexColorString() })
-                    }
-                },
-            )
+            SchemeColorField("$index $name", ansi[index], { newColor ->
+                val updatedAnsi = ansiColors()
+                updatedAnsi[index] = newColor
+                copy(ansiColorsCsv = updatedAnsi.joinToString(",") { it.toHexColorString() })
+            })
         }
     }
 }
 
 /**
- * Clamped to [SCROLLBACK_LINES_RANGE] on commit rather than per keystroke, so typing "5" on the way
- * to "50000" isn't snapped to 100 before the rest of the digits land. The engine gives no feedback
- * when it substitutes a rejected value, so this is the one place validation happens: out-of-range
- * input is clamped visibly instead of becoming the engine's silent 2000.
+ * Committed on each keystroke that lands inside [SCROLLBACK_LINES_RANGE] and never clamped, so
+ * typing "5" on the way to "50000" isn't snapped to 100 before the rest of the digits land. The
+ * engine gives no feedback when it substitutes a rejected value, so this is the one place validation
+ * happens: out-of-range input is flagged and left uncommitted instead of becoming the engine's
+ * silent 2000.
  */
 @Composable
 internal fun ScrollbackField(scrollbackLines: Int, onCommit: (Int) -> Unit) {
     var text by remember(scrollbackLines) { mutableStateOf(scrollbackLines.toString()) }
+    val inRange = text.toIntOrNull()?.let { it in SCROLLBACK_LINES_RANGE } == true
     OutlinedTextField(
         value = text,
-        onValueChange = { text = it.filter(Char::isDigit) },
-        label = { Text("Scrollback lines (${SCROLLBACK_LINES_RANGE.first}-${SCROLLBACK_LINES_RANGE.last})") },
+        onValueChange = { typed ->
+            text = typed.filter(Char::isDigit)
+            text.toIntOrNull()?.takeIf { it in SCROLLBACK_LINES_RANGE }?.let(onCommit)
+        },
+        label = { Text("Scrollback lines") },
+        supportingText = { Text("${SCROLLBACK_LINES_RANGE.first}-${SCROLLBACK_LINES_RANGE.last}") },
+        isError = !inRange,
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
     )
-    TextButton(onClick = {
-        val clamped = (text.toIntOrNull() ?: scrollbackLines).coerceIn(SCROLLBACK_LINES_RANGE)
-        text = clamped.toString()
-        onCommit(clamped)
-    }) { Text("Apply") }
 }
 
 /** Standard xterm 16-colour naming, in ColorSchemeEntity.ansiColorsCsv's order. Editor labels only. */
@@ -302,15 +346,29 @@ internal fun ColorHexField(
     color: Int,
     onValid: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    preview: (@Composable (Int) -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null
 ) {
     var text by remember(color) { mutableStateOf(color.toHexColorString()) }
+    var picking by rememberSaveable { mutableStateOf(false) }
     val parsed = parseHexColorOrNull(text)
     Column(modifier = modifier) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(modifier = Modifier
-                .size(24.dp)
-                .background(Color(color)))
+            Box(
+                modifier = Modifier
+                    .minimumInteractiveComponentSize()
+                    .clip(CircleShape)
+                    .clickable(onClickLabel = "Pick a colour", role = Role.Button) { picking = true }
+                    .semantics { contentDescription = "$label colour" },
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .background(Color(color), CircleShape)
+                        .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape),
+                )
+            }
             Spacer(modifier = Modifier.width(8.dp))
             OutlinedTextField(
                 value = text,
@@ -332,6 +390,17 @@ internal fun ColorHexField(
                 color = MaterialTheme.colorScheme.error
             )
         }
+    }
+    if (picking) {
+        ColorPickerDialog(
+            initial = color,
+            onPick = {
+                onValid(it)
+                picking = false
+            },
+            onDismiss = { picking = false },
+            preview = preview,
+        )
     }
 }
 
@@ -366,6 +435,65 @@ internal fun ColorSchemePreview(scheme: ColorSchemeEntity, modifier: Modifier = 
                 .width(8.dp)
                 .height(16.dp)
                 .background(Color(scheme.cursor)))
+        }
+    }
+}
+
+/** The cursor is a one-space cell, so its width matches the font's own cell at this size. */
+@Composable
+private fun TerminalProfilePreview(profile: TerminalProfileEntity, scheme: ColorSchemeEntity) {
+    val context = LocalContext.current
+    val fontFamily =
+        remember(profile.fontFamily, profile.customFontUri) {
+            FontFamily(
+                resolveTerminalTypeface(
+                    context,
+                    TerminalFontFamily.fromStored(profile.fontFamily),
+                    profile.customFontUri,
+                ),
+            )
+        }
+    val textStyle =
+        TextStyle(
+            color = Color(scheme.foreground),
+            fontFamily = fontFamily,
+            fontSize = profile.fontSizeSp.sp,
+            lineHeight = (profile.fontSizeSp * profile.lineHeightMultiplier).sp,
+        )
+    val cursorStyle = TerminalCursorStyle.fromStored(profile.cursorStyle)
+    val cursorColor = Color(scheme.cursor)
+    val blinkPhase =
+        if (profile.cursorBlink) {
+            rememberInfiniteTransition(label = "cursor blink")
+                .animateFloat(0f, 1f, infiniteRepeatable(tween(1000, easing = LinearEasing)), label = "phase")
+        } else {
+            null
+        }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(scheme.background))
+            .padding(8.dp),
+    ) {
+        Text("polls@nas:~$ ls", style = textStyle)
+        Text("bin  etc  home  var", style = textStyle)
+        Row {
+            Text("polls@nas:~$ ", style = textStyle)
+            Text(
+                " ",
+                style = textStyle,
+                modifier = Modifier.drawBehind {
+                    if (blinkPhase != null && blinkPhase.value >= 0.5f) return@drawBehind
+                    val thickness = 2.dp.toPx()
+                    when (cursorStyle) {
+                        TerminalCursorStyle.BLOCK -> drawRect(cursorColor)
+                        TerminalCursorStyle.UNDERLINE ->
+                            drawRect(cursorColor, Offset(0f, size.height - thickness), Size(size.width, thickness))
+                        TerminalCursorStyle.BAR -> drawRect(cursorColor, size = Size(thickness, size.height))
+                    }
+                },
+            )
         }
     }
 }

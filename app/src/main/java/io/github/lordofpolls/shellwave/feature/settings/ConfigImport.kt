@@ -412,9 +412,50 @@ private fun HostEntity.importName(): String = label ?: "$username@$hostname"
 internal suspend fun importTerminalProfiles(
     profiles: List<TerminalProfileEntity>,
     dao: TerminalProfileDao,
-): Map<Long, Long> = profiles.associate { it.id to dao.insert(it.copy(id = 0)) }
+): Map<Long, Long> =
+    importOverDefault(
+        profiles,
+        idOf = { it.id },
+        withId = { profile, id -> profile.copy(id = id) },
+        getDefaultId = { dao.getDefault()?.id },
+        update = dao::update,
+        insert = dao::insert,
+    )
 
 internal suspend fun importColorSchemes(
     schemes: List<ColorSchemeEntity>,
     dao: ColorSchemeDao,
-): Map<Long, Long> = schemes.associate { it.id to dao.insert(it.copy(id = 0)) }
+): Map<Long, Long> =
+    importOverDefault(
+        schemes,
+        idOf = { it.id },
+        withId = { scheme, id -> scheme.copy(id = id) },
+        getDefaultId = { dao.getDefault()?.id },
+        update = dao::update,
+        insert = dao::insert,
+    )
+
+/**
+ * "Default" is the lowest id, so the file's lowest-id row is written over this device's default
+ * row, keeping its id so hosts pointing at it stay valid. Inserted as a new row it would sit above
+ * the existing default where nothing reads it. The rest are per-host overrides and are added.
+ */
+private suspend fun <T> importOverDefault(
+    rows: List<T>,
+    idOf: (T) -> Long,
+    withId: (T, Long) -> T,
+    getDefaultId: suspend () -> Long?,
+    update: suspend (T) -> Unit,
+    insert: suspend (T) -> Long,
+): Map<Long, Long> {
+    val existingDefaultId = getDefaultId()
+    return rows.sortedBy(idOf).mapIndexed { index, row ->
+        idOf(row) to
+            if (index == 0 && existingDefaultId != null) {
+                update(withId(row, existingDefaultId))
+                existingDefaultId
+            } else {
+                insert(withId(row, 0))
+            }
+    }.toMap()
+}

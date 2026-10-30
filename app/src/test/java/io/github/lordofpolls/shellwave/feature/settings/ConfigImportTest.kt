@@ -15,7 +15,6 @@ import io.github.lordofpolls.shellwave.core.prefs.ThemeMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -244,14 +243,13 @@ class ConfigImportTest {
         assertEquals(listOf("That file held nothing to import."), ConfigImportSummary().lines())
     }
 
-    private class FakeTerminalProfileDao(seeded: TerminalProfileEntity) : TerminalProfileDao {
-        val rows = mutableMapOf(seeded.id to seeded)
+    private class FakeTerminalProfileDao(vararg seeded: TerminalProfileEntity) : TerminalProfileDao {
+        val rows = seeded.associateBy { it.id }.toMutableMap()
         var nextId = 100L
-        var updateCalled = false
 
         override suspend fun getAll(): List<TerminalProfileEntity> = rows.values.toList()
 
-        override suspend fun getDefault(): TerminalProfileEntity? = TODO()
+        override suspend fun getDefault(): TerminalProfileEntity? = rows.minByOrNull { it.key }?.value
 
         override fun observeDefault(): Flow<TerminalProfileEntity?> = TODO()
 
@@ -264,23 +262,35 @@ class ConfigImportTest {
         }
 
         override suspend fun update(profile: TerminalProfileEntity) {
-            updateCalled = true
+            rows[profile.id] = profile
         }
 
         override suspend fun delete(profile: TerminalProfileEntity) = TODO()
     }
 
     @Test
-    fun importingTerminalProfilesLeavesExistingRowsUntouchedAndMapsImportedIds() {
-        val seeded = profile.copy(id = 1, name = "Existing")
-        val dao = FakeTerminalProfileDao(seeded)
-        val imported = listOf(profile.copy(id = 7), profile.copy(id = 42))
+    fun theFilesDefaultProfileReplacesTheDevicesDefaultInPlace() {
+        val existingDefault = profile.copy(id = 1, name = "Existing", fontSizeSp = 10f)
+        val hostOverride = profile.copy(id = 2, name = "Override")
+        val dao = FakeTerminalProfileDao(existingDefault, hostOverride)
+        val imported = listOf(profile.copy(id = 42, name = "Imported override"), profile.copy(id = 7))
 
         val idMap = runBlocking { importTerminalProfiles(imported, dao) }
 
-        assertEquals(seeded, dao.rows[1])
-        assertFalse(dao.updateCalled)
+        assertEquals(profile.copy(id = 1), dao.rows[1])
+        assertEquals(hostOverride, dao.rows[2])
+        assertEquals(1L, idMap[7])
+        assertEquals("Imported override", dao.rows[idMap.getValue(42)]!!.name)
+        assertEquals(3, dao.rows.size)
+    }
+
+    @Test
+    fun onAnEmptyTableTheFilesDefaultIsInsertedFirst() {
+        val dao = FakeTerminalProfileDao()
+
+        val idMap = runBlocking { importTerminalProfiles(listOf(profile.copy(id = 42), profile.copy(id = 7)), dao) }
+
         assertEquals(setOf(7L, 42L), idMap.keys)
-        idMap.forEach { (oldId, newId) -> assertTrue(newId != oldId && newId in dao.rows) }
+        assertTrue(idMap.getValue(7) < idMap.getValue(42))
     }
 }

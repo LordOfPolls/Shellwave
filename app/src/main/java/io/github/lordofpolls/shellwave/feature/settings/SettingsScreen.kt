@@ -2,6 +2,8 @@ package io.github.lordofpolls.shellwave.feature.settings
 
 import android.content.ClipData
 import android.net.Uri
+import android.os.Build
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -24,12 +26,14 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 import io.github.lordofpolls.shellwave.BuildConfig
 import io.github.lordofpolls.shellwave.core.billing.SupporterState
@@ -40,6 +44,7 @@ import io.github.lordofpolls.shellwave.core.prefs.ThemeMode
 import io.github.lordofpolls.shellwave.service.ACTION_RUN_SCRIPT
 import io.github.lordofpolls.shellwave.service.EXTRA_SCRIPT_ID
 import io.github.lordofpolls.shellwave.service.EXTRA_TOKEN
+import io.github.lordofpolls.shellwave.ui.design.LocalReadableInset
 import io.github.lordofpolls.shellwave.ui.design.MachineText
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -82,6 +87,7 @@ fun SettingsScreen(
     onBecomeSupporter: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val uriHandler = LocalUriHandler.current
     Scaffold(
         modifier = modifier,
         // MainActivity's Scaffold already applied the system bar insets without consuming them.
@@ -98,6 +104,7 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
                 .verticalScroll(rememberScrollState())
+                .padding(horizontal = LocalReadableInset.current)
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -119,7 +126,7 @@ fun SettingsScreen(
                     when (it) {
                         ColourTheme.DYNAMIC -> "Dynamic (Material You)"
                         ColourTheme.SCHEMATIC -> "Schematic"
-                        ColourTheme.NOTHING -> "Nothing"
+                        ColourTheme.NOTHING -> "Nothing (dot-matrix)"
                     }
                 },
                 onSelect = onColourThemeChange,
@@ -129,14 +136,14 @@ fun SettingsScreen(
                 title = "Exact scheme colours",
                 // Plain language over CAM16/HCT: the mechanism is documented at SchemeHarmonizer,
                 // and a settings row has to say what changes.
-                description = "Show colour schemes exactly as authored, without nudging them toward the app's accent.",
+                description = "Show colour schemes exactly as authored, without nudging them toward the app's accent. Only affects the terminal.",
                 checked = exactSchemeColours,
                 onCheckedChange = onExactSchemeColoursChange,
             )
 
             SettingsRow(
                 title = "Terminal",
-                description = "Font, cursor, scrollback, colour scheme and key bar layouts.",
+                description = "Font, cursor, scrollback, colour scheme, key bar layouts, bell and full-width mode.",
                 chevron = true,
                 onClick = onOpenTerminalSettings,
             )
@@ -207,6 +214,11 @@ fun SettingsScreen(
                 title = "Version",
                 description = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
             )
+            SettingsRow(
+                title = "Source code",
+                description = SOURCE_REPOSITORY_URL,
+                onClick = { runCatching { uriHandler.openUri(SOURCE_REPOSITORY_URL) } },
+            )
             SettingsRow(title = "Licences", chevron = true, onClick = onOpenLicenses)
 
             Spacer(modifier = Modifier.padding(bottom = 8.dp))
@@ -233,8 +245,9 @@ private fun AutomationSettings(
     onRegenerate: () -> Unit
 ) {
     val clipboard = LocalClipboard.current
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var confirmingRegenerate by remember { mutableStateOf(false) }
+    var confirmingRegenerate by rememberSaveable { mutableStateOf(false) }
 
     SettingsSwitch(
         title = "Let other apps run scripts",
@@ -263,6 +276,10 @@ private fun AutomationSettings(
                                 )
                             )
                         )
+                    }
+                    // Android 13+ confirms clipboard writes itself.
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                        Toast.makeText(context, "Token copied", Toast.LENGTH_SHORT).show()
                     }
                 }) {
                     Text("Copy token")
@@ -317,10 +334,7 @@ private fun SupporterRow(state: SupporterState, onBecomeSupporter: (String) -> U
                 description = "A one-time purchase that unlocks nothing - just a way to say thanks. " +
                     "Pick whatever feels right.",
             )
-            Row(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 state.tiers.forEach { tier: SupporterTier ->
                     FilledTonalButton(onClick = { onBecomeSupporter(tier.purchaseOptionId) }) {
                         Text(tier.priceLabel)
@@ -340,7 +354,7 @@ private fun SupporterRow(state: SupporterState, onBecomeSupporter: (String) -> U
 @Composable
 private fun ConfigExportRow(onExport: suspend (Uri) -> Unit) {
     val scope = rememberCoroutineScope()
-    var outcome by remember { mutableStateOf<String?>(null) }
+    var outcome by rememberSaveable { mutableStateOf<String?>(null) }
     val launcher =
         rememberLauncherForActivityResult(
             ActivityResultContracts.CreateDocument("application/json"),
@@ -380,8 +394,8 @@ private fun ConfigExportRow(onExport: suspend (Uri) -> Unit) {
 @Composable
 private fun ConfigImportRow(onImport: suspend (Uri) -> ConfigImportSummary) {
     val scope = rememberCoroutineScope()
-    var confirming by remember { mutableStateOf(false) }
-    var outcome by remember { mutableStateOf<List<String>>(emptyList()) }
+    var confirming by rememberSaveable { mutableStateOf(false) }
+    var outcome by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
     val launcher =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri == null) return@rememberLauncherForActivityResult
@@ -414,7 +428,8 @@ private fun ConfigImportRow(onImport: suspend (Uri) -> ConfigImportSummary) {
                 Text(
                     "Everything in the file is added alongside what you already have, so hosts and " +
                             "scripts you kept will appear twice if the file also holds them. Your " +
-                            "app-wide settings are replaced by the file's. Passwords and keys are not " +
+                            "app-wide settings, terminal profile and colour scheme are replaced by the " +
+                            "file's. Passwords and keys are not " +
                             "in an export, so imported hosts need their secret entered again.",
                 )
             },

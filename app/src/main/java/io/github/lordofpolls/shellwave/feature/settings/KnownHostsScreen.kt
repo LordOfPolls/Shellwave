@@ -17,6 +17,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -25,6 +26,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,6 +36,7 @@ import io.github.lordofpolls.shellwave.ssh.listKnownHosts
 import io.github.lordofpolls.shellwave.ssh.removeKnownHost
 import io.github.lordofpolls.shellwave.ui.design.BackTopBar
 import io.github.lordofpolls.shellwave.ui.design.FingerprintBlock
+import io.github.lordofpolls.shellwave.ui.design.LocalReadableInset
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -55,6 +58,7 @@ fun KnownHostsScreen(
     var rows by remember { mutableStateOf<List<KnownHostRow>>(emptyList()) }
     var pendingRemoval by remember { mutableStateOf<KnownHostRow?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    var filter by rememberSaveable { mutableStateOf("") }
 
     suspend fun reload() {
         withContext(Dispatchers.IO) { runCatching { listKnownHosts(knownHostsFile) } }
@@ -91,12 +95,26 @@ fun KnownHostsScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
+                    .padding(horizontal = LocalReadableInset.current)
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                rows.forEach { row ->
-                    KnownHostRowCard(row = row, onRemove = { pendingRemoval = row })
-                }
+                OutlinedTextField(
+                    value = filter,
+                    onValueChange = { filter = it },
+                    label = { Text("Filter by host, key type or fingerprint") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                val query = filter.trim()
+                rows
+                    .filter { row ->
+                        listOf(row.hostDisplay, row.keyType, row.fingerprint)
+                            .any { it.contains(query, ignoreCase = true) }
+                    }
+                    .forEach { row ->
+                        KnownHostRowCard(row = row, onRemove = { pendingRemoval = row })
+                    }
             }
         }
     }

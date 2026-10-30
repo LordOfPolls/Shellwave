@@ -16,14 +16,22 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
 import io.github.lordofpolls.shellwave.R
 import io.github.lordofpolls.shellwave.ui.design.BackTopBar
+import io.github.lordofpolls.shellwave.ui.design.LocalReadableInset
 
 /**
  * GPLv3 §6's "written offer of source" for this exact build: the URL a user reads this screen to
@@ -33,7 +41,7 @@ import io.github.lordofpolls.shellwave.ui.design.BackTopBar
  * distributed, before that binary reaches anyone outside this project. Don't ship a build that
  * points here if that isn't true yet.
  */
-private const val SOURCE_REPOSITORY_URL = "https://github.com/LordOfPolls/shellwave"
+internal const val SOURCE_REPOSITORY_URL = "https://github.com/LordOfPolls/shellwave"
 
 /**
  * A literal and not read out of NOTICE at runtime: unlike the licence and attribution text below,
@@ -72,8 +80,8 @@ fun LicenseScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
             .use { it.readText() }
     }
 
-    var licenseExpanded by remember { mutableStateOf(false) }
-    var noticeExpanded by remember { mutableStateOf(false) }
+    var licenseExpanded by rememberSaveable { mutableStateOf(false) }
+    var noticeExpanded by rememberSaveable { mutableStateOf(false) }
 
     Column(modifier = modifier.fillMaxSize()) {
         BackTopBar(title = "Licences", onBack = onBack)
@@ -82,6 +90,7 @@ fun LicenseScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
+                .padding(horizontal = LocalReadableInset.current)
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -137,7 +146,19 @@ fun LicenseScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Text(
-                        SOURCE_REPOSITORY_URL,
+                        buildAnnotatedString {
+                            withLink(
+                                LinkAnnotation.Url(
+                                    SOURCE_REPOSITORY_URL,
+                                    TextLinkStyles(
+                                        SpanStyle(
+                                            color = MaterialTheme.colorScheme.primary,
+                                            textDecoration = TextDecoration.Underline,
+                                        ),
+                                    ),
+                                ),
+                            ) { append(SOURCE_REPOSITORY_URL) }
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                         fontFamily = FontFamily.Monospace
                     )

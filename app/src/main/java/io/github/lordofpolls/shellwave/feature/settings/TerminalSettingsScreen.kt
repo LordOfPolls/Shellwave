@@ -17,14 +17,20 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import io.github.lordofpolls.shellwave.core.db.dao.ColorSchemeDao
 import io.github.lordofpolls.shellwave.core.db.dao.TerminalProfileDao
 import io.github.lordofpolls.shellwave.core.db.entities.ColorSchemeEntity
 import io.github.lordofpolls.shellwave.core.db.entities.TerminalProfileEntity
+import io.github.lordofpolls.shellwave.core.prefs.BellMode
+import io.github.lordofpolls.shellwave.core.prefs.BellPreferences
+import io.github.lordofpolls.shellwave.core.prefs.SessionLayoutPreferences
+import io.github.lordofpolls.shellwave.core.prefs.rememberPrefState
 import io.github.lordofpolls.shellwave.terminal.DEFAULT_COLOR_SCHEME
 import io.github.lordofpolls.shellwave.terminal.DEFAULT_TERMINAL_PROFILE
 import io.github.lordofpolls.shellwave.ui.design.BackTopBar
+import io.github.lordofpolls.shellwave.ui.design.LocalReadableInset
 import kotlinx.coroutines.launch
 
 /**
@@ -43,6 +49,9 @@ fun TerminalSettingsScreen(
     modifier: Modifier = Modifier,
 ) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val bellMode by rememberPrefState { BellPreferences.get(it) }
+    val fullWidthTerminal by rememberPrefState { SessionLayoutPreferences.getFullWidthTerminal(it) }
 
     var profile by remember { mutableStateOf(DEFAULT_TERMINAL_PROFILE) }
     LaunchedEffect(Unit) {
@@ -84,11 +93,12 @@ fun TerminalSettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
+                .padding(horizontal = LocalReadableInset.current)
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             SettingsSectionHeader("Profile", first = true)
-            TerminalProfileFields(profile = profile, onChange = ::save)
+            TerminalProfileFields(profile = profile, onChange = ::save, previewScheme = scheme)
 
             SettingsSectionHeader("Colour scheme")
             ColorSchemeFields(scheme = scheme, onChange = ::saveScheme)
@@ -103,6 +113,21 @@ fun TerminalSettingsScreen(
                 title = "Manage key bar layouts",
                 chevron = true,
                 onClick = onOpenKeyBarLayouts,
+            )
+
+            SettingsSectionHeader("Sessions")
+            SettingsRadioGroup(
+                label = "Bell",
+                options = BellMode.entries,
+                selected = bellMode,
+                labelOf = BellPreferences::modeName,
+                onSelect = { BellPreferences.set(context, it) },
+            )
+            SettingsSwitch(
+                title = "Full-width terminal",
+                description = "On a wide or unfolded screen, give the terminal the whole window instead of splitting it with the session list.",
+                checked = fullWidthTerminal,
+                onCheckedChange = { SessionLayoutPreferences.setFullWidthTerminal(context, it) },
             )
 
             Spacer(modifier = Modifier.padding(bottom = 8.dp))

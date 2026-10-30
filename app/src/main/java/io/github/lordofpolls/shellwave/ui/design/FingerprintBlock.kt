@@ -1,6 +1,8 @@
 package io.github.lordofpolls.shellwave.ui.design
 
 import android.content.ClipData
+import android.os.Build
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
@@ -36,6 +39,7 @@ private const val FINGERPRINT_GROUP_SIZE = 8
 @Composable
 fun FingerprintBlock(fingerprint: String, modifier: Modifier = Modifier) {
     val clipboard = LocalClipboard.current
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
     Surface(
@@ -77,6 +81,10 @@ fun FingerprintBlock(fingerprint: String, modifier: Modifier = Modifier) {
                                 )
                             )
                         )
+                    }
+                    // Android 13+ confirms clipboard writes itself.
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                        Toast.makeText(context, "Fingerprint copied", Toast.LENGTH_SHORT).show()
                     }
                 },
             ) {

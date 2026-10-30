@@ -2,17 +2,24 @@ package io.github.lordofpolls.shellwave.feature.settings
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
+import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -21,6 +28,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,6 +44,7 @@ import io.github.lordofpolls.shellwave.terminal.SPECIAL_KEY_CHOICES
 import io.github.lordofpolls.shellwave.terminal.decodeKeyBarKeys
 import io.github.lordofpolls.shellwave.terminal.encodeKeyBarKeys
 import io.github.lordofpolls.shellwave.ui.design.BackTopBar
+import io.github.lordofpolls.shellwave.ui.design.LocalReadableInset
 import io.github.lordofpolls.shellwave.ui.design.RadioRow
 import kotlinx.coroutines.launch
 
@@ -50,7 +60,28 @@ fun KeyBarLayoutsScreen(
 ) {
     val layouts by keyBarLayoutDao.observeAll().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
-    var expandedId by remember { mutableStateOf<Long?>(null) }
+    var state by rememberSaveable(stateSaver = KeyBarLayoutsStateSaver) { mutableStateOf(KeyBarLayoutsState()) }
+    var pendingDeleteId by rememberSaveable { mutableStateOf<Long?>(null) }
+    val shown = layouts.filter { it.id != state.draft?.id } + listOfNotNull(state.draft)
+
+    fun write(pending: LayoutWrite?) {
+        when (pending) {
+            is LayoutWrite.Update -> scope.launch { keyBarLayoutDao.update(pending.layout) }
+            is LayoutWrite.Insert -> scope.launch {
+                val id = keyBarLayoutDao.insert(pending.layout)
+                val (next, followUp) = state.inserted(id, pending.layout)
+                state = next
+                write(followUp)
+            }
+            null -> Unit
+        }
+    }
+
+    fun saveLayout(updated: KeyBarLayoutEntity) {
+        val (next, pending) = state.edited(updated)
+        state = next
+        write(pending)
+    }
 
     Column(modifier = modifier.fillMaxSize()) {
         BackTopBar(title = "Key bar layouts", onBack = onBack)
@@ -59,6 +90,7 @@ fun KeyBarLayoutsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
+                .padding(horizontal = LocalReadableInset.current)
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -69,18 +101,15 @@ fun KeyBarLayoutsScreen(
             )
 
             TextButton(onClick = {
-                scope.launch {
-                    val id = keyBarLayoutDao.insert(
-                        KeyBarLayoutEntity(
-                            name = "New layout",
-                            keysJson = encodeKeyBarKeys(DEFAULT_KEY_BAR_KEYS)
-                        )
+                state = state.newLayout(
+                    KeyBarLayoutEntity(
+                        name = "New layout",
+                        keysJson = encodeKeyBarKeys(DEFAULT_KEY_BAR_KEYS)
                     )
-                    expandedId = id
-                }
+                )
             }) { Text("+ New layout") }
 
-            layouts.forEach { layout ->
+            shown.forEach { layout ->
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(
                         modifier = Modifier.padding(16.dp),
@@ -96,28 +125,56 @@ fun KeyBarLayoutsScreen(
                                 style = MaterialTheme.typography.titleMedium,
                                 modifier = Modifier.weight(1f)
                             )
+                            TextButton(onClick = { state = state.toggle(layout.id) }) {
+                                Text(if (state.expandedId == layout.id) "Close" else "Edit")
+                            }
                             TextButton(onClick = {
-                                expandedId = if (expandedId == layout.id) null else layout.id
-                            }) {
-                                Text(if (expandedId == layout.id) "Close" else "Edit")
-                            }
-                            TextButton(onClick = { scope.launch { keyBarLayoutDao.delete(layout) } }) {
-                                Text(
-                                    "Delete"
-                                )
-                            }
+                                if (layout.id == 0L) state = state.deleted(0L) else pendingDeleteId = layout.id
+                            }) { Text("Delete") }
                         }
-                        if (expandedId == layout.id) {
-                            KeyBarLayoutEditor(
-                                layout = layout,
-                                onChange = { updated -> scope.launch { keyBarLayoutDao.update(updated) } })
+                        if (state.expandedId == layout.id) {
+                            KeyBarLayoutEditor(layout = layout, onChange = ::saveLayout)
                         }
                     }
                 }
             }
         }
     }
+
+    layouts.firstOrNull { it.id == pendingDeleteId }?.let { layout ->
+        AlertDialog(
+            onDismissRequest = { pendingDeleteId = null },
+            title = { Text("Delete \"${layout.name}\"?") },
+            text = { Text("Hosts using this layout go back to the default key bar. This can't be undone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingDeleteId = null
+                    state = state.deleted(layout.id)
+                    scope.launch { keyBarLayoutDao.delete(layout) }
+                }) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { pendingDeleteId = null }) { Text("Cancel") } },
+        )
+    }
 }
+
+private val KeyBarLayoutsStateSaver =
+    listSaver<KeyBarLayoutsState, Any?>(
+        save = { listOf(it.expandedId, it.draft?.id, it.draft?.name, it.draft?.keysJson, it.draft?.rows) },
+        restore = { saved ->
+            KeyBarLayoutsState(
+                expandedId = saved[0] as Long?,
+                draft = (saved[1] as Long?)?.let { id ->
+                    KeyBarLayoutEntity(
+                        id = id,
+                        name = saved[2] as String,
+                        keysJson = saved[3] as String,
+                        rows = saved[4] as Int,
+                    )
+                },
+            )
+        },
+    )
 
 /**
  * One layout's name and ordered key list, with move-up/move-down/remove instead of a drag-and-drop
@@ -137,7 +194,7 @@ private fun KeyBarLayoutEditor(layout: KeyBarLayoutEntity, onChange: (KeyBarLayo
     var name by remember(layout.id) { mutableStateOf(layout.name) }
     var keys by remember(layout.id) { mutableStateOf(decodeKeyBarKeys(layout.keysJson)) }
     var rows by remember(layout.id) { mutableStateOf(layout.rows) }
-    var addKeyOpen by remember { mutableStateOf(false) }
+    var addKeyOpen by rememberSaveable { mutableStateOf(false) }
 
     fun persist(newName: String = name, newKeys: List<KeyBarKey> = keys, newRows: Int = rows) {
         name = newName
@@ -154,24 +211,20 @@ private fun KeyBarLayoutEditor(layout: KeyBarLayoutEntity, onChange: (KeyBarLayo
         modifier = Modifier.fillMaxWidth()
     )
 
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text("Two rows")
-            Text(
-                // Says "already" rather than silently ignoring the switch: a layout with an arrows
-                // cluster is two rows tall whatever this is set to (KeyBar's doc explains why), and
-                // a toggle that visibly does nothing reads as a bug rather than as a no-op.
-                if (keys.any { it.type == KeyBarKeyType.CURSOR_CLUSTER }) {
-                    "Arrows already make this layout two rows tall."
-                } else {
-                    "Stack keys across two rows instead of one scrolling row."
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Switch(checked = rows >= 2, onCheckedChange = { persist(newRows = if (it) 2 else 1) })
-    }
+    SettingsSwitch(
+        title = "Two rows",
+        // Says "already" rather than silently ignoring the switch: a layout with an arrows
+        // cluster is two rows tall whatever this is set to (KeyBar's doc explains why), and
+        // a toggle that visibly does nothing reads as a bug rather than as a no-op.
+        description =
+            if (keys.any { it.type == KeyBarKeyType.CURSOR_CLUSTER }) {
+                "Arrows already make this layout two rows tall."
+            } else {
+                "Stack keys across two rows instead of one scrolling row."
+            },
+        checked = rows >= 2,
+        onCheckedChange = { persist(newRows = if (it) 2 else 1) },
+    )
 
     keys.forEachIndexed { index, key ->
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -185,24 +238,24 @@ private fun KeyBarLayoutEditor(layout: KeyBarLayoutEntity, onChange: (KeyBarLayo
                 },
                 modifier = Modifier.weight(1f),
             )
-            TextButton(
+            IconButton(
                 onClick = {
                     persist(
                         newKeys = keys.toMutableList().apply { add(index - 1, removeAt(index)) })
                 },
                 enabled = index > 0,
-            ) { Text("Up") }
-            TextButton(
+            ) { Icon(Icons.Outlined.KeyboardArrowUp, contentDescription = "Move ${key.label} up") }
+            IconButton(
                 onClick = {
                     persist(
                         newKeys = keys.toMutableList().apply { add(index + 1, removeAt(index)) })
                 },
                 enabled = index < keys.lastIndex,
-            ) { Text("Down") }
-            TextButton(onClick = {
+            ) { Icon(Icons.Outlined.KeyboardArrowDown, contentDescription = "Move ${key.label} down") }
+            IconButton(onClick = {
                 persist(
                     newKeys = keys.toMutableList().apply { removeAt(index) })
-            }) { Text("Remove") }
+            }) { Icon(Icons.Outlined.Close, contentDescription = "Remove ${key.label}") }
         }
     }
 
@@ -249,9 +302,9 @@ private fun AddKeyDialog(
     onAddCluster: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var macroMode by remember { mutableStateOf(false) }
-    var macroLabel by remember { mutableStateOf("") }
-    var macroText by remember { mutableStateOf("") }
+    var macroMode by rememberSaveable { mutableStateOf(false) }
+    var macroLabel by rememberSaveable { mutableStateOf("") }
+    var macroText by rememberSaveable { mutableStateOf("") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -289,14 +342,20 @@ private fun AddKeyDialog(
                         modifier = Modifier.fillMaxWidth()
                     )
                 } else {
-                    Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.verticalScroll(rememberScrollState()),
+                    ) {
                         // Not a third radio mode: from the user's side it is just another thing to
                         // put on the bar, and a mode of its own would imply it needs configuring.
                         // First in the list because it is what most people reaching for an arrow
                         // want; the four separate arrows stay for anyone laying out their own row.
-                        TextButton(onClick = onAddCluster) { Text("$CURSOR_CLUSTER_LABEL (cursor cluster: ↑ ↓ ← →)") }
+                        SuggestionChip(
+                            onClick = onAddCluster,
+                            label = { Text("$CURSOR_CLUSTER_LABEL (↑ ↓ ← →)") },
+                        )
                         SPECIAL_KEY_CHOICES.forEach { choice ->
-                            TextButton(onClick = { onAddSpecial(choice) }) { Text(choice.label) }
+                            SuggestionChip(onClick = { onAddSpecial(choice) }, label = { Text(choice.label) })
                         }
                     }
                 }
