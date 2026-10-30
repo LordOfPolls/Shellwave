@@ -1,6 +1,7 @@
 package io.github.lordofpolls.shellwave.feature.scripts
 
 import android.content.ClipData
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,18 +10,19 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -33,9 +35,13 @@ import io.github.lordofpolls.shellwave.core.db.entities.HostEntity
 import io.github.lordofpolls.shellwave.core.db.entities.ScriptEntity
 import io.github.lordofpolls.shellwave.core.prefs.AutomationPreferences
 import io.github.lordofpolls.shellwave.core.util.extractParamNames
+import io.github.lordofpolls.shellwave.feature.settings.SettingsSwitch
 import io.github.lordofpolls.shellwave.ui.design.BackTopBar
+import io.github.lordofpolls.shellwave.ui.design.ChromeMonoFontFamily
 import io.github.lordofpolls.shellwave.ui.design.ColorSwatch
+import io.github.lordofpolls.shellwave.ui.design.LocalReadableInset
 import io.github.lordofpolls.shellwave.ui.design.MachineText
+import io.github.lordofpolls.shellwave.ui.design.PickerRow
 import io.github.lordofpolls.shellwave.ui.design.RadioRow
 import io.github.lordofpolls.shellwave.ui.design.rememberFormState
 import kotlinx.coroutines.launch
@@ -65,60 +71,53 @@ fun ScriptEditorScreen(
 
     val initial = existing ?: prefill
 
-    // Keyed on existing?.id, never plain remember - see AddEditHostScreen. `prefill` joins the key
+    // Keyed on existing?.id, never plain remember - see AddEditHostScreen. The template joins the key
     // because it can move without existing?.id moving: picking a second template hands this screen
-    // different values while existing?.id stays null, and the first template's text would latch.
-    var name by rememberFormState(existing?.id to prefill) { initial?.name.orEmpty() }
-    var color by rememberFormState(existing?.id to prefill) { initial?.color ?: ScriptColor.DEFAULT }
-    var targetHostId by rememberFormState(existing?.id to prefill) { initial?.targetHostId }
-    var snippet by rememberFormState(existing?.id to prefill) { initial?.snippet.orEmpty() }
-    var mode by rememberFormState(existing?.id to prefill) {
-        runCatching { ScriptMode.valueOf(initial?.mode ?: "") }.getOrDefault(ScriptMode.ATTACH)
-    }
-    var disconnectAfter by rememberFormState(existing?.id to prefill) { initial?.disconnectAfter ?: false }
-    var confirmBeforeRun by rememberFormState(existing?.id to prefill) { initial?.confirmBeforeRun ?: false }
-    var allowAutomation by rememberFormState(existing?.id to prefill) { initial?.allowAutomation ?: false }
+    // different values while existing?.id stays null, and the first template's text would latch. By
+    // name, so the key can be saved across recreation; the entity itself can't.
+    val formKey = existing?.id to prefill?.name
+    val pristine = remember(formKey) { scriptFormBaseline(existing, initial) }
+    var name by rememberFormState(formKey) { pristine.name }
+    var color by rememberFormState(formKey) { initial?.color ?: ScriptColor.DEFAULT }
+    var targetHostId by rememberFormState(formKey) { initial?.targetHostId }
+    var snippet by rememberFormState(formKey) { pristine.snippet }
+    var mode by rememberFormState(formKey) { ScriptMode.valueOf(pristine.mode) }
+    var disconnectAfter by rememberFormState(formKey) { pristine.disconnectAfter }
+    var confirmBeforeRun by rememberFormState(formKey) { pristine.confirmBeforeRun }
+    var allowAutomation by rememberFormState(formKey) { pristine.allowAutomation }
+    var paramsJson by rememberFormState(formKey) { initial?.paramsJson.orEmpty() }
     var error by remember { mutableStateOf<String?>(null) }
 
-    val paramDefs = remember(existing?.id, prefill) {
-        mutableStateMapOf<String, ScriptParam>().apply {
-            decodeParams(initial?.paramsJson.orEmpty()).forEach {
-                put(
-                    it.name,
-                    it
-                )
-            }
-        }
-    }
+    val paramDefs = decodeParams(paramsJson).associateBy { it.name }
     val activeParamNames = extractParamNames(snippet)
 
     // A null targetHostId is a complete answer, "ask which host each run", so the only things left
     // to require are the two a script cannot exist without.
     fun canSave(): Boolean = name.isNotBlank() && snippet.isNotBlank()
 
+    fun formEntity() =
+        scriptFormEntity(
+            existing, name, color, targetHostId, snippet, mode, disconnectAfter, paramsJson,
+            confirmBeforeRun, allowAutomation,
+        )
+
+    val dirty = formEntity() != pristine
+    var confirmDiscard by remember { mutableStateOf(false) }
+    fun leave() {
+        if (dirty) confirmDiscard = true else onDone()
+    }
+    BackHandler(enabled = dirty) { confirmDiscard = true }
+
     fun save() {
-        val params = activeParamNames.map { paramDefs[it] ?: ScriptParam(it) }
         scope.launch {
             try {
-                val entity =
-                    ScriptEntity(
-                        id = existing?.id ?: 0,
-                        name = name,
-                        icon = existing?.icon,
-                        color = color,
-                        targetHostId = if (mode == ScriptMode.SEND_TO_CURRENT) null else targetHostId,
-                        snippet = snippet,
-                        mode = mode.name,
-                        disconnectAfter = disconnectAfter,
-                        paramsJson = encodeParams(params),
-                        confirmBeforeRun = confirmBeforeRun,
-                        createdAt = existing?.createdAt ?: System.currentTimeMillis(),
-                        allowAutomation = allowAutomation,
-                    )
+                val entity = formEntity().copy(createdAt = existing?.createdAt ?: System.currentTimeMillis())
                 if (existing == null) scriptDao.insert(entity) else scriptDao.update(entity)
                 onDone()
             } catch (e: Exception) {
-                error = e.message ?: "Failed to save script"
+                // The likely cause is the target host being deleted while this form was open.
+                error = "Couldn't save the script. Check the target host still exists, then save again." +
+                        e.message?.let { " ($it)" }.orEmpty()
             }
         }
     }
@@ -126,13 +125,14 @@ fun ScriptEditorScreen(
     Column(modifier = modifier.fillMaxSize()) {
         BackTopBar(
             title = if (existing == null) "Add script" else "Edit script",
-            onBack = onDone,
+            onBack = ::leave,
         )
 
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
+                .padding(horizontal = LocalReadableInset.current)
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -170,10 +170,9 @@ fun ScriptEditorScreen(
             }
 
             if (mode != ScriptMode.SEND_TO_CURRENT) {
-                Text("Target host", style = MaterialTheme.typography.titleSmall)
-                // "Ask each run" answers the same question the hosts do, so one radio group makes "no
-                // fixed host" read as a choice rather than the absence of one. First in the list.
-                RadioRow(selected = targetHostId == null, onClick = { targetHostId = null }) {
+                // "Ask each run" answers the same question the hosts do, so one menu makes "no fixed
+                // host" read as a choice rather than the absence of one. First in the list.
+                val askEachRun: @Composable () -> Unit = {
                     Column {
                         Text("Ask each run")
                         Text(
@@ -183,14 +182,20 @@ fun ScriptEditorScreen(
                         )
                     }
                 }
-                hosts.forEach { host ->
-                    RadioRow(
-                        selected = targetHostId == host.id,
-                        onClick = { targetHostId = host.id },
-                    ) {
-                        // A user-chosen label is human text; a bare hostname is a machine assertion.
-                        val hostLabel = host.label
-                        if (hostLabel != null) Text(hostLabel) else MachineText(host.hostname)
+                val target = hosts.firstOrNull { it.id == targetHostId }
+                PickerRow(
+                    title = "Target host",
+                    value = { if (target == null) askEachRun() else HostLines(target) },
+                ) { dismiss ->
+                    DropdownMenuItem(
+                        text = askEachRun,
+                        onClick = { targetHostId = null; dismiss() },
+                    )
+                    hosts.forEach { host ->
+                        DropdownMenuItem(
+                            text = { HostLines(host) },
+                            onClick = { targetHostId = host.id; dismiss() },
+                        )
                     }
                 }
             }
@@ -199,6 +204,7 @@ fun ScriptEditorScreen(
                 value = snippet,
                 onValueChange = { snippet = it },
                 label = { Text("Snippet (use {{name}} for parameters)") },
+                textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = ChromeMonoFontFamily),
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 4,
             )
@@ -208,22 +214,28 @@ fun ScriptEditorScreen(
                 activeParamNames.forEach { paramName ->
                     ParamEditorRow(
                         param = paramDefs[paramName] ?: ScriptParam(paramName),
-                        onChange = { updated -> paramDefs[paramName] = updated },
+                        onChange = { updated ->
+                            paramsJson = encodeParams((paramDefs + (paramName to updated)).values.toList())
+                        },
                     )
                 }
             }
 
             if (mode == ScriptMode.ATTACH) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = disconnectAfter, onCheckedChange = { disconnectAfter = it })
-                    Text("Close the session once the command finishes")
-                }
+                SettingsSwitch(
+                    title = "Close the session once the command finishes",
+                    description = null,
+                    checked = disconnectAfter,
+                    onCheckedChange = { disconnectAfter = it },
+                )
             }
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = confirmBeforeRun, onCheckedChange = { confirmBeforeRun = it })
-                Text("Confirm before running")
-            }
+            SettingsSwitch(
+                title = "Confirm before running",
+                description = null,
+                checked = confirmBeforeRun,
+                onCheckedChange = { confirmBeforeRun = it },
+            )
 
             // The integration addresses a script by numeric id, and an unsaved script has no id to
             // paste into a task. Offering the toggle first would offer a capability nobody can wire up
@@ -238,10 +250,24 @@ fun ScriptEditorScreen(
             if (error != null) Text(error!!, color = MaterialTheme.colorScheme.error)
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = onDone) { Text("Cancel") }
+                TextButton(onClick = ::leave) { Text("Cancel") }
                 Button(onClick = ::save, enabled = canSave()) { Text("Save") }
             }
         }
+    }
+
+    if (confirmDiscard) {
+        AlertDialog(
+            onDismissRequest = { confirmDiscard = false },
+            title = { Text("Discard changes?") },
+            text = { Text("Your edits to this script haven't been saved.") },
+            confirmButton = {
+                TextButton(onClick = { confirmDiscard = false; onDone() }) { Text("Discard") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDiscard = false }) { Text("Keep editing") }
+            },
+        )
     }
 }
 
@@ -265,17 +291,12 @@ private fun AutomationOptIn(scriptId: Long, allowed: Boolean, onAllowedChange: (
     val appWideEnabled = remember { AutomationPreferences.isEnabled(context) }
 
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(checked = allowed, onCheckedChange = onAllowedChange)
-            Column {
-                Text("Let other apps run this script")
-                Text(
-                    "Lets Tasker trigger this script without opening Shellwave, if automation is on in Settings.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
+        SettingsSwitch(
+            title = "Let other apps run this script",
+            description = "Lets Tasker trigger this script without opening Shellwave, if automation is on in Settings.",
+            checked = allowed,
+            onCheckedChange = onAllowedChange,
+        )
         if (allowed) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -311,6 +332,8 @@ private fun AutomationOptIn(scriptId: Long, allowed: Boolean, onAllowedChange: (
 
 @Composable
 private fun ParamEditorRow(param: ScriptParam, onChange: (ScriptParam) -> Unit) {
+    // Re-joining the parsed list on every keystroke would swallow a trailing comma.
+    var rawChoices by rememberSaveable(param.name) { mutableStateOf(param.choices.joinToString(", ")) }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -336,13 +359,10 @@ private fun ParamEditorRow(param: ScriptParam, onChange: (ScriptParam) -> Unit) 
         }
         if (param.type == ParamType.CHOICE) {
             OutlinedTextField(
-                value = param.choices.joinToString(", "),
+                value = rawChoices,
                 onValueChange = {
-                    onChange(
-                        param.copy(
-                            choices = it.split(",").map(String::trim).filter(String::isNotEmpty)
-                        )
-                    )
+                    rawChoices = it
+                    onChange(param.copy(choices = parseChoices(it)))
                 },
                 label = { Text("Choices (comma-separated)") },
                 modifier = Modifier.fillMaxWidth(),
@@ -351,17 +371,56 @@ private fun ParamEditorRow(param: ScriptParam, onChange: (ScriptParam) -> Unit) 
     }
 }
 
+internal fun scriptFormEntity(
+    existing: ScriptEntity?,
+    name: String,
+    color: Int,
+    targetHostId: Long?,
+    snippet: String,
+    mode: ScriptMode,
+    disconnectAfter: Boolean,
+    paramsJson: String,
+    confirmBeforeRun: Boolean,
+    allowAutomation: Boolean,
+): ScriptEntity {
+    val defs = decodeParams(paramsJson).associateBy { it.name }
+    return ScriptEntity(
+        id = existing?.id ?: 0,
+        name = name,
+        icon = existing?.icon,
+        color = color,
+        targetHostId = if (mode == ScriptMode.SEND_TO_CURRENT) null else targetHostId,
+        snippet = snippet,
+        mode = mode.name,
+        disconnectAfter = disconnectAfter,
+        paramsJson = encodeParams(extractParamNames(snippet).map { defs[it] ?: ScriptParam(it) }),
+        confirmBeforeRun = confirmBeforeRun,
+        createdAt = existing?.createdAt ?: 0,
+        allowAutomation = allowAutomation,
+    )
+}
+
+/**
+ * The unsaved-changes baseline, built from the row or template and never from the live fields:
+ * after recreation those already hold the restored edits, which would compare equal to themselves.
+ */
+internal fun scriptFormBaseline(existing: ScriptEntity?, initial: ScriptEntity?): ScriptEntity =
+    scriptFormEntity(
+        existing = existing,
+        name = initial?.name.orEmpty(),
+        color = initial?.color ?: ScriptColor.DEFAULT,
+        targetHostId = initial?.targetHostId,
+        snippet = initial?.snippet.orEmpty(),
+        mode = runCatching { ScriptMode.valueOf(initial?.mode ?: "") }.getOrDefault(ScriptMode.ATTACH),
+        disconnectAfter = initial?.disconnectAfter ?: false,
+        paramsJson = initial?.paramsJson.orEmpty(),
+        confirmBeforeRun = initial?.confirmBeforeRun ?: false,
+        allowAutomation = initial?.allowAutomation ?: false,
+    )
+
 /** TalkBack names for [ScriptColor.PRESETS], positionally: made-up accent shades have no canonical name. */
 private val COLOR_PRESET_NAMES: List<String> =
     listOf("Green", "Teal", "Red", "Amber", "Purple", "Blue")
-
-/** Matches the enum names ScriptsScreen renders, so the list and this picker say the same thing. */
-private fun ScriptMode.label(): String =
-    when (this) {
-        ScriptMode.ATTACH -> "Attach"
-        ScriptMode.CAPTURE -> "Capture"
-        ScriptMode.SEND_TO_CURRENT -> "Send to current session"
-    }
 
 /**
  * The names alone do not distinguish them: "send to current" was asked for as a missing feature

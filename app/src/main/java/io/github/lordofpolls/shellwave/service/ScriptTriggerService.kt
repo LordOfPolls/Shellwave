@@ -11,6 +11,7 @@ import android.content.pm.ServiceInfo
 import android.os.IBinder
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import dagger.hilt.android.AndroidEntryPoint
@@ -268,8 +269,13 @@ class ScriptTriggerService : Service() {
                 .setPriority(NotificationCompat.PRIORITY_DEFAULT)
                 .build()
         // NotificationManager.notify() never throws for a missing POST_NOTIFICATIONS grant on API
-        // 33+, it just silently doesn't show, so there is nothing to re-check here.
+        // 33+, it just silently doesn't show, so a toast is the only way the result reaches anyone.
         val manager = getSystemService(NotificationManager::class.java)
+        if (!NotificationManagerCompat.from(this).areNotificationsEnabled() ||
+            manager?.getNotificationChannel(CHANNEL_ID)?.importance == NotificationManager.IMPORTANCE_NONE
+        ) {
+            Toast.makeText(this, "$scriptName: $message", Toast.LENGTH_LONG).show()
+        }
         manager?.notify(nextResultNotificationId.incrementAndGet(), notification)
     }
 

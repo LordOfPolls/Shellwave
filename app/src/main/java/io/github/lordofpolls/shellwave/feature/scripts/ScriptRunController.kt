@@ -27,6 +27,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
+private const val RUN_ERROR_TITLE = "Couldn't run script"
+
 data class CaptureRunUiState(
     val scriptName: String,
     val running: Boolean,
@@ -61,7 +63,8 @@ internal constructor(
 ) {
     var pending by mutableStateOf<ScriptEntity?>(null)
         private set
-    private var pendingConnection: SshConnection? = null
+    var pendingConnection: SshConnection? = null
+        private set
 
     /** Captured by each dialog callback, including repeated requests for the same script. */
     var pendingRequestId by mutableStateOf(0L)
@@ -75,12 +78,15 @@ internal constructor(
         private set
 
     /** The caller's override, the script's own target, or the picker's answer. */
-    private var pendingHostId: Long? = null
+    var pendingHostId: Long? = null
+        private set
 
     var captureUiState by mutableStateOf<CaptureRunUiState?>(null)
         private set
 
     var error by mutableStateOf<String?>(null)
+        private set
+    var errorTitle by mutableStateOf(RUN_ERROR_TITLE)
         private set
 
     /**
@@ -129,7 +135,8 @@ internal constructor(
     }
 
     /** So MainActivity's direct connect paths share this error dialog instead of owning one. */
-    fun reportError(message: String) {
+    fun reportError(message: String, title: String = RUN_ERROR_TITLE) {
+        errorTitle = title
         error = message
     }
 
@@ -158,7 +165,7 @@ internal constructor(
             ScriptMode.CAPTURE -> runCaptureMode(script, values, hostId, activeConnection)
             ScriptMode.ATTACH -> runAttachMode(script, values, hostId)
             ScriptMode.SEND_TO_CURRENT -> runSendToCurrent(script, values, activeConnection)
-            null -> error = "Unknown script mode \"${script.mode}\""
+            null -> reportError("Unknown script mode \"${script.mode}\"")
         }
     }
 
@@ -187,12 +194,12 @@ internal constructor(
                 // Unreachable through request(), which sends a hostless script to the picker first.
                 // Kept because the id is nullable all the way down and a silent no-op would be
                 // worse.
-                error = "\"${script.name}\" has no host to run against"
+                reportError("\"${script.name}\" has no host to run against")
                 return
             }
             val host = hostDao.getById(hostId)
             if (host == null) {
-                error = "The host this script targets no longer exists"
+                reportError("The host this script targets no longer exists. Edit the script and pick another.")
                 return
             }
             captureUiState = CaptureRunUiState(script.name, running = true)
@@ -201,8 +208,7 @@ internal constructor(
                 spec = resolveConnectionSpec(host, hostDao, credentialVault, activity)
             } catch (e: Exception) {
                 captureUiState = null
-                if (!e.isBiometricCancellation()) error =
-                    e.message ?: "Could not unlock this host's saved credential"
+                if (!e.isBiometricCancellation()) reportError(unlockFailureMessage(e))
                 return
             }
             // After the unlock: a biometric prompt sits there as long as the user takes to answer
@@ -250,20 +256,19 @@ internal constructor(
         hostId: Long?
     ) {
         if (hostId == null) {
-            error = "\"${script.name}\" has no host to run against"
+            reportError("\"${script.name}\" has no host to run against")
             return
         }
         val host = hostDao.getById(hostId)
         if (host == null) {
-            error = "The host this script targets no longer exists"
+            reportError("The host this script targets no longer exists. Edit the script and pick another.")
             return
         }
         val spec: ConnectionSpec
         try {
             spec = resolveConnectionSpec(host, hostDao, credentialVault, activity)
         } catch (e: Exception) {
-            if (!e.isBiometricCancellation()) error =
-                e.message ?: "Could not unlock this host's saved credential"
+            if (!e.isBiometricCancellation()) reportError(unlockFailureMessage(e))
             return
         }
         val sessionId = sessionManager.openSession(spec)
@@ -278,7 +283,7 @@ internal constructor(
             summary.connection.write("$command\n")
             if (script.disconnectAfter) summary.connection.write("exit\n")
         } else {
-            error = summary.error ?: "Connection failed"
+            reportError(summary.error ?: "Connection failed")
         }
     }
 
@@ -288,7 +293,7 @@ internal constructor(
         activeConnection: SshConnection?
     ) {
         if (activeConnection == null) {
-            error = "Open a session first to use \"${script.name}\""
+            reportError("Open a session first to use \"${script.name}\"")
             return
         }
         val command = substituteParams(script.snippet, values)

@@ -44,7 +44,11 @@ fun ScriptTemplateDialog(onPick: (ScriptTemplate) -> Unit, onDismiss: () -> Unit
                                 .clickable(role = Role.Button, onClick = { onPick(template) })
                                 .padding(vertical = 8.dp),
                     ) {
-                        Text(template.name, style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            template.name,
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
                         Text(template.description, style = MaterialTheme.typography.bodySmall)
                         // A command line, reproduced exactly, so it goes through MachineText.
                         MachineText(

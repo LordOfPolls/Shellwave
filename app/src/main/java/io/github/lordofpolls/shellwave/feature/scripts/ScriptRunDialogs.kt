@@ -1,12 +1,17 @@
 package io.github.lordofpolls.shellwave.feature.scripts
 
 import android.content.Intent
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -19,11 +24,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import io.github.lordofpolls.shellwave.core.db.entities.GroupEntity
 import io.github.lordofpolls.shellwave.core.db.entities.HostEntity
 import io.github.lordofpolls.shellwave.core.db.entities.ScriptEntity
 import io.github.lordofpolls.shellwave.ui.design.MachineText
@@ -36,6 +46,8 @@ import io.github.lordofpolls.shellwave.ui.design.MachineText
 fun ScriptRunDialogs(
     controller: ScriptRunController,
     hosts: List<HostEntity>,
+    groups: List<GroupEntity>,
+    onOpenHosts: (() -> Unit)?,
     modifier: Modifier = Modifier
 ) {
     val requestId = controller.pendingRequestId
@@ -43,8 +55,15 @@ fun ScriptRunDialogs(
         ChooseHostDialog(
             script = script,
             hosts = hosts,
+            groups = groups,
             onChoose = { host -> controller.chooseHost(script, host.id, requestId) },
             onDismiss = controller::dismiss,
+            onOpenHosts = onOpenHosts?.let { open ->
+                {
+                    controller.dismiss()
+                    open()
+                }
+            },
         )
     }
 
@@ -52,8 +71,14 @@ fun ScriptRunDialogs(
         val params = remember(script.id) { decodeParams(script.paramsJson) }
         if (params.isEmpty()) {
             if (script.confirmBeforeRun) {
+                val host = hosts.firstOrNull { it.id == controller.pendingHostId }
                 ConfirmRunDialog(
                     script = script,
+                    target = runTarget(
+                        script.mode,
+                        host?.let { it.label ?: it.hostname },
+                        onCurrentSession = controller.pendingConnection != null,
+                    ),
                     onConfirm = { controller.confirmRun(script, emptyMap(), requestId) },
                     onDismiss = controller::dismiss
                 )
@@ -77,7 +102,7 @@ fun ScriptRunDialogs(
     controller.error?.let { message ->
         AlertDialog(
             onDismissRequest = controller::clearError,
-            title = { Text("Couldn't run script") },
+            title = { Text(controller.errorTitle) },
             text = { Text(message) },
             confirmButton = { TextButton(onClick = controller::clearError) { Text("OK") } },
         )
@@ -102,8 +127,10 @@ fun ScriptRunDialogs(
 private fun ChooseHostDialog(
     script: ScriptEntity,
     hosts: List<HostEntity>,
+    groups: List<GroupEntity>,
     onChoose: (HostEntity) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onOpenHosts: (() -> Unit)?,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -114,44 +141,79 @@ private fun ChooseHostDialog(
             } else {
                 Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                     hosts.forEach { host ->
-                        // Same label/hostname split as everywhere else: a user-chosen label is
-                        // human text, a bare hostname is a machine assertion.
-                        val label = host.label
-                        TextButton(
-                            onClick = { onChoose(host) },
-                            modifier = Modifier.fillMaxWidth()
+                        val accent = host.color ?: groups.firstOrNull { it.id == host.groupId }?.color
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(role = Role.Button) { onChoose(host) }
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
-                            Box(modifier = Modifier.fillMaxWidth()) {
-                                if (label != null) Text(label) else MachineText(host.hostname)
-                            }
+                            Box(
+                                Modifier
+                                    .size(12.dp)
+                                    .clip(CircleShape)
+                                    .background(accent?.let { Color(it) } ?: Color.Transparent)
+                            )
+                            HostLines(host)
                         }
                     }
                 }
             }
         },
-        confirmButton = {},
+        confirmButton = {
+            if (hosts.isEmpty() && onOpenHosts != null) TextButton(onClick = onOpenHosts) { Text("Open Hosts") }
+        },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }
 
+/** Same label/hostname split as everywhere else: a user-chosen label is human text, a bare hostname is a machine assertion. */
 @Composable
-private fun ConfirmRunDialog(script: ScriptEntity, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+internal fun HostLines(host: HostEntity, modifier: Modifier = Modifier) {
+    Column(modifier) {
+        val label = host.label
+        if (label == null) {
+            MachineText("${host.username}@${host.hostname}")
+        } else {
+            Text(label)
+            MachineText(
+                "${host.username}@${host.hostname}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ConfirmRunDialog(
+    script: ScriptEntity,
+    target: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Run \"${script.name}\"?") },
-        text = { Text("This runs on ${modeDescription(script.mode)}.") },
+        text = { Text("This runs on $target.") },
         confirmButton = { TextButton(onClick = onConfirm) { Text("Run") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }
 
-private fun modeDescription(mode: String): String =
-    when (runCatching { ScriptMode.valueOf(mode) }.getOrNull()) {
-        ScriptMode.ATTACH -> "the target host, staying attached"
-        ScriptMode.CAPTURE -> "the target host, capturing output"
+/** A capture run with an open connection runs on that session whatever host the script names. */
+internal fun runTarget(mode: String, hostName: String?, onCurrentSession: Boolean): String {
+    val host = hostName ?: "the target host"
+    return when (runCatching { ScriptMode.valueOf(mode) }.getOrNull()) {
+        ScriptMode.ATTACH -> "$host, staying attached"
+        ScriptMode.CAPTURE ->
+            if (onCurrentSession) "the current session, capturing output" else "$host, capturing output"
         ScriptMode.SEND_TO_CURRENT -> "the current session"
-        null -> "the target host"
+        null -> host
     }
+}
 
 @Composable
 private fun RunParamsDialog(

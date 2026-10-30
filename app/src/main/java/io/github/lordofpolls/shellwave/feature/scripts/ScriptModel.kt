@@ -18,6 +18,13 @@ enum class ScriptMode {
     SEND_TO_CURRENT,
 }
 
+fun ScriptMode.label(): String =
+    when (this) {
+        ScriptMode.ATTACH -> "Attach"
+        ScriptMode.CAPTURE -> "Capture"
+        ScriptMode.SEND_TO_CURRENT -> "Send to current session"
+    }
+
 enum class ParamType { TEXT, CHOICE, SECRET }
 
 /**
@@ -32,6 +39,8 @@ data class ScriptParam(
     val label: String = name,
     val choices: List<String> = emptyList(),
 )
+
+fun parseChoices(raw: String): List<String> = raw.split(",").map(String::trim).filter(String::isNotEmpty)
 
 /** `org.json`, an Android platform API: a handful of small objects doesn't earn a serialization dependency. */
 fun encodeParams(params: List<ScriptParam>): String {

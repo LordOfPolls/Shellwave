@@ -55,7 +55,7 @@ class ScriptModeAndTargetTest {
     @Test
     fun `script with no target host shows its mode alone`() {
         assertEquals(
-            "SEND_TO_CURRENT",
+            "SEND TO CURRENT SESSION",
             scriptModeAndTarget(script("SEND_TO_CURRENT", null), emptyList())
         )
     }

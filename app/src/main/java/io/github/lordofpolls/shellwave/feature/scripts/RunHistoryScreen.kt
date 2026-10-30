@@ -21,9 +21,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import io.github.lordofpolls.shellwave.core.db.entities.ScriptRunEntity
 import io.github.lordofpolls.shellwave.ui.design.BackTopBar
+import io.github.lordofpolls.shellwave.ui.design.EmptyState
+import io.github.lordofpolls.shellwave.ui.design.LocalReadableInset
 import io.github.lordofpolls.shellwave.ui.design.MachineText
 import java.text.DateFormat
 import java.util.Date
@@ -47,11 +50,15 @@ fun RunHistoryScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             if (runs.isEmpty()) {
-                Text("No runs yet.", style = MaterialTheme.typography.bodyMedium)
+                EmptyState(message = "No runs yet.", modifier = Modifier.fillMaxSize())
             } else {
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = PaddingValues(bottom = 24.dp)
+                    contentPadding = PaddingValues(
+                        start = LocalReadableInset.current,
+                        end = LocalReadableInset.current,
+                        bottom = 24.dp,
+                    )
                 ) {
                     items(runs, key = { it.id }) { run ->
                         RunHistoryRow(run = run, onClick = { selected = run })
@@ -79,7 +86,11 @@ private fun RunHistoryRow(
             verticalAlignment = Alignment.CenterVertically
         ) {
             MachineText(formatTime(run.startedAt), style = MaterialTheme.typography.bodyMedium)
-            MachineText(exitStatusLabel(run.exitStatus), style = MaterialTheme.typography.bodySmall)
+            MachineText(
+                exitStatusLabel(run.exitStatus),
+                style = MaterialTheme.typography.bodySmall,
+                color = if (run.exitStatus != null && run.exitStatus != 0) MaterialTheme.colorScheme.error else Color.Unspecified,
+            )
         }
     }
 }

@@ -20,6 +20,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -29,6 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
@@ -36,7 +38,7 @@ import androidx.compose.ui.unit.dp
  * Run takes the leading edge as the frequent action; overflow trails; tapping the body edits, the
  * editor being a script's detail view.
  *
- * The `WIDGET`/`QS TILE` badges are words rather than pictographs: registration is machine truth
+ * The `WIDGET`/`QUICK SETTINGS` badges are words rather than pictographs: registration is machine truth
  * and belongs beside the mode and target. [onPinToWidget]/[onUseForQsTile] are nullable because a
  * background trigger refuses anything but a capture script, and offering to pin one would be a
  * promise the app will not keep.
@@ -54,6 +56,7 @@ fun ScriptCard(
     onHistory: (() -> Unit)? = null,
     onPinToWidget: (() -> Unit)? = null,
     onUseForQsTile: (() -> Unit)? = null,
+    accent: Color? = null,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
 
@@ -68,7 +71,11 @@ fun ScriptCard(
             // Naming the script here keeps a column of identical play triangles from reading to
             // TalkBack as several identical "Run" buttons.
             IconButton(onClick = onRun) {
-                Icon(Icons.Outlined.PlayArrow, contentDescription = "Run $name")
+                Icon(
+                    Icons.Outlined.PlayArrow,
+                    contentDescription = "Run $name",
+                    tint = accent ?: LocalContentColor.current,
+                )
             }
             Column(
                 modifier = Modifier
@@ -96,7 +103,7 @@ fun ScriptCard(
                         modifier = Modifier.weight(1f, fill = false),
                     )
                     if (pinnedToWidget) TriggerBadge("WIDGET")
-                    if (isQsTile) TriggerBadge("QS TILE")
+                    if (isQsTile) TriggerBadge("QUICK SETTINGS")
                 }
             }
             Box {
@@ -141,7 +148,7 @@ fun ScriptCard(
                     }
                     if (onUseForQsTile != null) {
                         DropdownMenuItem(
-                            text = { Text(if (isQsTile) "Remove from QS tile" else "Use for QS tile") },
+                            text = { Text(if (isQsTile) "Remove from Quick Settings tile" else "Use for Quick Settings tile") },
                             // `Toggles` is absent from the installed material-icons-extended
                             // artifact.
                             leadingIcon = {

@@ -1,5 +1,9 @@
 package io.github.lordofpolls.shellwave.feature.scripts
 
+import android.app.StatusBarManager
+import android.content.ComponentName
+import android.graphics.drawable.Icon
+import android.os.Build
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
@@ -23,16 +27,21 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.glance.appwidget.updateAll
 import io.github.lordofpolls.shellwave.core.db.entities.HostEntity
 import io.github.lordofpolls.shellwave.core.db.entities.ScriptEntity
 import io.github.lordofpolls.shellwave.core.prefs.WidgetPreferences
+import io.github.lordofpolls.shellwave.R
+import io.github.lordofpolls.shellwave.feature.glance.ScriptTileService
 import io.github.lordofpolls.shellwave.feature.glance.ScriptWidget
 import io.github.lordofpolls.shellwave.ui.design.EmptyState
+import io.github.lordofpolls.shellwave.ui.design.LocalReadableInset
 import io.github.lordofpolls.shellwave.ui.design.ScriptCard
 import kotlinx.coroutines.launch
 
@@ -66,7 +75,7 @@ fun ScriptsScreen(
 
     // One pending delete regardless of which card was tapped: a card reports intent, the screen
     // owns "did you mean it".
-    var scriptPendingDelete by remember { mutableStateOf<ScriptEntity?>(null) }
+    var pendingDeleteId by rememberSaveable { mutableStateOf<Long?>(null) }
 
     // WidgetPreferences has no change-notification Flow, so this is re-read through `pinChanges`
     // after every write. A screen-wide counter and not per-script state, so a QS-tile change -
@@ -74,7 +83,7 @@ fun ScriptsScreen(
     var pinChanges by remember { mutableStateOf(0) }
 
     // Owned here rather than by the top bar, because the empty state opens it too.
-    var templatesOpen by remember { mutableStateOf(false) }
+    var templatesOpen by rememberSaveable { mutableStateOf(false) }
 
     if (templatesOpen) {
         ScriptTemplateDialog(
@@ -124,7 +133,7 @@ fun ScriptsScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding),
-                contentPadding = PaddingValues(16.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp + LocalReadableInset.current, vertical = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(scripts, key = { it.id }) { script ->
@@ -147,14 +156,17 @@ fun ScriptsScreen(
                     ScriptCard(
                         name = script.name,
                         modeAndTarget = scriptModeAndTarget(script, hosts),
+                        accent = script.color?.let { Color(it) },
                         pinnedToWidget = pinned,
                         isQsTile = isQsTile,
                         onRun = { onRun(script) },
                         onEdit = { onEdit(script) },
-                        onDelete = { scriptPendingDelete = script },
+                        onDelete = { pendingDeleteId = script.id },
                         onHistory = if (capture) ({ onHistory(script) }) else null,
+                        // Undoing stays offered once a script stops being runnable (edited to "ask
+                        // each run", or its host deleted), or the badge has no way off.
                         onPinToWidget =
-                            if (!runnableInBackground) {
+                            if (!runnableInBackground && !pinned) {
                                 null
                             } else {
                                 {
@@ -164,7 +176,7 @@ fun ScriptsScreen(
                                 }
                             },
                         onUseForQsTile =
-                            if (!runnableInBackground) {
+                            if (!runnableInBackground && !isQsTile) {
                                 null
                             } else {
                                 {
@@ -173,6 +185,15 @@ fun ScriptsScreen(
                                         if (isQsTile) null else script.id
                                     )
                                     pinChanges++
+                                    if (!isQsTile && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                        context.getSystemService(StatusBarManager::class.java)
+                                            ?.requestAddTileService(
+                                                ComponentName(context, ScriptTileService::class.java),
+                                                script.name,
+                                                Icon.createWithResource(context, R.drawable.ic_stat_shellwave),
+                                                context.mainExecutor,
+                                            ) {}
+                                    }
                                 }
                             },
                     )
@@ -181,20 +202,20 @@ fun ScriptsScreen(
         }
     }
 
-    scriptPendingDelete?.let { script ->
+    scripts.firstOrNull { it.id == pendingDeleteId }?.let { script ->
         AlertDialog(
-            onDismissRequest = { scriptPendingDelete = null },
+            onDismissRequest = { pendingDeleteId = null },
             title = { Text("Delete script?") },
             text = { Text("Removes \"${script.name}\" and its run history. Can't be undone.") },
             confirmButton = {
                 TextButton(onClick = {
                     onDelete(script)
-                    scriptPendingDelete = null
+                    pendingDeleteId = null
                 }) { Text("Delete") }
             },
             dismissButton = {
                 TextButton(onClick = {
-                    scriptPendingDelete = null
+                    pendingDeleteId = null
                 }) { Text("Cancel") }
             },
         )
@@ -215,7 +236,7 @@ fun ScriptsScreen(
  */
 fun scriptModeAndTarget(script: ScriptEntity, hosts: List<HostEntity>): String {
     val decoded = runCatching { ScriptMode.valueOf(script.mode) }.getOrNull()
-    val mode = decoded?.name ?: script.mode
+    val mode = decoded?.label()?.uppercase() ?: script.mode
     val host = script.targetHostId?.let { id -> hosts.firstOrNull { it.id == id } }
     val target =
         host?.let { it.label ?: it.hostname }
