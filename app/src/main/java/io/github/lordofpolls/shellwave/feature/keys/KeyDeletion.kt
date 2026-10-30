@@ -12,7 +12,7 @@ import io.github.lordofpolls.shellwave.core.db.entities.HostEntity
 fun keyDeleteBlockReason(keyName: String, usedBy: List<HostEntity>): String? {
     if (usedBy.isEmpty()) return null
     val names = usedBy.joinToString(", ") { it.label ?: it.hostname }
-    return "Can't delete $keyName: still used by $names. Switch the host's login to another credential first."
+    return "Can't delete $keyName: still used by $names. Switch the host's login to another key first."
 }
 
 /**
@@ -22,7 +22,7 @@ fun keyDeleteBlockReason(keyName: String, usedBy: List<HostEntity>): String? {
 fun keyDeleteBlockReason(keyName: String, usedByCount: Int): String? {
     if (usedByCount <= 0) return null
     val hosts = if (usedByCount == 1) "host" else "hosts"
-    return "Can't delete $keyName: still used by $usedByCount $hosts. Switch the host's login to another credential first."
+    return "Can't delete $keyName: still used by $usedByCount $hosts. Switch the host's login to another key first."
 }
 
 /**

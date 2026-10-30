@@ -1,6 +1,8 @@
 package io.github.lordofpolls.shellwave.feature.keys
 
 import android.content.ClipData
+import android.content.Intent
+import android.os.Build
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -9,8 +11,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.PaddingValues
@@ -20,7 +26,10 @@ import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -43,6 +52,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
@@ -50,6 +60,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.contentType
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
@@ -71,8 +83,8 @@ import io.github.lordofpolls.shellwave.ssh.readKeyText
 import io.github.lordofpolls.shellwave.ssh.sha256Fingerprint
 import io.github.lordofpolls.shellwave.ui.design.EmptyState
 import io.github.lordofpolls.shellwave.ui.design.FingerprintBlock
+import io.github.lordofpolls.shellwave.ui.design.LocalReadableInset
 import io.github.lordofpolls.shellwave.ui.design.RadioRow
-import io.github.lordofpolls.shellwave.ui.design.rememberFormState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -101,12 +113,12 @@ fun KeysScreen(
     val hostsOrNull by hostDao.observeAll().collectAsState<List<HostEntity>, List<HostEntity>?>(initial = null)
     val hosts = hostsOrNull.orEmpty()
 
-    var addMenuOpen by remember { mutableStateOf(false) }
-    var generating by remember { mutableStateOf(false) }
-    var importing by remember { mutableStateOf(false) }
-    var renaming by remember { mutableStateOf<CredentialEntity?>(null) }
-    var deleting by remember { mutableStateOf<CredentialEntity?>(null) }
-    var removingUnused by remember { mutableStateOf(false) }
+    var addMenuOpen by rememberSaveable { mutableStateOf(false) }
+    var generating by rememberSaveable { mutableStateOf(false) }
+    var importing by rememberSaveable { mutableStateOf(false) }
+    var renamingId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var deletingId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var removingUnused by rememberSaveable { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(message) {
@@ -138,7 +150,7 @@ fun KeysScreen(
                             onClick = { addMenuOpen = false; generating = true },
                         )
                         DropdownMenuItem(
-                            text = { Text("Import from file") },
+                            text = { Text("Import a key") },
                             onClick = { addMenuOpen = false; importing = true },
                         )
                     }
@@ -149,7 +161,7 @@ fun KeysScreen(
         Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
             if (keys.isEmpty()) {
                 EmptyState(
-                    message = "No keys yet.",
+                    message = "No keys yet. Once you have one, pick it as a host's login in the host editor.",
                     actionLabel = "Generate a key",
                     onAction = { generating = true },
                     modifier = Modifier.fillMaxSize(),
@@ -157,7 +169,7 @@ fun KeysScreen(
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(16.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp + LocalReadableInset.current, vertical = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     items(keys, key = { it.id }) { key ->
@@ -169,16 +181,33 @@ fun KeysScreen(
                                 scope.launch {
                                     key.publicKeyText?.let {
                                         clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("public key", it)))
+                                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) message = "Public key copied."
                                     }
                                 }
                             },
-                            onRename = { message = null; renaming = key },
+                            onShare = {
+                                key.publicKeyText?.let {
+                                    val send = Intent(Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(Intent.EXTRA_TEXT, it)
+                                    }
+                                    activity.startActivity(Intent.createChooser(send, null))
+                                }
+                            },
+                            onRename = { message = null; renamingId = key.id },
                             onDelete = {
                                 val usedBy = hosts.filter { it.credentialId == key.id }
                                 val blocked = keyDeleteBlockReason(credentialLabel(key), usedBy)
                                 message = blocked
-                                if (blocked == null) deleting = key
+                                if (blocked == null) deletingId = key.id
                             },
+                        )
+                    }
+                    item {
+                        Text(
+                            "Pick a key as a host's login in the host editor.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
@@ -191,7 +220,7 @@ fun KeysScreen(
             title = "Generate a key",
             confirmLabel = "Generate",
             onDismiss = { generating = false },
-            onConfirm = { label, _, algorithm, requireBiometric ->
+            onConfirm = { label, _, _, algorithm, requireBiometric ->
                 runCatching {
                     val generated = withContext(Dispatchers.Default) { generateKeyPair(algorithm, label) }
                     credentialVault.storePrivateKey(
@@ -209,27 +238,15 @@ fun KeysScreen(
     }
 
     if (importing) {
-        val pickedPem = remember { mutableStateOf("") }
-        val pickError = remember { mutableStateOf<String?>(null) }
-        val picker =
-            rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-                if (uri != null) {
-                    scope.launch {
-                        runCatching { readKeyText(activity.contentResolver, uri) }
-                            .onSuccess { pickedPem.value = it; pickError.value = null }
-                            .onFailure { pickError.value = it.message }
-                    }
-                }
-            }
         AddKeyDialog(
-            title = "Import from file",
+            title = "Import a key",
             confirmLabel = "Import",
             onDismiss = { importing = false },
-            onConfirm = { label, passphrase, _, requireBiometric ->
+            onConfirm = { label, pem, passphrase, _, requireBiometric ->
                 runCatching {
-                    val publicKeyLine = publicKeyLineOf(pickedPem.value, passphrase, label)
+                    val publicKeyLine = publicKeyLineOf(pem, passphrase, label)
                     credentialVault.storePrivateKey(
-                        pickedPem.value,
+                        pem,
                         passphrase,
                         publicKeyLine,
                         label,
@@ -238,17 +255,14 @@ fun KeysScreen(
                     )
                 }.exceptionOrNull()
             },
-            confirmEnabled = pickedPem.value.isNotBlank(),
-            importPicker = { picker.launch(arrayOf("*/*")) },
-            importPicked = pickedPem.value.isNotBlank(),
-            initialError = pickError.value,
+            importing = true,
         )
     }
 
-    renaming?.let { key ->
-        var label by rememberFormState(key.id) { key.label.orEmpty() }
+    keys.firstOrNull { it.id == renamingId }?.let { key ->
+        var label by rememberSaveable(key.id) { mutableStateOf(key.label.orEmpty()) }
         AlertDialog(
-            onDismissRequest = { renaming = null },
+            onDismissRequest = { renamingId = null },
             title = { Text("Rename key") },
             text = {
                 OutlinedTextField(
@@ -261,14 +275,14 @@ fun KeysScreen(
             },
             confirmButton = {
                 TextButton(onClick = {
-                    renaming = null
+                    renamingId = null
                     scope.launch {
                         runCatching { credentialDao.setLabel(key.id, label.ifBlank { null }) }
                             .onFailure { message = "Couldn't rename ${credentialLabel(key)}." }
                     }
                 }) { Text("Rename") }
             },
-            dismissButton = { TextButton(onClick = { renaming = null }) { Text("Cancel") } },
+            dismissButton = { TextButton(onClick = { renamingId = null }) { Text("Cancel") } },
         )
     }
 
@@ -320,13 +334,13 @@ fun KeysScreen(
         )
     }
 
-    deleting?.let { key ->
+    keys.firstOrNull { it.id == deletingId }?.let { key ->
         // A fresh query, not the observed list - see HostDao.countHostsUsingCredential.
         val forwardedBy by produceState<List<HostEntity>?>(null, key.id) {
             value = hostsForwardingKey(key.id, hostDao.observeAll().first())
         }
         AlertDialog(
-            onDismissRequest = { deleting = null },
+            onDismissRequest = { deletingId = null },
             title = { Text("Delete ${credentialLabel(key)}?") },
             text = {
                 Text(
@@ -338,7 +352,7 @@ fun KeysScreen(
             },
             confirmButton = {
                 TextButton(enabled = forwardedBy != null, onClick = {
-                    deleting = null
+                    deletingId = null
                     scope.launch {
                         // Re-checked against the database, not the observed host list: that list
                         // starts empty, so a tap in the first frames after this screen is composed
@@ -359,7 +373,7 @@ fun KeysScreen(
                     }
                 }) { Text("Delete") }
             },
-            dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } },
+            dismissButton = { TextButton(onClick = { deletingId = null }) { Text("Cancel") } },
         )
     }
 }
@@ -369,11 +383,13 @@ private fun KeyCard(
     key: CredentialEntity,
     usage: String,
     onCopy: () -> Unit,
+    onShare: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
 ) {
     val publicKey = remember(key.publicKeyText) { key.publicKeyText?.let(::parsePublicKeyLine) }
     val fingerprint = remember(publicKey) { publicKey?.let(::sha256Fingerprint) }
+    val name = credentialLabel(key)
     Card {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(
@@ -382,7 +398,7 @@ private fun KeyCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(credentialLabel(key), style = MaterialTheme.typography.titleSmall)
+                    Text(name, style = MaterialTheme.typography.titleSmall)
                     Text(
                         // A CA-signed key is accepted wherever that CA is trusted, not just by the
                         // hosts counted here, so the count alone understates its reach.
@@ -391,19 +407,38 @@ private fun KeyCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                IconButton(onClick = onCopy, enabled = key.publicKeyText != null) {
-                    Icon(Icons.Outlined.ContentCopy, contentDescription = "Copy public key")
-                }
                 IconButton(onClick = onRename) {
-                    Icon(Icons.Outlined.Edit, contentDescription = "Rename key")
+                    Icon(Icons.Outlined.Edit, contentDescription = "Rename $name")
                 }
                 IconButton(onClick = onDelete) {
-                    Icon(Icons.Outlined.Delete, contentDescription = "Delete key")
+                    Icon(Icons.Outlined.Delete, contentDescription = "Delete $name")
                 }
             }
             if (fingerprint != null) {
                 HorizontalDivider()
                 FingerprintBlock(fingerprint = fingerprint)
+            }
+            Row {
+                TextButton(
+                    onClick = onCopy,
+                    enabled = key.publicKeyText != null,
+                    contentPadding = ButtonDefaults.TextButtonWithIconContentPadding,
+                    modifier = Modifier.semantics { contentDescription = "Copy public key of $name" },
+                ) {
+                    Icon(Icons.Outlined.ContentCopy, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
+                    Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                    Text("Copy public key")
+                }
+                TextButton(
+                    onClick = onShare,
+                    enabled = key.publicKeyText != null,
+                    contentPadding = ButtonDefaults.TextButtonWithIconContentPadding,
+                    modifier = Modifier.semantics { contentDescription = "Share public key of $name" },
+                ) {
+                    Icon(Icons.Outlined.Share, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
+                    Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                    Text("Share")
+                }
             }
         }
     }
@@ -420,21 +455,32 @@ private fun AddKeyDialog(
     onDismiss: () -> Unit,
     onConfirm: suspend (
         label: String?,
+        privateKey: String,
         passphrase: String?,
         algorithm: GeneratedKeyAlgorithm,
         requireBiometric: Boolean,
     ) -> Throwable?,
     algorithms: List<GeneratedKeyAlgorithm> = emptyList(),
-    confirmEnabled: Boolean = true,
-    importPicker: (() -> Unit)? = null,
-    importPicked: Boolean = false,
-    initialError: String? = null,
+    importing: Boolean = false,
 ) {
     val scope = rememberCoroutineScope()
-    var label by remember { mutableStateOf("") }
+    val context = LocalContext.current
+    var privateKey by remember { mutableStateOf("") }
+    var pickError by remember { mutableStateOf<String?>(null) }
+    val picker =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri != null) {
+                scope.launch {
+                    runCatching { readKeyText(context.contentResolver, uri) }
+                        .onSuccess { privateKey = it; pickError = null }
+                        .onFailure { pickError = it.message }
+                }
+            }
+        }
+    var label by rememberSaveable { mutableStateOf("") }
     var passphrase by remember { mutableStateOf("") }
-    var algorithm by remember { mutableStateOf(GeneratedKeyAlgorithm.ED25519) }
-    var requireBiometric by remember { mutableStateOf(false) }
+    var algorithm by rememberSaveable { mutableStateOf(GeneratedKeyAlgorithm.ED25519) }
+    var requireBiometric by rememberSaveable { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
@@ -442,7 +488,10 @@ private fun AddKeyDialog(
         onDismissRequest = { if (!busy) onDismiss() },
         title = { Text(title) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 OutlinedTextField(
                     value = label,
                     onValueChange = { label = it },
@@ -455,10 +504,17 @@ private fun AddKeyDialog(
                         Text(option.label)
                     }
                 }
-                if (importPicker != null) {
-                    TextButton(onClick = importPicker) {
-                        Text(if (importPicked) "Key file loaded - pick another" else "Pick key file")
-                    }
+                if (importing) {
+                    Button(onClick = { picker.launch(arrayOf("*/*")) }) { Text("Pick key file") }
+                    Text("OpenSSH, PEM/PKCS#8 or PuTTY .ppk.", style = MaterialTheme.typography.bodySmall)
+                    OutlinedTextField(
+                        value = privateKey,
+                        onValueChange = { privateKey = it; pickError = null },
+                        label = { Text("Or paste private key") },
+                        keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
+                        minLines = 3,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                     OutlinedTextField(
                         value = passphrase,
                         onValueChange = { passphrase = it },
@@ -477,25 +533,26 @@ private fun AddKeyDialog(
                     checked = requireBiometric,
                     onCheckedChange = { requireBiometric = it },
                 )
-                (error ?: initialError)?.let {
+                (error ?: pickError)?.let {
                     Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                 }
             }
         },
         confirmButton = {
             TextButton(
-                enabled = confirmEnabled && !busy,
+                enabled = (!importing || privateKey.isNotBlank()) && !busy,
                 onClick = {
                     busy = true
                     scope.launch {
                         val failure = onConfirm(
                             label.ifBlank { null },
+                            privateKey,
                             passphrase.ifBlank { null },
                             algorithm,
                             requireBiometric,
                         )
                         busy = false
-                        if (failure == null) onDismiss() else error = failure.message ?: "Could not store the key"
+                        if (failure == null) onDismiss() else error = if (importing) keyImportErrorMessage(failure) else failure.message ?: "Could not store the key"
                     }
                 },
             ) { Text(confirmLabel) }
