@@ -15,6 +15,14 @@ class HostCredentialTest {
     ) = planCredentialSave(kind, stored, keep, touched, existing)
 
     @Test
+    fun `the host label replaces a public key comment that has spaces`() {
+        assertEquals(
+            "ssh-ed25519 AAAAC3 web1 key",
+            withPublicKeyComment("ssh-ed25519 AAAAC3 old comment here", hostKeyLabel("web1")),
+        )
+    }
+
+    @Test
     fun `a stored key is used as is and nothing is sealed`() {
         assertEquals(
             CredentialSavePlan(CredentialChoice.Stored(42L), null),

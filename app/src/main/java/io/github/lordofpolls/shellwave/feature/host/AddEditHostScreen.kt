@@ -6,7 +6,6 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,24 +15,21 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ArrowDropDown
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -41,6 +37,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,7 +48,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentType
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
@@ -94,6 +91,7 @@ import io.github.lordofpolls.shellwave.ssh.detectMacAddress
 import io.github.lordofpolls.shellwave.ssh.generateKeyPair
 import io.github.lordofpolls.shellwave.ssh.loadKeysWithCertificate
 import io.github.lordofpolls.shellwave.ssh.parsesAsCertificate
+import io.github.lordofpolls.shellwave.ssh.publicKeyComment
 import io.github.lordofpolls.shellwave.ssh.publicKeyLineOf
 import io.github.lordofpolls.shellwave.ssh.readKeyText
 import io.github.lordofpolls.shellwave.ssh.resolveProxyHops
@@ -103,10 +101,15 @@ import io.github.lordofpolls.shellwave.ui.design.BackTopBar
 import io.github.lordofpolls.shellwave.ui.design.CollapsibleSection
 import io.github.lordofpolls.shellwave.ui.design.ColorPickerDialog
 import io.github.lordofpolls.shellwave.ui.design.ColorSwatch
+import io.github.lordofpolls.shellwave.ui.design.LocalReadableInset
 import io.github.lordofpolls.shellwave.ui.design.MachineText
+import io.github.lordofpolls.shellwave.ui.design.PickerRow
 import io.github.lordofpolls.shellwave.ui.design.RadioRow
 import io.github.lordofpolls.shellwave.ui.design.rememberFormState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 internal enum class AuthKind { PASSWORD, STORED_KEY, IMPORT_KEY, GENERATE_KEY, KEYBOARD_INTERACTIVE }
 
@@ -175,7 +178,9 @@ fun AddEditHostScreen(
     val storedKeys = storedKeysOrNull.orEmpty()
     var storedKeyId by rememberFormState<Long?>(existing?.id) { null }
     var detectingMac by remember { mutableStateOf(false) }
-    var overrideEditor by rememberFormState<OverrideEditor?>(existing?.id) { null }
+    // Not saved: the override rows it edits are entities that can't be, so a restored editor
+    // would open empty.
+    var overrideEditor by remember(existing?.id) { mutableStateOf<OverrideEditor?>(null) }
 
     // Each override is its own dedicated row, shared with nothing. Null means "no override yet"; a
     // non-null value is already persisted, inserted the moment the toggle is switched on, so its
@@ -205,7 +210,12 @@ fun AddEditHostScreen(
     }
     val keyBarLayouts by keyBarLayoutDao.observeAll().collectAsState(initial = emptyList())
 
+    // Tracked rather than compared with the host's ids: an override row can be gone while the host
+    // still points at it, which would read as an edit forever.
+    var overridesToggled by rememberSaveable { mutableStateOf(false) }
+
     fun enableProfileOverride() {
+        overridesToggled = true
         scope.launch {
             val fresh = DEFAULT_TERMINAL_PROFILE.copy(id = 0, name = "Host override")
             terminalProfileOverride = fresh.copy(id = terminalProfileDao.insert(fresh))
@@ -214,6 +224,7 @@ fun AddEditHostScreen(
 
     fun disableProfileOverride() {
         val current = terminalProfileOverride ?: return
+        overridesToggled = true
         terminalProfileOverride = null
         scope.launch { terminalProfileDao.delete(current) }
     }
@@ -224,6 +235,7 @@ fun AddEditHostScreen(
     }
 
     fun enableSchemeOverride() {
+        overridesToggled = true
         scope.launch {
             val fresh = DEFAULT_COLOR_SCHEME.copy(id = 0, name = "Custom")
             colorSchemeOverride = fresh.copy(id = colorSchemeDao.insert(fresh))
@@ -232,6 +244,7 @@ fun AddEditHostScreen(
 
     fun disableSchemeOverride() {
         val current = colorSchemeOverride ?: return
+        overridesToggled = true
         colorSchemeOverride = null
         scope.launch { colorSchemeDao.delete(current) }
     }
@@ -241,15 +254,39 @@ fun AddEditHostScreen(
         scope.launch { colorSchemeDao.update(updated) }
     }
 
-    var authKind by remember { mutableStateOf(AuthKind.PASSWORD) }
-    var originalAuthKind by remember { mutableStateOf<AuthKind?>(null) }
+    var authKind by rememberSaveable { mutableStateOf(AuthKind.PASSWORD) }
+    var originalAuthKind by rememberSaveable { mutableStateOf<AuthKind?>(null) }
+    // A recreated screen keeps what the user picked rather than re-seeding it from the vault.
+    var describedCredentialId by rememberSaveable { mutableStateOf<Long?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
 
     var password by remember { mutableStateOf("") }
 
     var importedPem by remember { mutableStateOf("") }
     var importedPassphrase by remember { mutableStateOf("") }
-    var importedPublicKeyPreview by remember { mutableStateOf<String?>(null) }
+    var parsedPublicKey by remember { mutableStateOf<String?>(null) }
+    // The label only sets the comment, so it is applied here rather than re-parsing on every
+    // keystroke in the Label field.
+    val importedPublicKeyPreview = parsedPublicKey?.let { withPublicKeyComment(it, hostKeyLabel(label)) }
+    var importedKeyError by remember { mutableStateOf<String?>(null) }
+
+    fun parseImportedKey() =
+        runCatching { publicKeyLineOf(importedPem, importedPassphrase.ifBlank { null }) }
+
+    fun showParsedKey(result: Result<String>) {
+        parsedPublicKey = result.getOrNull()
+        importedKeyError = result.exceptionOrNull()?.let { it.message ?: "Could not parse key" }
+    }
+
+    // Save needs the parsed public line, so parse as the key is entered rather than behind a
+    // button nobody knew was required. Debounced: an encrypted key's KDF is slow.
+    LaunchedEffect(importedPem, importedPassphrase) {
+        parsedPublicKey = null
+        importedKeyError = null
+        if (importedPem.isBlank()) return@LaunchedEffect
+        delay(300)
+        showParsedKey(withContext(Dispatchers.Default) { parseImportedKey() })
+    }
     // Seeded from the stored credential's own certificate when editing (see the LaunchedEffect
     // below); certificateTouched tracks whether the user actually picked or cleared one this
     // session, so save() knows whether to write it back at all.
@@ -263,6 +300,7 @@ fun AddEditHostScreen(
     var existingPublicKeyText by rememberFormState<String?>(existing?.id) { null }
 
     var generatedKey by remember { mutableStateOf<GeneratedKey?>(null) }
+    var generateAlgorithm by rememberSaveable { mutableStateOf(GeneratedKeyAlgorithm.ED25519) }
 
     // A config import creates credentials with no sealed secret, and this is the screen that fills
     // one in. Assumed present until described, so an existing host never flashes the notice below.
@@ -270,6 +308,7 @@ fun AddEditHostScreen(
 
     LaunchedEffect(existing?.credentialId) {
         val credentialId = existing?.credentialId ?: return@LaunchedEffect
+        if (credentialId == describedCredentialId) return@LaunchedEffect
         val summary = credentialVault.describe(credentialId) ?: return@LaunchedEffect
         val kind =
             when (summary.type) {
@@ -285,6 +324,7 @@ fun AddEditHostScreen(
         requireBiometric = summary.requireBiometric
         importedCertificate = summary.certificate
         existingPublicKeyText = summary.publicKeyText
+        describedCredentialId = credentialId
     }
 
     // Editing, radio still on the stored credential's auth kind, nothing typed that would replace
@@ -404,7 +444,7 @@ fun AddEditHostScreen(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Button(onClick = { pickCertificate.launch(arrayOf("*/*")) }) {
+            OutlinedButton(onClick = { pickCertificate.launch(arrayOf("*/*")) }) {
                 Text("Certificate (optional)")
             }
             if (importedCertificate != null) {
@@ -560,7 +600,7 @@ fun AddEditHostScreen(
     }
 
     if (newGroupDialog) {
-        var name by remember { mutableStateOf("") }
+        var name by rememberSaveable { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { newGroupDialog = false },
             title = { Text("New group") },
@@ -595,8 +635,12 @@ fun AddEditHostScreen(
         )
     }
 
+    // The form leaves composition while an override editor is open; this keeps its sections'
+    // expanded state and scroll position for the way back.
+    val formStateHolder = rememberSaveableStateHolder()
     val editor = overrideEditor
     if (editor != null) {
+        val appScheme by remember { colorSchemeDao.observeDefault() }.collectAsState(initial = null)
         BackHandler { overrideEditor = null }
         Column(modifier = modifier.fillMaxSize()) {
             BackTopBar(title = editor.title, onBack = { overrideEditor = null })
@@ -604,12 +648,17 @@ fun AddEditHostScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
+                    .padding(horizontal = LocalReadableInset.current)
                     .padding(16.dp),
             ) {
                 when (editor) {
                     OverrideEditor.TERMINAL_PROFILE ->
                         terminalProfileOverride?.let {
-                            TerminalProfileFields(profile = it, onChange = ::saveProfileOverride)
+                            TerminalProfileFields(
+                                profile = it,
+                                onChange = ::saveProfileOverride,
+                                previewScheme = colorSchemeOverride ?: appScheme ?: DEFAULT_COLOR_SCHEME,
+                            )
                         }
 
                     OverrideEditor.COLOUR_SCHEME ->
@@ -622,488 +671,566 @@ fun AddEditHostScreen(
         return
     }
 
-    Column(modifier = modifier.fillMaxSize()) {
-        BackTopBar(
-            title = if (existing == null) "Add host" else "Edit host",
-            onBack = onDone,
+    fun hasUnsavedChanges(): Boolean =
+        existing.formFields() != HostFormFields(
+            label = label,
+            hostname = hostname,
+            port = port,
+            username = username,
+            groupId = groupId,
+            color = color,
+            resilientSession = resilientSession,
+            macAddress = macAddress,
+            agentForwarding = agentForwarding,
+            agentKeyIds = agentKeyIds.toSet(),
+            keyBarLayoutId = keyBarLayoutId,
+            proxyJumpHostId = proxyJumpHostId,
+        ) || overridesToggled || password.isNotEmpty() || importedPem.isNotBlank() || generatedKey != null ||
+                certificateTouched || authKind != (originalAuthKind ?: AuthKind.PASSWORD) ||
+                (authKind == AuthKind.STORED_KEY && storedKeyId != existing?.credentialId)
+
+    var confirmDiscard by rememberSaveable { mutableStateOf(false) }
+    fun leave() {
+        if (hasUnsavedChanges()) confirmDiscard = true else onDone()
+    }
+    BackHandler { leave() }
+    if (confirmDiscard) {
+        AlertDialog(
+            onDismissRequest = { confirmDiscard = false },
+            title = { Text("Discard changes?") },
+            text = { Text("Your changes to this host haven't been saved.") },
+            confirmButton = {
+                TextButton(onClick = { confirmDiscard = false; onDone() }) { Text("Discard") }
+            },
+            dismissButton = { TextButton(onClick = { confirmDiscard = false }) { Text("Keep editing") } },
         )
+    }
 
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            OutlinedTextField(
-                value = label,
-                onValueChange = { label = it },
-                label = { Text("Label (optional)") },
-                modifier = Modifier.fillMaxWidth()
+    formStateHolder.SaveableStateProvider("form") {
+        Column(modifier = modifier.fillMaxSize()) {
+            BackTopBar(
+                title = if (existing == null) "Add host" else "Edit host",
+                onBack = ::leave,
             )
-            val group = groups.firstOrNull { it.id == groupId }
-            PickerRow(
-                title = "Group",
-                value = {
-                    if (group == null) DimText("No group") else GroupChoice(group)
-                },
-            ) { dismiss ->
-                DropdownMenuItem(
-                    text = { Text("No group") },
-                    onClick = { groupId = null; dismiss() },
-                )
-                groups.forEach { candidate ->
-                    DropdownMenuItem(
-                        text = { GroupChoice(candidate) },
-                        onClick = { groupId = candidate.id; dismiss() },
-                    )
-                }
-                DropdownMenuItem(
-                    text = { Text("+ New group") },
-                    onClick = { newGroupDialog = true; dismiss() },
-                )
-            }
-            OutlinedTextField(
-                value = hostname,
-                onValueChange = { hostname = it },
-                label = { Text("Hostname") },
-                keyboardOptions =
-                    KeyboardOptions(
-                        keyboardType = KeyboardType.Uri,
-                        autoCorrectEnabled = false,
-                    ),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-            OutlinedTextField(
-                value = username,
-                onValueChange = { username = it },
-                label = { Text("Username") },
-                keyboardOptions =
-                    KeyboardOptions(
-                        keyboardType = KeyboardType.PasswordVisible,
-                        autoCorrectEnabled = false,
-                    ),
-                singleLine = true,
+
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .semantics { contentType = ContentType.Username },
-            )
-
-            SettingsSectionHeader("Authentication")
-            if (!storedSecretPresent) {
-                Text(
-                    "This host came from an imported configuration, which carries no secrets. Enter " +
-                            "its password or key below before connecting.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Column {
-                SettingsRadioGroup(
-                    label = null,
-                    options = AuthKind.entries,
-                    selected = authKind,
-                    labelOf = { it.label() },
-                    onSelect = {
-                        val leavingStoredKey = authKind == AuthKind.STORED_KEY
-                        authKind = it
-                        if (it == AuthKind.STORED_KEY) {
-                            resetCertificate(loginKeys.firstOrNull { key -> key.id == storedKeyId }?.certificate)
-                        } else if (leavingStoredKey) {
-                            resetCertificate(null)
-                        }
-                    },
-                )
-            }
-
-            when (authKind) {
-                AuthKind.STORED_KEY -> {
-                    if (storedKeysOrNull != null && loginKeys.isEmpty()) {
-                        DimText(
-                            if (storedKeys.any { it.type == CredentialType.PRIVATE_KEY.name }) {
-                                "No keys that can sign in yet. Add one on the Keys tab."
-                            } else {
-                                "No keys yet. Add one on the Keys tab."
-                            },
-                        )
-                    }
-                    loginKeys.forEach { key ->
-                        RadioRow(
-                            selected = key.id == storedKeyId,
-                            onClick = {
-                                if (storedKeyId != key.id) resetCertificate(key.certificate)
-                                storedKeyId = key.id
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) { KeyChoice(key) }
-                    }
-                    loginKeys.firstOrNull { it.id == storedKeyId }?.let { key ->
-                        CertificateControls(key.publicKeyText)
-                        DimText("A certificate belongs to the key, so this applies to every host that uses it.")
-                    }
-                }
-
-                AuthKind.PASSWORD ->
-                    OutlinedTextField(
-                        value = password,
-                        onValueChange = { password = it },
-                        label = { Text("Password") },
-                        visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .semantics { contentType = ContentType.Password },
-                    )
-
-                AuthKind.IMPORT_KEY -> {
-                    Button(onClick = { pickDocument.launch(arrayOf("*/*")) }) { Text("Pick key file") }
-                    // PuTTY .ppk has always worked - sshj registers PuTTYKeyFile and the picker takes
-                    // any MIME type - but nothing said so, and users asked for a feature already there.
-                    // Ed25519 .ppk is the one exception, refused with its own message.
-                    Text(
-                        "OpenSSH, PEM/PKCS#8 or PuTTY .ppk.",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    OutlinedTextField(
-                        value = importedPem,
-                        onValueChange = { setImportedPem(it); importedPublicKeyPreview = null },
-                        label = { Text("Or paste private key") },
-                        modifier = Modifier.fillMaxWidth(),
-                        minLines = 3,
-                    )
-                    OutlinedTextField(
-                        value = importedPassphrase,
-                        onValueChange = { importedPassphrase = it; importedPublicKeyPreview = null },
-                        label = { Text("Passphrase (if encrypted)") },
-                        visualTransformation = PasswordVisualTransformation(),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .semantics { contentType = ContentType.Password },
-                    )
-                    Button(
-                        onClick = {
-                            runCatching {
-                                publicKeyLineOf(
-                                    importedPem,
-                                    importedPassphrase.ifBlank { null },
-                                    hostKeyLabel(label))
-                            }
-                                .onSuccess { importedPublicKeyPreview = it; error = null }
-                                .onFailure { error = it.message ?: "Could not parse key" }
-                        },
-                        enabled = importedPem.isNotBlank(),
-                    ) { Text("Validate key") }
-                    // The parsed key line is machine truth; the "Parsed:" label in front of it is
-                    // prose.
-                    importedPublicKeyPreview?.let {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Text("Parsed:", style = MaterialTheme.typography.bodySmall)
-                            MachineText(it, style = MaterialTheme.typography.bodySmall)
-                        }
-                    }
-
-                    CertificateControls(importedPublicKeyPreview ?: existingPublicKeyText)
-                }
-
-                AuthKind.GENERATE_KEY -> {
-                    Text("Generate:", style = MaterialTheme.typography.bodySmall)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = {
-                            generatedKey = generateKeyPair(GeneratedKeyAlgorithm.ED25519, hostKeyLabel(label))
-                        }) { Text(GeneratedKeyAlgorithm.ED25519.label) }
-                        Button(onClick = {
-                            generatedKey = generateKeyPair(GeneratedKeyAlgorithm.RSA, hostKeyLabel(label))
-                        }) { Text(GeneratedKeyAlgorithm.RSA.label) }
-                        Button(onClick = {
-                            generatedKey = generateKeyPair(GeneratedKeyAlgorithm.ECDSA_P256, hostKeyLabel(label))
-                        }) { Text(GeneratedKeyAlgorithm.ECDSA_P256.label) }
-                    }
-                    generatedKey?.let { key ->
-                        Text(
-                            "Public key (add this to the server's authorized_keys):",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                        MachineText(key.publicKeyLine, style = MaterialTheme.typography.bodySmall)
-                        TextButton(onClick = {
-                            scope.launch {
-                                clipboard.setClipEntry(
-                                    ClipEntry(
-                                        ClipData.newPlainText("public key", key.publicKeyLine)
-                                    )
-                                )
-                            }
-                        }) {
-                            Text("Copy public key")
-                        }
-                    }
-                }
-
-                AuthKind.KEYBOARD_INTERACTIVE ->
-                    Text(
-                        "The server will prompt for whatever it needs (password, TOTP code, ...) when connecting.",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-            }
-
-            if (authKind != AuthKind.KEYBOARD_INTERACTIVE && authKind != AuthKind.STORED_KEY) {
-                SettingsSwitch(
-                    title = "Require biometric unlock",
-                    description =
-                        if (keepExistingCredential) {
-                            "Enter the password or key again to change this."
-                        } else {
-                            "Ask for a fingerprint before this credential is used."
-                        },
-                    checked = requireBiometric,
-                    onCheckedChange = { requireBiometric = it },
-                    enabled = !keepExistingCredential,
-                )
-            }
-
-            // Every var read below is `remember`'d above this call, not inside it: state has to
-            // survive collapse and expand. See this file's doc.
-            CollapsibleSection("Connection") {
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = LocalReadableInset.current)
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 OutlinedTextField(
-                    value = port,
-                    onValueChange = { port = it },
-                    label = { Text("Port") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
+                    value = label,
+                    onValueChange = { label = it },
+                    label = { Text("Label (optional)") },
+                    modifier = Modifier.fillMaxWidth()
                 )
-
-                // Excludes this host itself - an immediate one-host cycle is the only case cheap to
-                // rule out.
-                val jumpHost = allHosts.firstOrNull { it.id == proxyJumpHostId }
+                val group = groups.firstOrNull { it.id == groupId }
                 PickerRow(
-                    title = "Proxy jump (ProxyJump)",
+                    title = "Group",
                     value = {
-                        if (jumpHost == null) DimText("Connect directly") else HostChoice(jumpHost)
+                        if (group == null) DimText("No group") else GroupChoice(group)
                     },
                 ) { dismiss ->
                     DropdownMenuItem(
-                        text = { Text("Connect directly") },
-                        onClick = { proxyJumpHostId = null; dismiss() },
+                        text = { Text("No group") },
+                        onClick = { groupId = null; dismiss() },
                     )
-                    allHosts.filter { it.id != existing?.id }.forEach { candidate ->
+                    groups.forEach { candidate ->
                         DropdownMenuItem(
-                            text = { HostChoice(candidate) },
-                            onClick = { proxyJumpHostId = candidate.id; dismiss() },
+                            text = { GroupChoice(candidate) },
+                            onClick = { groupId = candidate.id; dismiss() },
                         )
                     }
+                    DropdownMenuItem(
+                        text = { Text("+ New group") },
+                        onClick = { newGroupDialog = true; dismiss() },
+                    )
                 }
-                Text(
-                    "Connects through another saved host acting as a bastion. Jump settings chain, so " +
-                            "several hops can be reached this way.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = hostname,
+                        onValueChange = { hostname = it },
+                        label = { Text("Hostname") },
+                        keyboardOptions =
+                            KeyboardOptions(
+                                keyboardType = KeyboardType.Uri,
+                                autoCorrectEnabled = false,
+                            ),
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = port,
+                        onValueChange = { port = it },
+                        label = { Text("Port") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier.width(96.dp),
+                    )
+                }
+                OutlinedTextField(
+                    value = username,
+                    onValueChange = { username = it },
+                    label = { Text("Username") },
+                    keyboardOptions =
+                        KeyboardOptions(
+                            keyboardType = KeyboardType.PasswordVisible,
+                            autoCorrectEnabled = false,
+                        ),
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semantics { contentType = ContentType.Username },
                 )
 
-                SettingsSwitch(
-                    title = "Resilient session",
-                    description = "Reattach to the same tmux session after a reconnect. Falls back " +
-                            "to a plain shell without tmux.",
-                    checked = resilientSession,
-                    onCheckedChange = { resilientSession = it },
-                )
+                SettingsSectionHeader("Authentication")
+                if (!storedSecretPresent) {
+                    Text(
+                        "This host came from an imported configuration, which carries no secrets. Enter " +
+                                "its password or key below before connecting.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Column {
+                    SettingsRadioGroup(
+                        label = null,
+                        options = AuthKind.entries.filter {
+                            it != AuthKind.STORED_KEY || storedKeysOrNull == null ||
+                                    loginKeys.isNotEmpty() || authKind == AuthKind.STORED_KEY
+                        },
+                        selected = authKind,
+                        labelOf = { it.label() },
+                        onSelect = {
+                            val leavingStoredKey = authKind == AuthKind.STORED_KEY
+                            authKind = it
+                            if (it == AuthKind.STORED_KEY) {
+                                resetCertificate(loginKeys.firstOrNull { key -> key.id == storedKeyId }?.certificate)
+                            } else if (leavingStoredKey) {
+                                resetCertificate(null)
+                            }
+                        },
+                    )
+                }
 
-                SettingsSwitch(
-                    title = "Agent forwarding",
-                    description = "You confirm each key when you press Connect, and they stay forwarded " +
-                            "until you close the tab. Anything on the host running as you, and root, can " +
-                            "use them while you're connected.",
-                    checked = agentForwarding,
-                    onCheckedChange = { agentForwarding = it },
-                )
-                if (agentForwarding) {
-                    val privateKeys = storedKeys.filter { it.type == CredentialType.PRIVATE_KEY.name }
-                    Text("Keys to forward", style = MaterialTheme.typography.labelLarge)
-                    privateKeys.forEach { key ->
-                        val picked = key.id in agentKeyIds
-                        Row(
+                when (authKind) {
+                    AuthKind.STORED_KEY -> {
+                        if (storedKeysOrNull != null && loginKeys.isEmpty()) {
+                            DimText(
+                                if (storedKeys.any { it.type == CredentialType.PRIVATE_KEY.name }) {
+                                    "No keys that can sign in yet. Pick Import key or Generate key instead."
+                                } else {
+                                    "No keys yet. Pick Import key or Generate key instead."
+                                },
+                            )
+                        }
+                        loginKeys.forEach { key ->
+                            RadioRow(
+                                selected = key.id == storedKeyId,
+                                onClick = {
+                                    if (storedKeyId != key.id) resetCertificate(key.certificate)
+                                    storedKeyId = key.id
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { KeyChoice(key) }
+                        }
+                        loginKeys.firstOrNull { it.id == storedKeyId }?.let { key ->
+                            CertificateControls(key.publicKeyText)
+                            DimText("A certificate belongs to the key, so this applies to every host that uses it.")
+                        }
+                    }
+
+                    AuthKind.PASSWORD ->
+                        OutlinedTextField(
+                            value = password,
+                            onValueChange = { password = it },
+                            label = { Text("Password") },
+                            supportingText = if (existing != null && originalAuthKind == AuthKind.PASSWORD && storedSecretPresent) {
+                                { Text("Leave blank to keep the saved password") }
+                            } else null,
+                            visualTransformation = PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(start = 16.dp)
-                                .toggleable(
-                                    value = picked,
-                                    role = Role.Checkbox,
-                                    onValueChange = { agentKeyIds = if (it) agentKeyIds + key.id else agentKeyIds - key.id },
-                                ),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Checkbox(checked = picked, onCheckedChange = null)
-                            KeyChoice(key, forwarded = true)
+                                .semantics { contentType = ContentType.Password },
+                        )
+
+                    AuthKind.IMPORT_KEY -> {
+                        Button(onClick = { pickDocument.launch(arrayOf("*/*")) }) { Text("Pick key file") }
+                        // PuTTY .ppk has always worked - sshj registers PuTTYKeyFile and the picker takes
+                        // any MIME type - but nothing said so, and users asked for a feature already there.
+                        // Ed25519 .ppk is the one exception, refused with its own message.
+                        Text(
+                            "OpenSSH, PEM/PKCS#8 or PuTTY .ppk.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        OutlinedTextField(
+                            value = importedPem,
+                            onValueChange = { setImportedPem(it) },
+                            label = { Text("Or paste private key") },
+                            keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
+                            modifier = Modifier.fillMaxWidth(),
+                            minLines = 3,
+                        )
+                        OutlinedTextField(
+                            value = importedPassphrase,
+                            onValueChange = { importedPassphrase = it },
+                            label = { Text("Passphrase (if encrypted)") },
+                            visualTransformation = PasswordVisualTransformation(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .semantics { contentType = ContentType.Password },
+                        )
+                        importedKeyError?.let {
+                            Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                        }
+                        Button(
+                            onClick = { showParsedKey(parseImportedKey()) },
+                            enabled = importedPem.isNotBlank(),
+                        ) { Text("Validate key") }
+                        // The parsed key line is machine truth; the "Parsed:" label in front of it is
+                        // prose.
+                        importedPublicKeyPreview?.let {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text("Parsed:", style = MaterialTheme.typography.bodySmall)
+                                MachineText(it, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+
+                        CertificateControls(importedPublicKeyPreview ?: existingPublicKeyText)
+                    }
+
+                    AuthKind.GENERATE_KEY -> {
+                        PickerRow(
+                            title = "Algorithm",
+                            value = { DimText(generateAlgorithm.label) },
+                        ) { dismiss ->
+                            GeneratedKeyAlgorithm.entries.forEach { algorithm ->
+                                DropdownMenuItem(
+                                    text = { Text(algorithm.label) },
+                                    onClick = { generateAlgorithm = algorithm; dismiss() },
+                                )
+                            }
+                        }
+                        Button(onClick = {
+                            generatedKey = generateKeyPair(generateAlgorithm, hostKeyLabel(label))
+                        }) { Text(if (generatedKey == null) "Generate key" else "Generate another") }
+                        generatedKey?.let { key ->
+                            Text(
+                                "Next, add this public key to ~/.ssh/authorized_keys on the server, then save:",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            MachineText(key.publicKeyLine, style = MaterialTheme.typography.bodySmall)
+                            TextButton(onClick = {
+                                scope.launch {
+                                    clipboard.setClipEntry(
+                                        ClipEntry(
+                                            ClipData.newPlainText("public key", key.publicKeyLine)
+                                        )
+                                    )
+                                }
+                            }) {
+                                Text("Copy public key")
+                            }
                         }
                     }
-                    if (storedKeysOrNull != null) {
-                        if (privateKeys.isEmpty()) {
-                            DimText("No keys yet. Add one on the Keys tab; until then nothing will be forwarded.")
-                        } else if (privateKeys.none { it.id in agentKeyIds }) {
-                            DimText("No keys selected: nothing will be forwarded.")
-                        }
-                    }
-                }
-            }
 
-            CollapsibleSection("Appearance") {
-                SettingsSwitch(
-                    title = "Terminal profile override",
-                    description = "Font, cursor and scrollback for this host only.",
-                    checked = terminalProfileOverride != null,
-                    onCheckedChange = { on -> if (on) enableProfileOverride() else disableProfileOverride() },
-                )
-                if (terminalProfileOverride != null) {
-                    SettingsRow(
-                        title = "Edit terminal profile",
-                        chevron = true,
-                        onClick = { overrideEditor = OverrideEditor.TERMINAL_PROFILE },
-                    )
-                }
-
-                SettingsSwitch(
-                    title = "Colour scheme override",
-                    description = "A different palette for this host only.",
-                    checked = colorSchemeOverride != null,
-                    onCheckedChange = { on -> if (on) enableSchemeOverride() else disableSchemeOverride() },
-                )
-                if (colorSchemeOverride != null) {
-                    SettingsRow(
-                        title = "Edit colour scheme",
-                        chevron = true,
-                        onClick = { overrideEditor = OverrideEditor.COLOUR_SCHEME },
-                    )
-                }
-
-                Text("Colour", style = MaterialTheme.typography.labelLarge)
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                    itemVerticalAlignment = Alignment.CenterVertically,
-                ) {
-                    ColorSwatch(
-                        argb = null,
-                        description = "No colour",
-                        selected = color == null,
-                        onClick = { color = null },
-                    )
-                    GroupEntity.SWATCHES.forEachIndexed { i, swatch ->
-                        ColorSwatch(
-                            argb = swatch,
-                            description = "Colour ${i + 1}",
-                            selected = color == swatch,
-                            onClick = { color = swatch },
+                    AuthKind.KEYBOARD_INTERACTIVE ->
+                        Text(
+                            "The server will prompt for whatever it needs (password, TOTP code, ...) when connecting.",
+                            style = MaterialTheme.typography.bodySmall,
                         )
-                    }
-                    color?.takeIf { it !in GroupEntity.SWATCHES }?.let { custom ->
-                        ColorSwatch(
-                            argb = custom,
-                            description = "Custom colour",
-                            selected = true,
-                            onClick = { customColorDialog = true },
-                        )
-                    }
-                    TextButton(onClick = { customColorDialog = true }) { Text("Custom…") }
                 }
-                DimText("Marks this host in the list. Blank follows its group's colour.")
 
-                val layoutName = keyBarLayouts.firstOrNull { it.id == keyBarLayoutId }?.name
-                PickerRow(
-                    title = "Key bar layout",
-                    value = { DimText(layoutName ?: DEFAULT_KEY_BAR_LAYOUT) },
-                ) { dismiss ->
-                    DropdownMenuItem(
-                        text = { Text(DEFAULT_KEY_BAR_LAYOUT) },
-                        onClick = { keyBarLayoutId = null; dismiss() },
+                if (authKind != AuthKind.KEYBOARD_INTERACTIVE && authKind != AuthKind.STORED_KEY) {
+                    SettingsSwitch(
+                        title = "Require biometric unlock",
+                        description =
+                            if (keepExistingCredential) {
+                                "Enter the password or key again to change this."
+                            } else {
+                                "Ask for a fingerprint before this credential is used."
+                            },
+                        checked = requireBiometric,
+                        onCheckedChange = { requireBiometric = it },
+                        enabled = !keepExistingCredential,
                     )
-                    keyBarLayouts.forEach { layout ->
+                }
+
+                // Every var read below is `remember`'d above this call, not inside it: state has to
+                // survive collapse and expand. See this file's doc.
+                CollapsibleSection("Connection") {
+                    // Excludes this host itself - an immediate one-host cycle is the only case cheap to
+                    // rule out.
+                    val jumpHost = allHosts.firstOrNull { it.id == proxyJumpHostId }
+                    PickerRow(
+                        title = "Proxy jump (ProxyJump)",
+                        value = {
+                            if (jumpHost == null) DimText("Connect directly") else HostChoice(jumpHost)
+                        },
+                    ) { dismiss ->
                         DropdownMenuItem(
-                            text = { Text(layout.name) },
-                            onClick = { keyBarLayoutId = layout.id; dismiss() },
+                            text = { Text("Connect directly") },
+                            onClick = { proxyJumpHostId = null; dismiss() },
                         )
+                        allHosts.filter { it.id != existing?.id }.forEach { candidate ->
+                            DropdownMenuItem(
+                                text = { HostChoice(candidate) },
+                                onClick = { proxyJumpHostId = candidate.id; dismiss() },
+                            )
+                        }
+                    }
+                    Text(
+                        "Connects through another saved host acting as a bastion. Jump settings chain, so " +
+                                "several hops can be reached this way.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+
+                    SettingsSwitch(
+                        title = "Resilient session",
+                        description = "Reattach to the same tmux session after a reconnect. Falls back " +
+                                "to a plain shell without tmux.",
+                        checked = resilientSession,
+                        onCheckedChange = { resilientSession = it },
+                    )
+
+                    SettingsSwitch(
+                        title = "Agent forwarding",
+                        description = "You confirm each key when you press Connect, and they stay forwarded " +
+                                "until you close the tab. Anything on the host running as you, and root, can " +
+                                "use them while you're connected.",
+                        checked = agentForwarding,
+                        onCheckedChange = { agentForwarding = it },
+                    )
+                    if (agentForwarding) {
+                        val privateKeys = storedKeys.filter { it.type == CredentialType.PRIVATE_KEY.name }
+                        Text("Keys to forward", style = MaterialTheme.typography.labelLarge)
+                        privateKeys.forEach { key ->
+                            val picked = key.id in agentKeyIds
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 16.dp)
+                                    .toggleable(
+                                        value = picked,
+                                        role = Role.Checkbox,
+                                        onValueChange = { agentKeyIds = if (it) agentKeyIds + key.id else agentKeyIds - key.id },
+                                    ),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Checkbox(checked = picked, onCheckedChange = null)
+                                KeyChoice(key, forwarded = true)
+                            }
+                        }
+                        if (storedKeysOrNull != null) {
+                            if (privateKeys.isEmpty()) {
+                                DimText("No keys yet. Add one on the Keys tab; until then nothing will be forwarded.")
+                            } else if (privateKeys.none { it.id in agentKeyIds }) {
+                                DimText("No keys selected: nothing will be forwarded.")
+                            }
+                        }
                     }
                 }
-            }
 
-            CollapsibleSection("Wake-on-LAN") {
-                OutlinedTextField(
-                    value = macAddress,
-                    // Clears the rejection this field caused, so the red line cannot outlive a fix.
-                    onValueChange = { macAddress = it; error = null },
-                    label = { Text("MAC address (optional)") },
-                    placeholder = { Text("3c:22:fb:01:02:03") },
-                    supportingText = { Text("Adds a Wake-on-LAN action to this host's menu.") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                CollapsibleSection("Appearance") {
+                    SettingsSwitch(
+                        title = "Terminal profile override",
+                        description = "Font, cursor and scrollback for this host only.",
+                        checked = terminalProfileOverride != null,
+                        onCheckedChange = { on -> if (on) enableProfileOverride() else disableProfileOverride() },
+                    )
+                    if (terminalProfileOverride != null) {
+                        SettingsRow(
+                            title = "Edit terminal profile",
+                            chevron = true,
+                            onClick = { overrideEditor = OverrideEditor.TERMINAL_PROFILE },
+                        )
+                    }
+
+                    SettingsSwitch(
+                        title = "Colour scheme override",
+                        description = "A different palette for this host only.",
+                        checked = colorSchemeOverride != null,
+                        onCheckedChange = { on -> if (on) enableSchemeOverride() else disableSchemeOverride() },
+                    )
+                    if (colorSchemeOverride != null) {
+                        SettingsRow(
+                            title = "Edit colour scheme",
+                            chevron = true,
+                            onClick = { overrideEditor = OverrideEditor.COLOUR_SCHEME },
+                        )
+                    }
+
+                    Text("Colour", style = MaterialTheme.typography.labelLarge)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        itemVerticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        ColorSwatch(
+                            argb = null,
+                            description = "No colour",
+                            selected = color == null,
+                            onClick = { color = null },
+                        )
+                        GroupEntity.SWATCHES.forEachIndexed { i, swatch ->
+                            ColorSwatch(
+                                argb = swatch,
+                                description = SWATCH_NAMES.getOrElse(i) { "Colour ${i + 1}" },
+                                selected = color == swatch,
+                                onClick = { color = swatch },
+                            )
+                        }
+                        color?.takeIf { it !in GroupEntity.SWATCHES }?.let { custom ->
+                            ColorSwatch(
+                                argb = custom,
+                                description = "Custom colour",
+                                selected = true,
+                                onClick = { customColorDialog = true },
+                            )
+                        }
+                        TextButton(onClick = { customColorDialog = true }) { Text("Custom…") }
+                    }
+                    DimText("Marks this host in the list. Blank follows its group's colour.")
+
+                    val layoutName = keyBarLayouts.firstOrNull { it.id == keyBarLayoutId }?.name
+                    PickerRow(
+                        title = "Key bar layout",
+                        value = { DimText(layoutName ?: DEFAULT_KEY_BAR_LAYOUT) },
+                    ) { dismiss ->
+                        DropdownMenuItem(
+                            text = { Text(DEFAULT_KEY_BAR_LAYOUT) },
+                            onClick = { keyBarLayoutId = null; dismiss() },
+                        )
+                        keyBarLayouts.forEach { layout ->
+                            DropdownMenuItem(
+                                text = { Text(layout.name) },
+                                onClick = { keyBarLayoutId = layout.id; dismiss() },
+                            )
+                        }
+                    }
+                }
+
+                CollapsibleSection("Wake-on-LAN") {
+                    OutlinedTextField(
+                        value = macAddress,
+                        // Clears the rejection this field caused, so the red line cannot outlive a fix.
+                        onValueChange = { macAddress = it; error = null },
+                        label = { Text("MAC address (optional)") },
+                        placeholder = { Text("3c:22:fb:01:02:03") },
+                        supportingText = { Text("Adds a Wake-on-LAN action to this host's menu.") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+
+                    if (existing != null) {
+                        TextButton(
+                            enabled = !detectingMac,
+                            onClick = {
+                                detectingMac = true
+                                error = null
+                                val target =
+                                    existing.copy(
+                                        hostname = hostname.ifBlank { existing.hostname },
+                                        port = port.toIntOrNull() ?: existing.port,
+                                        username = username.ifBlank { existing.username },
+                                    )
+                                scope.launch {
+                                    try {
+                                        detectMacAddress(
+                                            scriptRunner,
+                                            "Detect MAC: ${target.username}@${target.hostname}",
+                                            target.hostname,
+                                            target.port,
+                                            target.username,
+                                            credentialVault.resolve(target.credentialId, activity),
+                                            resolveProxyHops(target, hostDao, credentialVault, activity),
+                                        ).fold({ macAddress = it }, { error = it.message })
+                                    } catch (e: Exception) {
+                                        error = e.message ?: "Could not detect the MAC address"
+                                    } finally {
+                                        detectingMac = false
+                                    }
+                                }
+                            },
+                        ) {
+                            Text(if (detectingMac) "Asking the host..." else "Detect from host")
+                        }
+                    }
+                }
 
                 if (existing != null) {
-                    TextButton(
-                        enabled = !detectingMac,
-                        onClick = {
-                            detectingMac = true
-                            error = null
-                            val target =
-                                existing.copy(
-                                    hostname = hostname.ifBlank { existing.hostname },
-                                    port = port.toIntOrNull() ?: existing.port,
-                                    username = username.ifBlank { existing.username },
-                                )
-                            scope.launch {
-                                try {
-                                    detectMacAddress(
-                                        scriptRunner,
-                                        "Detect MAC: ${target.username}@${target.hostname}",
-                                        target.hostname,
-                                        target.port,
-                                        target.username,
-                                        credentialVault.resolve(target.credentialId, activity),
-                                        resolveProxyHops(target, hostDao, credentialVault, activity),
-                                    ).fold({ macAddress = it }, { error = it.message })
-                                } catch (e: Exception) {
-                                    error = e.message ?: "Could not detect the MAC address"
-                                } finally {
-                                    detectingMac = false
-                                }
-                            }
-                        },
-                    ) {
-                        Text(if (detectingMac) "Asking the host..." else "Detect from host")
+                    CollapsibleSection("Port forwarding") {
+                        TunnelsSection(
+                            host = existing,
+                            portForwardDao = portForwardDao,
+                            sessionManager = sessionManager
+                        )
                     }
+                    CollapsibleSection("Key enrolment") {
+                        KeyEnrolmentSection(
+                            host = existing,
+                            credentialVault = credentialVault,
+                            hostDao = hostDao,
+                            keyEnrolment = keyEnrolment,
+                            activity = activity
+                        )
+                    }
+                } else {
+                    DimText("Port forwarding and key enrolment appear here once the host is saved.")
                 }
-            }
 
-            if (existing != null) {
-                CollapsibleSection("Port forwarding") {
-                    TunnelsSection(
-                        host = existing,
-                        portForwardDao = portForwardDao,
-                        sessionManager = sessionManager
-                    )
+                if (error != null) Text(error!!, color = MaterialTheme.colorScheme.error)
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = ::leave) { Text("Cancel") }
+                    Button(onClick = ::save, enabled = canSave()) { Text("Save") }
                 }
-                CollapsibleSection("Key enrolment") {
-                    KeyEnrolmentSection(
-                        host = existing,
-                        credentialVault = credentialVault,
-                        hostDao = hostDao,
-                        keyEnrolment = keyEnrolment,
-                        activity = activity
-                    )
-                }
-            }
-
-            if (error != null) Text(error!!, color = MaterialTheme.colorScheme.error)
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = onDone) { Text("Cancel") }
-                Button(onClick = ::save, enabled = canSave()) { Text("Save") }
             }
         }
     }
 }
+
+private data class HostFormFields(
+    val label: String,
+    val hostname: String,
+    val port: String,
+    val username: String,
+    val groupId: Long?,
+    val color: Int?,
+    val resilientSession: Boolean,
+    val macAddress: String,
+    val agentForwarding: Boolean,
+    val agentKeyIds: Set<Long>,
+    val keyBarLayoutId: Long?,
+    val proxyJumpHostId: Long?,
+)
+
+private fun HostEntity?.formFields() = HostFormFields(
+    label = this?.label.orEmpty(),
+    hostname = this?.hostname.orEmpty(),
+    port = (this?.port ?: 22).toString(),
+    username = this?.username.orEmpty(),
+    groupId = this?.groupId,
+    color = this?.color,
+    resilientSession = this?.resilientSession ?: false,
+    macAddress = this?.macAddress.orEmpty(),
+    agentForwarding = this?.agentForwarding ?: false,
+    agentKeyIds = this?.let { decodeAgentKeyIds(it.agentKeyIdsJson).toSet() }.orEmpty(),
+    keyBarLayoutId = this?.keyBarLayoutId,
+    proxyJumpHostId = this?.proxyJumpHostId,
+)
+
+/** Swaps the comment, which may itself contain spaces, after an OpenSSH line's type and key. */
+internal fun withPublicKeyComment(line: String, label: String?): String =
+    line.split(' ', limit = 3).take(2).joinToString(" ") + " " + publicKeyComment(label)
 
 internal fun hostKeyLabel(hostLabel: String?): String? =
     hostLabel?.takeIf { it.isNotBlank() }?.let { "$it key" }
@@ -1127,38 +1254,11 @@ private fun KeyChoice(key: CredentialEntity, forwarded: Boolean = false) {
     }
 }
 
-private const val DEFAULT_KEY_BAR_LAYOUT = "Default (Esc, Tab, arrows)"
+/** In [GroupEntity.SWATCHES] order, so TalkBack names a colour instead of reading an index. */
+private val SWATCH_NAMES =
+    listOf("Red", "Orange", "Amber", "Lime", "Green", "Teal", "Blue", "Indigo", "Purple", "Pink")
 
-@Composable
-private fun PickerRow(
-    title: String,
-    value: @Composable () -> Unit,
-    menu: @Composable (dismiss: () -> Unit) -> Unit,
-) {
-    var expanded by remember { mutableStateOf(false) }
-    Box {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .minimumInteractiveComponentSize()
-                .clickable(role = Role.DropdownList) { expanded = true },
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.labelLarge)
-                value()
-            }
-            Icon(
-                Icons.Outlined.ArrowDropDown,
-                contentDescription = null,
-                modifier = Modifier.clearAndSetSemantics {},
-            )
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            menu { expanded = false }
-        }
-    }
-}
+private const val DEFAULT_KEY_BAR_LAYOUT ="Default (Esc, Tab, arrows)"
 
 @Composable
 private fun DimText(text: String) {

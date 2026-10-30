@@ -45,12 +45,13 @@ fun KeyEnrolmentSection(
     var busy by remember { mutableStateOf(false) }
     var pushedKey by remember { mutableStateOf<GeneratedKey?>(null) }
     var result by remember { mutableStateOf<String?>(null) }
+    var failed by remember { mutableStateOf(false) }
     var switched by remember { mutableStateOf(false) }
 
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
-            "Generates a key on this device, installs it in this host's authorized_keys, and replaces " +
-                    "its saved credential.",
+            "Generates a key on this device and installs it in this host's authorized_keys. You can " +
+                    "then switch this host to sign in with it.",
             style = MaterialTheme.typography.bodySmall,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -76,9 +77,11 @@ fun KeyEnrolmentSection(
                                     hops,
                                 )
                             result = outcome.message
+                            failed = !outcome.success
                             if (outcome.success) pushedKey = key
                         } catch (e: Exception) {
                             result = e.message ?: "Key enrolment failed"
+                            failed = true
                         } finally {
                             busy = false
                         }
@@ -105,8 +108,10 @@ fun KeyEnrolmentSection(
                                 hostDao.update(host.copy(credentialId = credentialId))
                                 switched = true
                                 result = "Key installed and this host now signs in with it."
+                                failed = false
                             } catch (e: Exception) {
                                 result = e.message ?: "Could not switch this host to the new key"
+                                failed = true
                             } finally {
                                 busy = false
                             }
@@ -115,6 +120,12 @@ fun KeyEnrolmentSection(
                 ) { Text("Use this key for this host") }
             }
         }
-        result?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+        result?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+            )
+        }
     }
 }

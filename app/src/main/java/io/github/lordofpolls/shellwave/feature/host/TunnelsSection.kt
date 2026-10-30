@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
@@ -64,6 +65,22 @@ fun TunnelsSection(
     // null = no editor open; 0L = a not-yet-inserted draft; otherwise the id of the row being
     // edited below itself.
     var editingId by remember { mutableStateOf<Long?>(null) }
+    var pendingDelete by remember { mutableStateOf<PortForwardEntity?>(null) }
+
+    pendingDelete?.let { forward ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("Delete forward?") },
+            text = { Text("Removes the forward on port ${forward.bindPort}. Can't be undone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch { portForwardDao.delete(forward) }
+                    pendingDelete = null
+                }) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text("Cancel") } },
+        )
+    }
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
@@ -104,7 +121,7 @@ fun TunnelsSection(
                     }
                 },
                 onEdit = { editingId = if (editingId == forward.id) null else forward.id },
-                onDelete = { scope.launch { portForwardDao.delete(forward) } },
+                onDelete = { pendingDelete = forward },
             )
             if (editingId == forward.id) {
                 TunnelEditor(
