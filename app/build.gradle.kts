@@ -135,10 +135,10 @@ android {
         // MigrationTestHelper reads exported schema JSON out of assets at test time.
         getByName("androidTest").assets.directories.add("$projectDir/schemas")
 
-        getByName("main").res.srcDir(
-            files(layout.buildDirectory.dir("generated/notice/res")).builtBy(
-                copyNoticeToRes
-            )
+        // Ordering comes from the preBuild hook above, not from a builtBy: `directories` takes
+        // plain paths and cannot carry a task dependency.
+        getByName("main").res.directories.add(
+            layout.buildDirectory.dir("generated/notice/res").get().asFile.path
         )
     }
 
