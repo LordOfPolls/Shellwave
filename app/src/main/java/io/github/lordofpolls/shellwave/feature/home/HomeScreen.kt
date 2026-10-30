@@ -33,7 +33,6 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -49,6 +48,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -65,6 +65,7 @@ import io.github.lordofpolls.shellwave.core.prefs.HostListPreferences
 import io.github.lordofpolls.shellwave.core.prefs.HostSort
 import io.github.lordofpolls.shellwave.core.prefs.WidgetPreferences
 import io.github.lordofpolls.shellwave.core.prefs.rememberPrefState
+import io.github.lordofpolls.shellwave.feature.host.hostDeleteBlockReason
 import io.github.lordofpolls.shellwave.feature.scripts.ScriptMode
 import io.github.lordofpolls.shellwave.ssh.SessionStatus
 import io.github.lordofpolls.shellwave.ssh.SessionSummary
@@ -73,8 +74,10 @@ import io.github.lordofpolls.shellwave.ui.design.ColorPickerDialog
 import io.github.lordofpolls.shellwave.ui.design.EmptyState
 import io.github.lordofpolls.shellwave.ui.design.GroupHeader
 import io.github.lordofpolls.shellwave.ui.design.HostCard
+import io.github.lordofpolls.shellwave.ui.design.HostMoveTarget
 import io.github.lordofpolls.shellwave.ui.design.HostScriptAction
 import io.github.lordofpolls.shellwave.ui.design.LiveSessionStrip
+import io.github.lordofpolls.shellwave.ui.design.LocalReadableInset
 import io.github.lordofpolls.shellwave.ui.design.MachineText
 import io.github.lordofpolls.shellwave.ui.design.Wordmark
 import kotlinx.coroutines.launch
@@ -103,8 +106,9 @@ private val RecentInnerGap = 4.dp
  * `LazyColumn` leaves composition, so [searchQuery] and the quick-connect text live in the screen's
  * scope. Inside the item lambdas they would clear whatever the user had typed.
  *
- * The deletion confirmation belongs here. [HostCard] only reports that the user asked; the RESTRICT
- * pre-check that names dependent hosts is another level up in `MainActivity`.
+ * The deletion confirmation belongs here. [HostCard] only reports that the user asked. The RESTRICT
+ * pre-check that names dependent hosts runs before the dialog, so a blocked delete shows its reason
+ * rather than a Delete button; `MainActivity` checks again against the database.
  *
  * [recents] is recently connected saved hosts. Quick-connect history is something this app does not
  * store. A chip that merely refilled the field would ignore the host's saved credential and prompt
@@ -137,12 +141,13 @@ fun HomeScreen(
     onDeleteGroup: (GroupEntity) -> Unit = {},
     onSetHostPositions: suspend (Map<Long, Int>) -> Unit = {},
     onSetGroupPositions: suspend (Map<Long, Int>) -> Unit = {},
+    onMoveToGroup: (HostEntity, groupId: Long?) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier,
 ) {
     // Hoisted because a LazyColumn item leaving composition would take the user's typing with it.
     var hostPendingDelete by remember { mutableStateOf<HostEntity?>(null) }
-    var searchQuery by remember { mutableStateOf("") }
-    var quickConnectText by remember { mutableStateOf("") }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    var quickConnectText by rememberSaveable { mutableStateOf("") }
     var groupBeingEdited by remember { mutableStateOf<GroupEntity?>(null) }
     var groupPendingDelete by remember { mutableStateOf<GroupEntity?>(null) }
     val sort by rememberPrefState { HostListPreferences.sort(it) }
@@ -166,7 +171,7 @@ fun HomeScreen(
     Scaffold(
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         // MainActivity's Scaffold already applied the status and nav bar insets. This Scaffold only
-        // places the top bar and FAB, so the default safeDrawing would apply them twice - with it,
+        // places the top bar, so the default safeDrawing would apply them twice - with it,
         // the title sat about a fifth of the way down the screen.
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
@@ -177,6 +182,9 @@ fun HomeScreen(
                 // ssh-config import is a once-per-install action at most, which does not earn
                 // permanent chrome.
                 actions = {
+                    IconButton(onClick = onAddHost) {
+                        Icon(Icons.Outlined.Add, contentDescription = "Add host")
+                    }
                     HostsOverflow(
                         sort = sort,
                         onSort = { picked ->
@@ -199,21 +207,16 @@ fun HomeScreen(
                 scrollBehavior = scrollBehavior,
             )
         },
-        floatingActionButton = {
-            FloatingActionButton(onClick = onAddHost) {
-                Icon(Icons.Outlined.Add, contentDescription = "Add host")
-            }
-        },
     ) { innerPadding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
             contentPadding = PaddingValues(
-                start = ScreenMargin,
-                end = ScreenMargin,
+                start = ScreenMargin + LocalReadableInset.current,
+                end = ScreenMargin + LocalReadableInset.current,
                 top = 8.dp,
-                bottom = 88.dp
+                bottom = 16.dp
             ),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -268,11 +271,22 @@ fun HomeScreen(
             }
 
             item(key = "savedHostsHeader") {
-                Text(
-                    "Saved hosts",
-                    style = MaterialTheme.typography.titleSmall,
+                Row(
                     modifier = Modifier.padding(top = SectionGap),
-                )
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        "Saved hosts",
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.alignByBaseline(),
+                    )
+                    Text(
+                        "Sorted: ${sort.label.lowercase()}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.alignByBaseline(),
+                    )
+                }
             }
 
             if (searchVisible) {
@@ -343,7 +357,8 @@ fun HomeScreen(
                         }
                         HostCard(
                             displayName = host.label ?: host.hostname,
-                            identity = "${host.username}@${host.hostname}:${host.port}",
+                            identity = "${host.username}@${host.hostname}" +
+                                    if (host.port == 22) "" else ":${host.port}",
                             // A CLOSED or FAILED session is not a state of the host - it belongs on the
                             // Sessions screen, which has room for the error and the Reconnect action.
                             liveStatus = session?.status?.takeIf { it in TRANSITIONAL_OR_LIVE },
@@ -377,6 +392,16 @@ fun HomeScreen(
                                 { scope.launch { onSetHostPositions(positionsFor(swapped(hostIds, index, 1))) } }
                             } else null,
                             onDelete = { hostPendingDelete = host },
+                            moveTargets = if (groups.isEmpty()) emptyList() else {
+                                (listOf(null) + groups).map { target ->
+                                    HostMoveTarget(
+                                        name = target?.name ?: "No group",
+                                        accent = target?.let { Color(it.color) },
+                                        current = host.groupId == target?.id,
+                                        onMove = { if (host.groupId != target?.id) onMoveToGroup(host, target?.id) },
+                                    )
+                                }
+                            },
                         )
                     }
                 }
@@ -385,6 +410,16 @@ fun HomeScreen(
     }
 
     hostPendingDelete?.let { host ->
+        val blockReason = hostDeleteBlockReason(host, hosts.filter { it.proxyJumpHostId == host.id })
+        if (blockReason != null) {
+            AlertDialog(
+                onDismissRequest = { hostPendingDelete = null },
+                title = { Text("Can't delete host") },
+                text = { Text(blockReason) },
+                confirmButton = { TextButton(onClick = { hostPendingDelete = null }) { Text("OK") } },
+            )
+            return@let
+        }
         AlertDialog(
             onDismissRequest = { hostPendingDelete = null },
             title = { Text("Delete host?") },
@@ -566,7 +601,7 @@ private fun HostsOverflow(
 /**
  * The button carries an explicit `height` because an `OutlinedTextField` without a floating label
  * is 56dp tall while every M3 `Button` defaults to 40dp; left alone, Connect looks subordinate to
- * the thing it acts on. Tonal is the emphasis tier the add-host FAB leaves free.
+ * the thing it acts on.
  *
  * The placeholder goes through MachineText. The typed value cannot - that component wraps `Text`,
  * not `BasicTextField` - so the mono face is applied via `textStyle`, the one place in the app
@@ -598,6 +633,7 @@ private fun QuickConnectRow(
         FilledTonalButton(
             onClick = { target?.let(onConnect) },
             enabled = target != null,
+            contentPadding = PaddingValues(horizontal = 16.dp),
             modifier = Modifier.height(QuickConnectFieldHeight),
         ) { Text("Connect") }
     }

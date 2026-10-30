@@ -1,6 +1,7 @@
 package io.github.lordofpolls.shellwave.ui.design
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -9,16 +10,19 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.Login
 import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.ArrowUpward
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.PowerSettingsNew
@@ -37,6 +41,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -46,16 +51,21 @@ import io.github.lordofpolls.shellwave.ssh.SessionStatus
 /** `ui/design` takes the fields it renders, never a persistence type. */
 data class HostScriptAction(val id: Long, val name: String, val onRun: () -> Unit)
 
+/** A null [accent] is "No group". */
+data class HostMoveTarget(val name: String, val accent: Color?, val current: Boolean, val onMove: () -> Unit)
+
+private enum class HostMenuPage { MAIN, SCRIPTS, GROUPS }
+
 /**
- * Name and status on row 1, `user@host:port` on row 2, nothing else in or under the card. Cards
+ * Name and status on row 1, `user@host` (plus `:port` when not 22) on row 2, nothing else in or under the card. Cards
  * were once twice as tall as their content, with each host's scripts as free-floating boxes
  * underneath, so a handful of hosts filled the screen. Natural height is now ~68dp.
  *
  * StatusMarker appears inline only while a session for this host is live or transitioning;
  * otherwise a non-null [reachability] puts a [ReachabilityMarker] in the same slot, never both.
  *
- * The overflow button exists because long-press alone is not discoverable. Its script submenu is a
- * second page of the same menu, since M3 Compose has no cascading-submenu component.
+ * The overflow button exists because long-press alone is not discoverable. Its script and group
+ * submenus are further pages of the same menu, since M3 Compose has no cascading-submenu component.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -79,11 +89,13 @@ fun HostCard(
     /** Null in every sort mode but manual. */
     onMoveUp: (() -> Unit)? = null,
     onMoveDown: (() -> Unit)? = null,
+    /** Empty hides "Move to group". */
+    moveTargets: List<HostMoveTarget> = emptyList(),
     modifier: Modifier = Modifier,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     // Reset on every open so the menu never reappears mid-submenu.
-    var showingScripts by remember { mutableStateOf(false) }
+    var menuPage by remember { mutableStateOf(HostMenuPage.MAIN) }
 
     Card(
         modifier =
@@ -92,7 +104,7 @@ fun HostCard(
                 .combinedClickable(
                     onClick = onClick,
                     onLongClick = {
-                        showingScripts = false
+                        menuPage = HostMenuPage.MAIN
                         menuExpanded = true
                     },
                     onClickLabel = "Connect",
@@ -148,7 +160,7 @@ fun HostCard(
             Box {
                 IconButton(
                     onClick = {
-                        showingScripts = false
+                        menuPage = HostMenuPage.MAIN
                         menuExpanded = true
                     },
                 ) {
@@ -159,11 +171,11 @@ fun HostCard(
                 }
                 HostMenu(
                     expanded = menuExpanded,
-                    showingScripts = showingScripts,
+                    page = menuPage,
                     scripts = scripts,
+                    moveTargets = moveTargets,
                     onDismiss = { menuExpanded = false },
-                    onShowScripts = { showingScripts = true },
-                    onHideScripts = { showingScripts = false },
+                    onPage = { menuPage = it },
                     onConnect = { menuExpanded = false; onClick() },
                     onEdit = { menuExpanded = false; onEdit() },
                     onDuplicate = { menuExpanded = false; onDuplicate() },
@@ -174,6 +186,7 @@ fun HostCard(
                     onMoveDown = onMoveDown?.let { down -> { menuExpanded = false; down() } },
                     onDelete = { menuExpanded = false; onDelete() },
                     onRunScript = { action -> menuExpanded = false; action.onRun() },
+                    onMoveTo = { target -> menuExpanded = false; target.onMove() },
                 )
             }
         }
@@ -184,11 +197,11 @@ fun HostCard(
 @Composable
 private fun HostMenu(
     expanded: Boolean,
-    showingScripts: Boolean,
+    page: HostMenuPage,
     scripts: List<HostScriptAction>,
+    moveTargets: List<HostMoveTarget>,
     onDismiss: () -> Unit,
-    onShowScripts: () -> Unit,
-    onHideScripts: () -> Unit,
+    onPage: (HostMenuPage) -> Unit,
     onConnect: () -> Unit,
     onEdit: () -> Unit,
     onDuplicate: () -> Unit,
@@ -199,9 +212,10 @@ private fun HostMenu(
     onMoveDown: (() -> Unit)?,
     onDelete: () -> Unit,
     onRunScript: (HostScriptAction) -> Unit,
+    onMoveTo: (HostMoveTarget) -> Unit,
 ) {
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
-        if (showingScripts) {
+        if (page != HostMenuPage.MAIN) {
             DropdownMenuItem(
                 text = { Text("Back") },
                 leadingIcon = {
@@ -210,8 +224,27 @@ private fun HostMenu(
                         contentDescription = null
                     )
                 },
-                onClick = onHideScripts,
+                onClick = { onPage(HostMenuPage.MAIN) },
             )
+        }
+        if (page == HostMenuPage.GROUPS) {
+            moveTargets.forEach { target ->
+                DropdownMenuItem(
+                    text = { Text(target.name) },
+                    leadingIcon = {
+                        Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+                            target.accent?.let {
+                                Box(Modifier.size(12.dp).clip(CircleShape).background(it))
+                            }
+                        }
+                    },
+                    trailingIcon = {
+                        if (target.current) Icon(Icons.Outlined.Check, contentDescription = "Current")
+                    },
+                    onClick = { onMoveTo(target) },
+                )
+            }
+        } else if (page == HostMenuPage.SCRIPTS) {
             scripts.forEach { script ->
                 DropdownMenuItem(
                     text = { Text(script.name) },
@@ -268,7 +301,20 @@ private fun HostMenu(
                             contentDescription = null
                         )
                     },
-                    onClick = onShowScripts,
+                    onClick = { onPage(HostMenuPage.SCRIPTS) },
+                )
+            }
+            if (moveTargets.isNotEmpty()) {
+                DropdownMenuItem(
+                    text = { Text("Move to group") },
+                    leadingIcon = { Icon(Icons.Outlined.Folder, contentDescription = null) },
+                    trailingIcon = {
+                        Icon(
+                            Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                            contentDescription = null
+                        )
+                    },
+                    onClick = { onPage(HostMenuPage.GROUPS) },
                 )
             }
             if (onMoveUp != null) {

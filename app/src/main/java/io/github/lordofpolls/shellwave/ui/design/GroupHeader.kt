@@ -99,7 +99,7 @@ fun GroupHeader(
             }
             DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                 DropdownMenuItem(
-                    text = { Text("Rename") },
+                    text = { Text("Edit") },
                     leadingIcon = { Icon(Icons.Outlined.Edit, contentDescription = null) },
                     onClick = { menuExpanded = false; onEdit() },
                 )
