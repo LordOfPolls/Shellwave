@@ -1,0 +1,9 @@
+Fixed:
+- Require confirmation for externally triggered shortcuts (#2)
+- Keep screens inside the insets, cap wide windows and align controls
+- Clearer host cards, grouping and sort affordances
+- Clearer host editor copy, key pickers and discard guards
+- Explain what the SSH config import does and pick its credential
+- Clearer key import, copy and delete errors
+- Rotation-safe editors, profile previews and clearer copy
+- Clearer run targets, dialogs and result reporting

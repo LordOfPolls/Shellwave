@@ -1,6 +1,23 @@
 # Changelog
 
 
+## 1.10.0 - 2026-10-30
+
+### Fixed
+- Require confirmation for externally triggered shortcuts (#2)
+- Keep screens inside the insets, cap wide windows and align controls
+- Clearer host cards, grouping and sort affordances
+- Clearer host editor copy, key pickers and discard guards
+- Explain what the SSH config import does and pick its credential
+- Clearer key import, copy and delete errors
+- Rotation-safe editors, profile previews and clearer copy
+- Clearer run targets, dialogs and result reporting
+
+### Internal
+- Update AGP, Gradle and app dependencies
+
+[Every commit in this release](https://github.com/LordOfPolls/Shellwave/compare/1.9.1...1.10.0)
+
 ## 1.9.1 - 2026-10-24
 
 ### New
@@ -13,10 +30,12 @@
 - Keep the keyboard and nav bar off the remote text editor
 
 ### Internal
+- Check the Play listing for drift on every publish
 - Bump sshj to 0.41.2
 
 ### Documentation
 - Caption and reorder the screenshots, add a feature graphic
+- Add feature graphic to readme
 
 [Every commit in this release](https://github.com/LordOfPolls/Shellwave/compare/1.8.0...1.9.1)
 
