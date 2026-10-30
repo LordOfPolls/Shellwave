@@ -63,6 +63,10 @@ internal constructor(
         private set
     private var pendingConnection: SshConnection? = null
 
+    /** Captured by each dialog callback, including repeated requests for the same script. */
+    var pendingRequestId by mutableStateOf(0L)
+        private set
+
     /**
      * A script saved with "ask each run", launched from somewhere that does not imply a host.
      * ScriptRunDialogs renders the picker; [chooseHost] answers it.
@@ -89,6 +93,9 @@ internal constructor(
         activeConnection: SshConnection? = null,
         hostId: Long? = null
     ) {
+        // A new request replaces every pending prompt and its target together.
+        dismiss()
+        pendingRequestId++
         pendingConnection = activeConnection
         pendingHostId = hostId ?: script.targetHostId
         val mode = runCatching { ScriptMode.valueOf(script.mode) }.getOrNull()
@@ -103,7 +110,8 @@ internal constructor(
         }
     }
 
-    fun chooseHost(script: ScriptEntity, hostId: Long) {
+    fun chooseHost(script: ScriptEntity, hostId: Long, requestId: Long) {
+        if (requestId != pendingRequestId || pendingHostChoice != script) return
         pendingHostId = hostId
         pendingHostChoice = null
         pending = script
@@ -129,7 +137,9 @@ internal constructor(
         captureUiState = null
     }
 
-    fun confirmRun(script: ScriptEntity, values: Map<String, String>) {
+    fun confirmRun(script: ScriptEntity, values: Map<String, String>, requestId: Long) {
+        // A callback from an older dialog must never consume the newer request's host/session.
+        if (requestId != pendingRequestId || pending != script) return
         val connection = pendingConnection
         val hostId = pendingHostId
         pending = null

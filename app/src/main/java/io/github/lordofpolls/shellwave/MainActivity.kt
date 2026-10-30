@@ -1,5 +1,7 @@
 package io.github.lordofpolls.shellwave
 
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -676,18 +678,36 @@ class MainActivity : FragmentActivity() {
                 }
 
                 val runScriptRequestedState by runScriptRequested
-                LaunchedEffect(runScriptRequestedState, scriptsForShortcuts) {
+                LaunchedEffect(runScriptRequestedState) {
                     if (runScriptRequestedState >= 0) {
-                        scriptsForShortcuts.firstOrNull { it.id == runScriptRequestedState }
-                            ?.let { scriptRunController.request(it) }
+                        // Read directly: the shortcuts flow starts empty during a cold launch.
+                        scriptDao.getById(runScriptRequestedState)
+                            ?.let { scriptRunController.request(it.copy(confirmBeforeRun = true)) }
                         runScriptRequested.value = -1L
                     }
                 }
 
+                var shortcutHost by remember { mutableStateOf<HostEntity?>(null) }
+                shortcutHost?.let { host ->
+                    AlertDialog(
+                        onDismissRequest = { shortcutHost = null },
+                        title = { Text("Connect to saved host?") },
+                        text = { Text("Connect to ${host.username}@${host.hostname}:${host.port}?") },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                shortcutHost = null
+                                connectSaved(host)
+                            }) { Text("Connect") }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { shortcutHost = null }) { Text("Cancel") }
+                        },
+                    )
+                }
                 val openHostRequestedState by openHostRequested
                 LaunchedEffect(openHostRequestedState) {
                     if (openHostRequestedState >= 0) {
-                        hostDao.getById(openHostRequestedState)?.let { connectSaved(it) }
+                        hostDao.getById(openHostRequestedState)?.let { shortcutHost = it }
                         openHostRequested.value = -1L
                     }
                 }
