@@ -185,14 +185,25 @@ fun hardwareKeyCode(event: ComposeKeyEvent, cursorApp: Boolean, keypadApp: Boole
         ctrlChordCode(native.getUnicodeChar(0))?.let { return it.toString() }
     }
 
-    // xterm/bash convention: ESC then the character, e.g. Alt+. to recall the last argument.
-    if (alt && !ctrl) {
-        val codePoint =
-            native.getUnicodeChar(native.metaState and android.view.KeyEvent.META_SHIFT_ON)
-        if (codePoint > 0) return "\u001B" + String(Character.toChars(codePoint))
-    }
+    return if (alt && !ctrl) altChordCode(native.metaState) { native.getUnicodeChar(it) } else null
+}
 
-    return null
+/**
+ * xterm/bash convention: ESC then the character, e.g. Alt+. to recall the last argument.
+ *
+ * Null for AltGr characters, so the field types them, dead keys included. A layout's `ralt:` level
+ * is AltGr; Generic.kcm's `alt:` level (Alt+C is ç) answers to either Alt, so it stays a meta chord
+ * and a US keyboard's Right Alt keeps working as Meta.
+ */
+internal fun altChordCode(metaState: Int, unicodeCharFor: (metaState: Int) -> Int): String? {
+    val rightAlt = android.view.KeyEvent.META_ALT_RIGHT_ON
+    val leftAlt = android.view.KeyEvent.META_ALT_LEFT_ON
+    if (metaState and rightAlt != 0 && metaState and leftAlt == 0) {
+        val altGrChar = unicodeCharFor(metaState)
+        if (altGrChar != 0 && altGrChar != unicodeCharFor(metaState xor (rightAlt or leftAlt))) return null
+    }
+    val codePoint = unicodeCharFor(metaState and android.view.KeyEvent.META_SHIFT_ON)
+    return if (codePoint > 0) "\u001B" + String(Character.toChars(codePoint)) else null
 }
 
 /** Ported from upstream `TerminalView.inputCodePoint`. */
