@@ -312,6 +312,8 @@ open class SshConnection(
                     // The engine has no blink timer: this only sets whether the cursor should blink.
                     // SessionsScreen drives the on/off schedule.
                     emulator.setCursorBlinkingEnabled(cursorBlink)
+                    val banner = bannerForTerminal(ssh.userAuth.banner).toByteArray(Charsets.UTF_8)
+                    emulator.append(banner, banner.size)
                 }
 
                 if (resilientSession) {
@@ -1080,4 +1082,13 @@ open class SshConnection(
                 Result.failure(e)
             }
         }
+}
+
+// A banner is a notice the server sends before login, so it gets no say over the terminal:
+// without the filter it could set the title or write the clipboard through OSC 52.
+internal fun bannerForTerminal(banner: String): String {
+    val text = banner.replace("\r\n", "\n").replace('\r', '\n')
+        .filter { it == '\n' || it == '\t' || !it.isISOControl() }
+    if (text.isBlank()) return ""
+    return text.removeSuffix("\n").replace("\n", "\r\n") + "\r\n"
 }
