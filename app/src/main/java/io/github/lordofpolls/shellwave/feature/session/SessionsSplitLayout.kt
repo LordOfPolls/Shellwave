@@ -133,8 +133,7 @@ internal fun SessionsSplitLayout(
 }
 
 /**
- * The full-width/split toggle, and the one control still floating over the terminal. Folding it
- * into the rail's overflow would put a layout control for the screen inside a menu about the
+ * The full-width/split toggle. Folding it into the rail's overflow would put a layout control for the screen inside a menu about the
  * session. Renders only where there are two panes to choose between.
  */
 @Composable

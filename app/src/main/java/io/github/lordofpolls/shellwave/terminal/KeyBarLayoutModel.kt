@@ -1,9 +1,15 @@
 package io.github.lordofpolls.shellwave.terminal
 
+import android.content.res.Configuration
 import android.view.KeyEvent
 import io.github.lordofpolls.shellwave.core.db.entities.KeyBarLayoutEntity
 import org.json.JSONArray
 import org.json.JSONObject
+
+fun shouldHideKeyBar(hideWithKeyboard: Boolean, keyboard: Int, hardKeyboardHidden: Int): Boolean =
+    hideWithKeyboard &&
+        keyboard != Configuration.KEYBOARD_NOKEYS &&
+        hardKeyboardHidden == Configuration.HARDKEYBOARDHIDDEN_NO
 
 /**
  * [KeyBarKeyType.SPECIAL] is an Android [KeyEvent] keycode fed to [KeyHandler.getCode];
