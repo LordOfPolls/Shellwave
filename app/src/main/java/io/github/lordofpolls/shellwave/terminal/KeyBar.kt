@@ -177,7 +177,8 @@ private const val MIN_BUTTONS_FOR_FREE_SECOND_ROW = 4
  * focused for the whole life of a session, so once the keyboard has been dismissed - by the back
  * gesture, or by the system - tapping the terminal calls `requestFocus()` on a field that is
  * *already* focused, which is a no-op and brings nothing back. The bar is the only chrome that
- * survives an IME dismissal, so this is where the way back belongs.
+ * survives an IME dismissal, so this is where the way back belongs, floating in the bar's place
+ * when the bar is hidden.
  *
  * Icon-only: it is app chrome rather than a key, and nothing it does reaches the far end, so
  * dressing it as one more `CTRL`-style label would be a claim about the wrong thing. The glyph
@@ -185,13 +186,13 @@ private const val MIN_BUTTONS_FOR_FREE_SECOND_ROW = 4
  * it, since a screen reader gets no glyph to read.
  */
 @Composable
-private fun KeyboardKey(visible: Boolean, onClick: () -> Unit) {
+internal fun KeyboardKey(visible: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     FilledTonalButton(
         onClick = onClick,
         // Square at the cluster's size so the pinned right-hand edge of the bar reads as one block
         // of controls rather than as a key of an odd width that wandered out of the flow.
         modifier =
-            Modifier
+            modifier
                 .size(ClusterKeySize)
                 .semantics {
                     contentDescription = if (visible) "Hide the keyboard" else "Show the keyboard"

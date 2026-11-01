@@ -52,6 +52,7 @@ fun TerminalSettingsScreen(
     val context = LocalContext.current
     val bellMode by rememberPrefState { BellPreferences.get(it) }
     val fullWidthTerminal by rememberPrefState { SessionLayoutPreferences.getFullWidthTerminal(it) }
+    val hideKeyBarWithKeyboard by rememberPrefState { SessionLayoutPreferences.getHideKeyBarWithKeyboard(it) }
 
     var profile by remember { mutableStateOf(DEFAULT_TERMINAL_PROFILE) }
     LaunchedEffect(Unit) {
@@ -113,6 +114,12 @@ fun TerminalSettingsScreen(
                 title = "Manage key bar layouts",
                 chevron = true,
                 onClick = onOpenKeyBarLayouts,
+            )
+            SettingsSwitch(
+                title = "Hide with a physical keyboard",
+                description = "Hide the key bar while a hardware keyboard is attached.",
+                checked = hideKeyBarWithKeyboard,
+                onCheckedChange = { SessionLayoutPreferences.setHideKeyBarWithKeyboard(context, it) },
             )
 
             SettingsSectionHeader("Sessions")

@@ -207,6 +207,7 @@ constructor(
             "exactSchemeColours" to AppearancePreferences.getExactSchemeColours(context),
             "bellMode" to BellPreferences.get(context).name,
             "fullWidthTerminal" to SessionLayoutPreferences.getFullWidthTerminal(context),
+            "hideKeyBarWithKeyboard" to SessionLayoutPreferences.getHideKeyBarWithKeyboard(context),
             "reachabilityEnabled" to ReachabilityPreferences.isEnabled(context),
             "reachabilityInterval" to ReachabilityPreferences.interval(context).name,
             "reachabilityAllowsMetered" to ReachabilityPreferences.allowsMetered(context),

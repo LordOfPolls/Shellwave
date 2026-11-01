@@ -56,6 +56,7 @@ data class ImportedSettings(
     val exactSchemeColours: Boolean? = null,
     val bellMode: BellMode? = null,
     val fullWidthTerminal: Boolean? = null,
+    val hideKeyBarWithKeyboard: Boolean? = null,
     val reachabilityEnabled: Boolean? = null,
     val reachabilityInterval: ReachabilityInterval? = null,
     val reachabilityAllowsMetered: Boolean? = null,
@@ -236,6 +237,7 @@ private fun JSONObject?.toImportedSettings(): ImportedSettings {
         exactSchemeColours = booleanOrNull("exactSchemeColours"),
         bellMode = enumOrNull(stringOrNull("bellMode")),
         fullWidthTerminal = booleanOrNull("fullWidthTerminal"),
+        hideKeyBarWithKeyboard = booleanOrNull("hideKeyBarWithKeyboard"),
         reachabilityEnabled = booleanOrNull("reachabilityEnabled"),
         reachabilityInterval = enumOrNull(stringOrNull("reachabilityInterval")),
         reachabilityAllowsMetered = booleanOrNull("reachabilityAllowsMetered"),
@@ -385,6 +387,9 @@ constructor(
         settings.bellMode?.let { BellPreferences.set(context, it) }
         settings.fullWidthTerminal?.let {
             SessionLayoutPreferences.setFullWidthTerminal(context, it)
+        }
+        settings.hideKeyBarWithKeyboard?.let {
+            SessionLayoutPreferences.setHideKeyBarWithKeyboard(context, it)
         }
         settings.reachabilityEnabled?.let { ReachabilityPreferences.setEnabled(context, it) }
         settings.reachabilityInterval?.let { ReachabilityPreferences.setInterval(context, it) }
