@@ -444,15 +444,17 @@ open class SshConnection(
 
     override fun titleChanged(oldTitle: String?, newTitle: String?) {}
 
-    // Two callers: TerminalEmulator for an OSC 52 request from the remote app (tmux's
-    // `set-clipboard`), and the selection overlay's Copy action. One clipboard write between them.
+    // Four callers: TerminalEmulator for an OSC 52 request from the remote app (tmux's
+    // `set-clipboard`), the selection overlay's Copy action, Ctrl+Shift+C and the link dialog's
+    // Copy. One clipboard write between them.
     override fun onCopyTextToClipboard(text: String?) {
         if (text.isNullOrEmpty()) return
         val clipboard = context.getSystemService(ClipboardManager::class.java) ?: return
         clipboard.setPrimaryClip(ClipData.newPlainText("terminal", text))
     }
 
-    // Only the overlay's Paste action calls this; no OSC sequence triggers it from the remote side.
+    // Called by the selection overlay's Paste action and the hardware paste shortcuts (Ctrl+Shift+V,
+    // Shift+Insert); no OSC sequence triggers it from the remote side.
     // The clipboard read lives here so there is one place that knows how to read it, mirroring
     // onCopyTextToClipboard. emulator.paste() goes down the same write path as typed input.
     override fun onPasteTextFromClipboard() {

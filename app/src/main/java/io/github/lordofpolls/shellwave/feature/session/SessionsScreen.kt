@@ -43,7 +43,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
@@ -69,6 +71,7 @@ import io.github.lordofpolls.shellwave.ssh.SessionManager
 import io.github.lordofpolls.shellwave.ssh.SessionStatus
 import io.github.lordofpolls.shellwave.ssh.SshConnection
 import io.github.lordofpolls.shellwave.ssh.TerminalSize
+import io.github.lordofpolls.shellwave.terminal.ClipboardShortcut
 import io.github.lordofpolls.shellwave.terminal.DEFAULT_KEY_BAR_KEYS
 import io.github.lordofpolls.shellwave.terminal.DEFAULT_TERMINAL_PROFILE
 import io.github.lordofpolls.shellwave.terminal.DEFAULT_TERMINAL_TEXT_SIZE_SP
@@ -81,6 +84,7 @@ import io.github.lordofpolls.shellwave.terminal.TerminalInputCapture
 import io.github.lordofpolls.shellwave.terminal.TerminalLink
 import io.github.lordofpolls.shellwave.terminal.TerminalMatch
 import io.github.lordofpolls.shellwave.terminal.TerminalSelectionOverlay
+import io.github.lordofpolls.shellwave.terminal.clipboardShortcut
 import io.github.lordofpolls.shellwave.terminal.collectTerminalRows
 import io.github.lordofpolls.shellwave.terminal.ctrlCode
 import io.github.lordofpolls.shellwave.terminal.decodeKeyBarKeys
@@ -632,6 +636,13 @@ internal fun SessionTabBody(
         repeat(abs(notches)) { emulator.sendMouseEvent(wheelButton(notches), column, row, true) }
     }
 
+    fun copySelection() {
+        val emulator = terminalEmulator ?: return
+        val text = selectionState.selectedText(emulator) ?: return
+        summary.connection.onCopyTextToClipboard(text)
+        selectionState.clear()
+    }
+
     val localContext = LocalContext.current
 
     fun shareSelection(text: String) {
@@ -683,9 +694,21 @@ internal fun SessionTabBody(
                     .fillMaxSize()
                     .background(Color.Black)
                     // Preview rather than onKeyEvent: claims the event before
-                    // TerminalInputCapture's BasicTextField, so Ctrl+C isn't first eaten by the
-                    // field's own copy shortcut.
+                    // TerminalInputCapture's BasicTextField. Without it Shift+Insert would paste
+                    // into the invisible field and go out as typed text, with no bracketed paste,
+                    // and Ctrl+C would be eaten by the field's own copy shortcut.
                     .onPreviewKeyEvent { event ->
+                        val shortcut = clipboardShortcut(event)
+                        if (shortcut != null) {
+                            if (event.type == KeyEventType.KeyDown) {
+                                when (shortcut) {
+                                    ClipboardShortcut.PASTE ->
+                                        summary.connection.onPasteTextFromClipboard()
+                                    ClipboardShortcut.COPY -> copySelection()
+                                }
+                            }
+                            return@onPreviewKeyEvent true
+                        }
                         val emulator = terminalEmulator
                         val bytes =
                             hardwareKeyCode(
