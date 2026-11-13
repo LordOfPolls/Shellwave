@@ -337,8 +337,29 @@ fun SessionsScreen(
 }
 
 /**
+ * State that outlives the per-session `key` around [SessionTabBody]: whether a body has been
+ * composed since the Sessions screen was entered, and the pinch-zoomed font size, which all tabs
+ * share. [fontProfileId] is the terminal profile [fontSizeSp] was last taken from.
+ */
+internal class SessionBodyShared {
+    var shown = false
+    var fontSizeSp by mutableStateOf(DEFAULT_TERMINAL_TEXT_SIZE_SP)
+    var fontProfileId: Long? = null
+}
+
+/**
  * One session's terminal and key bar. Reads live state from [sessionManager]; owns nothing that
  * would need saving across rotation.
+ *
+ * Callers wrap it in `key(sessionId)`. Everything here is plain `remember` state about one
+ * session - the emulator, scrollback position, selection, latched modifiers, font size. Without
+ * the key, switching tabs keeps that state and the new tab draws the previous session's emulator
+ * until it connects, or for good if it never does, and copy or selection then act on the wrong
+ * buffer.
+ *
+ * [shared] outlives the key. It tells the first body composed after the Sessions screen is entered
+ * from one composed by a tab switch (only the first raises the keyboard unprompted), and keeps the
+ * pinch-zoomed font size across tabs.
  *
  * [terminalHeight] and [preKeyBarGap] are tabletop posture's hook: the terminal is sized exactly
  * instead of sharing space via `weight(1f)`, and the gap reserves the hinge's occluded height. The
@@ -355,6 +376,7 @@ internal fun SessionTabBody(
     keyBarLayoutDao: KeyBarLayoutDao,
     fileTransferController: FileTransferController,
     searchController: TerminalSearchController,
+    shared: SessionBodyShared,
     modifier: Modifier = Modifier,
     terminalProfile: TerminalProfileEntity? = null,
     terminalHeight: Dp? = null,
@@ -370,8 +392,8 @@ internal fun SessionTabBody(
     // The keyboard button's two halves live here, not in KeyBar, because this is what owns the
     // focus: TerminalInputCapture's shim is the only focusable thing on the screen, and an IME with
     // nothing focused has nowhere to send what it types. Showing the keyboard is focus then show,
-    // in that order - requestFocus() on an already-focused field is a no-op, which is why the
-    // button cannot be that call alone.
+    // in that order - the shim does not show it on focus, and requestFocus() on an already-focused
+    // field is a no-op, so neither alone is enough. A tap on the terminal does the same.
     val keyboardController = LocalSoftwareKeyboardController.current
     val imeVisible = WindowInsets.isImeVisible
 
@@ -428,10 +450,14 @@ internal fun SessionTabBody(
         topRow = externalRowAt(emulator, matches[clamped].row).coerceIn(-maxScrollback, 0)
     }
 
-    var fontSizeSp by remember { mutableStateOf(DEFAULT_TERMINAL_TEXT_SIZE_SP) }
-    // Keyed on the row's id alone, so a later settings edit doesn't stomp an in-progress
-    // pinch-to-resize.
-    LaunchedEffect(profileOrDefault.id) { fontSizeSp = profileOrDefault.fontSizeSp.sp }
+    // Applied only when the profile row's id changes, so neither a later settings edit nor a tab
+    // switch to a session on the same profile stomps an in-progress pinch-to-resize.
+    LaunchedEffect(profileOrDefault.id) {
+        if (shared.fontProfileId != profileOrDefault.id) {
+            shared.fontProfileId = profileOrDefault.id
+            shared.fontSizeSp = profileOrDefault.fontSizeSp.sp
+        }
+    }
 
     // Coordinates are the external row system, same as topRow.
     val selectionState = rememberTerminalSelectionState()
@@ -519,14 +545,19 @@ internal fun SessionTabBody(
     }
 
     LaunchedEffect(summary.connection, summary.status) {
-        if (summary.status == SessionStatus.CONNECTED) {
-            terminalEmulator = summary.connection.emulatorOrNull
-            redrawRequests.trySend(Unit)
-        } else if (summary.status == SessionStatus.CONNECTING) {
+        if (summary.status == SessionStatus.CONNECTING) {
             // Fresh connection and emulator: drop the old buffer and anything pointing into it.
             terminalEmulator = null
             topRow = 0
             selectionState.clear()
+        } else {
+            // Not only for CONNECTED: this body is composed fresh on every tab switch, and a
+            // dropped or reconnecting session still holds the emulator whose last screen it should
+            // keep showing. Null until the first connect, so nothing is drawn before one exists.
+            summary.connection.emulatorOrNull?.let {
+                terminalEmulator = it
+                redrawRequests.trySend(Unit)
+            }
         }
     }
 
@@ -709,7 +740,7 @@ internal fun SessionTabBody(
                             if (rows != 0) topRow = (topRow - rows).coerceIn(-maxScrollback, 0)
                         },
                         onPinch = { scale ->
-                            fontSizeSp = (fontSizeSp.value * scale).coerceIn(
+                            shared.fontSizeSp = (shared.fontSizeSp.value * scale).coerceIn(
                                 FONT_SIZE_SP_RANGE.start,
                                 FONT_SIZE_SP_RANGE.endInclusive
                             ).sp
@@ -731,6 +762,7 @@ internal fun SessionTabBody(
                                 detectedLink = link
                             } else {
                                 focusRequester.requestFocus()
+                                keyboardController?.show()
                                 selectionState.clear() // tapping outside a selection dismisses it, same as Android's own text selection
                             }
                         },
@@ -761,7 +793,7 @@ internal fun SessionTabBody(
                         measuredSize = TerminalSize(cols, rows, cellW, cellH)
                     },
                     modifier = Modifier.matchParentSize(),
-                    fontSizeSp = fontSizeSp,
+                    fontSizeSp = shared.fontSizeSp,
                     typeface = terminalTypeface,
                     lineHeightMultiplier = lineHeightMultiplier,
                     topRow = topRow,
@@ -870,7 +902,14 @@ internal fun SessionTabBody(
         )
     }
 
-    LaunchedEffect(sessionId) { focusRequester.requestFocus() }
+    // The field no longer raises the keyboard when it gains focus, and a tab switch composes a new
+    // one. Entering the screen raises it, as before; a switch only keeps it up if it was up.
+    LaunchedEffect(sessionId) {
+        focusRequester.requestFocus()
+        val firstOpen = !shared.shown
+        shared.shown = true
+        if (firstOpen || imeVisible) keyboardController?.show()
+    }
 }
 
 /** Scrollback position and jump-to-bottom in one: shown only while scrolled back. */
