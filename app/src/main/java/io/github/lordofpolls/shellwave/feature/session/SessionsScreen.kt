@@ -409,6 +409,9 @@ internal fun SessionTabBody(
 
     var terminalEmulator by remember { mutableStateOf<TerminalEmulator?>(null) }
     var measuredSize by remember { mutableStateOf<TerminalSize?>(null) }
+    // TerminalSize is the pty's integer geometry; hit-testing needs the renderer's fractional
+    // width.
+    var cellWidth by remember { mutableStateOf(0f) }
     var ctrlLatched by remember { mutableStateOf(false) }
     var altLatched by remember { mutableStateOf(false) }
 
@@ -617,7 +620,7 @@ internal fun SessionTabBody(
     // this only converts a pixel offset to the 1-based column and row it expects.
     fun mouseCell(offset: Offset): Pair<Int, Int>? {
         val size = measuredSize ?: return null
-        return (offset.x / size.cellWidthPx).toInt() + 1 to (offset.y / size.cellHeightPx).toInt() + 1
+        return (offset.x / cellWidth).toInt() + 1 to (offset.y / size.cellHeightPx).toInt() + 1
     }
 
     fun sendMouseClick(offset: Offset) {
@@ -742,7 +745,7 @@ internal fun SessionTabBody(
                             val size = measuredSize
                             val link =
                                 if (emulator != null && size != null) {
-                                    val col = (offset.x / size.cellWidthPx).toInt()
+                                    val col = (offset.x / cellWidth).toInt()
                                         .coerceIn(0, emulator.mColumns - 1)
                                     val screenRow = (offset.y / size.cellHeightPx).toInt()
                                         .coerceIn(0, emulator.mRows - 1)
@@ -763,7 +766,7 @@ internal fun SessionTabBody(
                             if (emulator != null && size != null) {
                                 selectionState.selectWord(
                                     emulator,
-                                    size.cellWidthPx,
+                                    cellWidth,
                                     size.cellHeightPx,
                                     topRow,
                                     offset
@@ -780,8 +783,9 @@ internal fun SessionTabBody(
                 TerminalCanvas(
                     emulator = terminalEmulator,
                     frame = frame,
-                    onMeasured = { cols, rows, cellW, cellH ->
-                        measuredSize = TerminalSize(cols, rows, cellW, cellH)
+                    onMeasured = { cols, rows, cellWidthPx, cellHeightPx, measuredCellWidth ->
+                        measuredSize = TerminalSize(cols, rows, cellWidthPx, cellHeightPx)
+                        cellWidth = measuredCellWidth
                     },
                     modifier = Modifier.matchParentSize(),
                     fontSizeSp = fontSizeSp,
@@ -812,7 +816,7 @@ internal fun SessionTabBody(
                 TerminalSelectionOverlay(
                     state = selectionState,
                     emulator = terminalEmulator,
-                    cellWidthPx = measuredSize?.cellWidthPx ?: 0,
+                    cellWidth = cellWidth,
                     cellHeightPx = measuredSize?.cellHeightPx ?: 0,
                     topRow = topRow,
                     onCopy = { text -> summary.connection.onCopyTextToClipboard(text) },

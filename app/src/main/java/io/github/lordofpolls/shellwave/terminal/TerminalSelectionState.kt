@@ -25,12 +25,12 @@ class TerminalSelectionState {
 
     fun selectWord(
         emulator: TerminalEmulator,
-        cellWidthPx: Int,
+        cellWidth: Float,
         cellHeightPx: Int,
         topRow: Int,
         offset: Offset
     ) {
-        val col = (offset.x / cellWidthPx).toInt().coerceIn(0, emulator.mColumns - 1)
+        val col = (offset.x / cellWidth).toInt().coerceIn(0, emulator.mColumns - 1)
         val screenRow = (offset.y / cellHeightPx).toInt().coerceIn(0, emulator.mRows - 1)
         startRemainderPx = Offset.Zero
         endRemainderPx = Offset.Zero
@@ -69,7 +69,7 @@ class TerminalSelectionState {
      */
     fun dragHandle(
         emulator: TerminalEmulator,
-        cellWidthPx: Int,
+        cellWidth: Float,
         cellHeightPx: Int,
         isStart: Boolean,
         dx: Float,
@@ -78,14 +78,14 @@ class TerminalSelectionState {
         val sel = selection ?: return
         val remainder = if (isStart) startRemainderPx else endRemainderPx
         val newRemainder = Offset(remainder.x + dx, remainder.y + dy)
-        val colDelta = (newRemainder.x / cellWidthPx).toInt()
+        val colDelta = (newRemainder.x / cellWidth).toInt()
         val rowDelta = (newRemainder.y / cellHeightPx).toInt()
         if (colDelta == 0 && rowDelta == 0) {
             if (isStart) startRemainderPx = newRemainder else endRemainderPx = newRemainder
             return
         }
         val settled = Offset(
-            newRemainder.x - colDelta * cellWidthPx,
+            newRemainder.x - colDelta * cellWidth,
             newRemainder.y - rowDelta * cellHeightPx
         )
         if (isStart) startRemainderPx = settled else endRemainderPx = settled
