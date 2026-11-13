@@ -940,13 +940,8 @@ open class SshConnection(
                     } catch (e: IOException) {
                         null
                     }
-                when {
-                    remoteSize == null -> Result.success(lastReported)
-                    expectedSize >= 0 && remoteSize != expectedSize ->
-                        Result.failure(IOException("Uploaded, but the server now reports $remoteSize bytes for a $expectedSize-byte file - the transfer looks incomplete"))
-
-                    else -> Result.success(lastReported)
-                }
+                val problem = uploadVerificationError(remoteSize, expectedSize)
+                if (problem != null) Result.failure(IOException(problem)) else Result.success(lastReported)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

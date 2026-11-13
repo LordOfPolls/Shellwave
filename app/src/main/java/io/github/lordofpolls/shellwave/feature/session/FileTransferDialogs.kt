@@ -253,7 +253,7 @@ private fun displayNameForUpload(context: Context, uri: Uri): String =
 
 /**
  * Queried, not opened for writing: the download path only truncates on its own later
- * `getOutputStream("w")` call, so the original content is still intact when this reads
+ * `getOutputStream("wt")` call, so the original content is still intact when this reads
  * [OpenableColumns.SIZE].
  *
  * A provider that doesn't report a size is treated as "no existing content" - erring the other way
