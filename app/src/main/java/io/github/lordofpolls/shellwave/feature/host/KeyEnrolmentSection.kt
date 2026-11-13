@@ -11,6 +11,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
@@ -43,10 +44,11 @@ fun KeyEnrolmentSection(
 ) {
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
+    // Plain `remember`: this holds the private key, which must not land in saved instance state.
     var pushedKey by remember { mutableStateOf<GeneratedKey?>(null) }
-    var result by remember { mutableStateOf<String?>(null) }
-    var failed by remember { mutableStateOf(false) }
-    var switched by remember { mutableStateOf(false) }
+    var result by rememberSaveable { mutableStateOf<String?>(null) }
+    var failed by rememberSaveable { mutableStateOf(false) }
+    var switched by rememberSaveable { mutableStateOf(false) }
 
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
@@ -120,11 +122,16 @@ fun KeyEnrolmentSection(
                 ) { Text("Use this key for this host") }
             }
         }
-        result?.let {
+        // The private key is not saved across rotation, so a restored success has nothing left to switch to.
+        val keyLost = result != null && !failed && !switched && pushedKey == null
+        val shown =
+            if (keyLost) "The key was installed on the host, but this screen no longer has it. Push a new key to use it."
+            else result
+        shown?.let {
             Text(
                 it,
                 style = MaterialTheme.typography.bodySmall,
-                color = if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                color = if (failed || keyLost) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
             )
         }
     }

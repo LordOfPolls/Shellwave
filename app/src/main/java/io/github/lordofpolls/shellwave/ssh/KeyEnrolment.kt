@@ -10,6 +10,25 @@ internal const val ENROLMENT_FAIL_MARKER = "SHELLWAVE_ENROLL_FAIL"
 data class KeyEnrolmentResult(val success: Boolean, val message: String)
 
 /**
+ * `authorized_keys` may not end in a newline, and appending to such a file would glue the new key
+ * onto the last entry and corrupt both. `tail -c1 | grep -q .` only succeeds when the last byte is
+ * not a newline (an empty file has no byte at all), so a newline is only added when the file ends
+ * mid-line.
+ *
+ * sshd runs the command through the account's login shell, which can be csh or tcsh, so it sticks
+ * to syntax both csh and POSIX sh accept: `&&`, `||`, `|`, `;` and `( )` subshells, but no command
+ * substitution, braces or `[ ]` tests.
+ */
+internal fun enrolmentCommand(key: String): String {
+    val quotedKey = posixQuote(key)
+    val file = "~/.ssh/authorized_keys"
+    return "mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch $file && chmod 600 $file && " +
+            "(grep -qxF -- $quotedKey $file || " +
+            "(tail -c1 $file | grep -q . && echo >> $file; printf '%s\\n' $quotedKey >> $file)) && " +
+            "grep -qxF -- $quotedKey $file && echo $ENROLMENT_OK_MARKER || echo $ENROLMENT_FAIL_MARKER"
+}
+
+/**
  * `ssh-copy-id` over an already-authenticated session: one POSIX shell command through
  * [ScriptRunner.runCapture] rather than a second exec path. Nothing sshj-specific lives here.
  *
@@ -42,11 +61,7 @@ constructor(private val scriptRunner: ScriptRunner) {
     ): KeyEnrolmentResult {
         val key = publicKeyLine.trim()
         require(key.isNotEmpty() && !key.contains('\n')) { "publicKeyLine must be a single non-blank line" }
-        val quotedKey = posixQuote(key)
-        val command =
-            "mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && " +
-                    "(grep -qxF -- $quotedKey ~/.ssh/authorized_keys || printf '%s\\n' $quotedKey >> ~/.ssh/authorized_keys) && " +
-                    "grep -qxF -- $quotedKey ~/.ssh/authorized_keys && echo $ENROLMENT_OK_MARKER || echo $ENROLMENT_FAIL_MARKER"
+        val command = enrolmentCommand(key)
 
         val result =
             scriptRunner.runCapture(runLabel, hostname, port, username, authMethod, command, hops)
