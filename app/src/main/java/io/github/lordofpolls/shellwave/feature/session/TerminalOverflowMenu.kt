@@ -7,6 +7,7 @@ import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.Keyboard
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.PlayArrow
@@ -41,6 +42,11 @@ import io.github.lordofpolls.shellwave.ssh.SshConnection
  * that need a live channel. [onClose] is not gated - closing a session stuck mid-connect is exactly
  * when it is needed.
  *
+ * [keyBarHidden] is null while no physical keyboard is connected, which hides the key bar item:
+ * with the key bar always shown there is nothing to toggle. It exists because some mice and other
+ * HID devices report themselves as a keyboard, which would otherwise leave the key bar hidden with
+ * no way back short of the settings screen.
+ *
  * Bell is a nested single-choice group carrying its value in the parent item's label, so the mode
  * reads without opening the submenu, which is the one thing the permanent toggle did well.
  */
@@ -49,6 +55,8 @@ internal fun TerminalOverflowMenu(
     connection: SshConnection?,
     bellMode: BellMode,
     onBellMode: (BellMode) -> Unit,
+    keyBarHidden: Boolean?,
+    onKeyBarHidden: (Boolean) -> Unit,
     onDownload: (SshConnection) -> Unit,
     onUpload: (SshConnection) -> Unit,
     onBrowseFiles: (SshConnection) -> Unit,
@@ -148,6 +156,16 @@ internal fun TerminalOverflowMenu(
                     },
                     onClick = { showingBell = true },
                 )
+                if (keyBarHidden != null) {
+                    DropdownMenuItem(
+                        text = { Text(if (keyBarHidden) "Show key bar" else "Hide key bar") },
+                        leadingIcon = { Icon(Icons.Outlined.Keyboard, contentDescription = null) },
+                        onClick = {
+                            expanded = false
+                            onKeyBarHidden(!keyBarHidden)
+                        },
+                    )
+                }
                 if (onClose != null) {
                     DropdownMenuItem(
                         text = { Text("Close session") },

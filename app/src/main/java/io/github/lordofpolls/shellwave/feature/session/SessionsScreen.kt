@@ -200,6 +200,10 @@ fun SessionsScreen(
 
     val bellContext = LocalContext.current
     val bellMode by rememberPrefState { BellPreferences.get(it) }
+    val hideKeyBarWithHardwareKeyboard by rememberPrefState {
+        SessionLayoutPreferences.getHideKeyBarWithHardwareKeyboard(it)
+    }
+    val physicalKeyboard = physicalKeyboardConnected()
 
     // WindowInfoTracker reports per-Activity window metrics. Degrades to Flat rather than crashing
     // without one, e.g. in a @Preview.
@@ -261,6 +265,10 @@ fun SessionsScreen(
                     connection = overflowConnection,
                     bellMode = bellMode,
                     onBellMode = { mode -> BellPreferences.set(bellContext, mode) },
+                    keyBarHidden = if (physicalKeyboard) hideKeyBarWithHardwareKeyboard else null,
+                    onKeyBarHidden = { hide ->
+                        SessionLayoutPreferences.setHideKeyBarWithHardwareKeyboard(bellContext, hide)
+                    },
                     onDownload = { connection -> fileTransferController.requestDownload(connection) },
                     onUpload = { connection -> fileTransferController.requestUpload(connection) },
                     onBrowseFiles = { connection ->
@@ -396,6 +404,10 @@ internal fun SessionTabBody(
     val keyBarKeys = overrideLayout?.let { decodeKeyBarKeys(it.keysJson) } ?: DEFAULT_KEY_BAR_KEYS
     // From the same per-host layout override the keys come from. No override means one row.
     val keyBarRows = overrideLayout?.rows ?: 1
+    val hideKeyBarWithHardwareKeyboard by rememberPrefState {
+        SessionLayoutPreferences.getHideKeyBarWithHardwareKeyboard(it)
+    }
+    val keyBarHidden = hideKeyBarWithHardwareKeyboard && physicalKeyboardConnected()
     val fontContext = LocalContext.current
     val terminalTypeface =
         remember(fontFamily, profileOrDefault.customFontUri) {
@@ -407,6 +419,13 @@ internal fun SessionTabBody(
     var measuredSize by remember { mutableStateOf<TerminalSize?>(null) }
     var ctrlLatched by remember { mutableStateOf(false) }
     var altLatched by remember { mutableStateOf(false) }
+    // A latch set on the key bar would otherwise outlive the bar and silently modify the next key.
+    LaunchedEffect(keyBarHidden) {
+        if (keyBarHidden) {
+            ctrlLatched = false
+            altLatched = false
+        }
+    }
 
     // topRow <= 0 is how far into the scrollback the view is; scrollDragRemainderPx carries a
     // drag's sub-cell remainder between events, so slow swipes accumulate to a full row instead of
@@ -653,7 +672,8 @@ internal fun SessionTabBody(
         runCatching { localContext.startActivity(Intent(Intent.ACTION_VIEW, uri)) }
     }
 
-    // imePadding lives on KeyBar itself below, not on this Column - see that call site.
+    // imePadding lives on the KeyBar (or its stand-in Spacer) below, not on this Column - see that
+    // call site.
     Column(modifier = modifier) {
         if (searchController.open) {
             TerminalSearchBar(
@@ -839,35 +859,41 @@ internal fun SessionTabBody(
         if (preKeyBarGap > 0.dp) Spacer(modifier = Modifier
             .fillMaxWidth()
             .height(preKeyBarGap))
-        // `imePadding()` belongs here, on the key bar alone, never on the outer Column. With it on
+        // `imePadding()` belongs here, on the key bar (or its Spacer) alone, never on the outer Column. With it on
         // the Column - whose other child is a `weight(1f)` Box - each frame of the IME-hide
         // animation recomputes the remaining-space split from a bottom padding that is itself still
         // animating. If one frame's inset makes the padding read larger than the Column's height,
         // `weight(1f)` clamps the terminal to zero for that frame and the key bar is placed
         // immediately after it, at the top, which reads as a second key bar flashing. Padding the
         // key bar alone removes the weighted sibling from the equation.
-        KeyBar(
-            ctrlLatched = ctrlLatched,
-            altLatched = altLatched,
-            onCtrlToggle = { ctrlLatched = !ctrlLatched },
-            onAltToggle = { altLatched = !altLatched },
-            onSpecialKey = { keyCode -> sendSpecialKey(keyCode) },
-            // Through the same text-input path as typed IME input, so it inherits sendText's
-            // Ctrl/Alt latch behaviour.
-            onMacro = { text -> sendText(text) },
-            keyboardVisible = imeVisible,
-            onKeyboardToggle = {
-                if (imeVisible) {
-                    keyboardController?.hide()
-                } else {
-                    focusRequester.requestFocus()
-                    keyboardController?.show()
-                }
-            },
-            keys = keyBarKeys,
-            rows = keyBarRows,
-            modifier = Modifier.imePadding(),
-        )
+        if (!keyBarHidden) {
+            KeyBar(
+                ctrlLatched = ctrlLatched,
+                altLatched = altLatched,
+                onCtrlToggle = { ctrlLatched = !ctrlLatched },
+                onAltToggle = { altLatched = !altLatched },
+                onSpecialKey = { keyCode -> sendSpecialKey(keyCode) },
+                // Through the same text-input path as typed IME input, so it inherits sendText's
+                // Ctrl/Alt latch behaviour.
+                onMacro = { text -> sendText(text) },
+                keyboardVisible = imeVisible,
+                onKeyboardToggle = {
+                    if (imeVisible) {
+                        keyboardController?.hide()
+                    } else {
+                        focusRequester.requestFocus()
+                        keyboardController?.show()
+                    }
+                },
+                keys = keyBarKeys,
+                rows = keyBarRows,
+                modifier = Modifier.imePadding(),
+            )
+        } else {
+            // Carries the IME inset the key bar would have, so the terminal still shrinks above the
+            // keyboard.
+            Spacer(Modifier.imePadding())
+        }
     }
 
     LaunchedEffect(sessionId) { focusRequester.requestFocus() }

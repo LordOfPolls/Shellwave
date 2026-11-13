@@ -27,6 +27,7 @@ import io.github.lordofpolls.shellwave.core.prefs.BellMode
 import io.github.lordofpolls.shellwave.core.prefs.BellPreferences
 import io.github.lordofpolls.shellwave.core.prefs.SessionLayoutPreferences
 import io.github.lordofpolls.shellwave.core.prefs.rememberPrefState
+import io.github.lordofpolls.shellwave.feature.session.physicalKeyboardConnected
 import io.github.lordofpolls.shellwave.terminal.DEFAULT_COLOR_SCHEME
 import io.github.lordofpolls.shellwave.terminal.DEFAULT_TERMINAL_PROFILE
 import io.github.lordofpolls.shellwave.ui.design.BackTopBar
@@ -52,6 +53,8 @@ fun TerminalSettingsScreen(
     val context = LocalContext.current
     val bellMode by rememberPrefState { BellPreferences.get(it) }
     val fullWidthTerminal by rememberPrefState { SessionLayoutPreferences.getFullWidthTerminal(it) }
+    val hideKeyBar by rememberPrefState { SessionLayoutPreferences.getHideKeyBarWithHardwareKeyboard(it) }
+    val physicalKeyboard = physicalKeyboardConnected()
 
     var profile by remember { mutableStateOf(DEFAULT_TERMINAL_PROFILE) }
     LaunchedEffect(Unit) {
@@ -113,6 +116,18 @@ fun TerminalSettingsScreen(
                 title = "Manage key bar layouts",
                 chevron = true,
                 onClick = onOpenKeyBarLayouts,
+            )
+            SettingsSwitch(
+                title = "Hide key bar with a physical keyboard",
+                description =
+                    "While a physical keyboard is connected, the key bar is hidden and the " +
+                        "terminal gets its rows. " +
+                        if (physicalKeyboard) "A physical keyboard is connected now."
+                        else "No physical keyboard is detected right now.",
+                checked = hideKeyBar,
+                onCheckedChange = {
+                    SessionLayoutPreferences.setHideKeyBarWithHardwareKeyboard(context, it)
+                },
             )
 
             SettingsSectionHeader("Sessions")

@@ -127,6 +127,7 @@ class ConfigImportTest {
                 "exactSchemeColours" to true,
                 "bellMode" to "SILENT",
                 "fullWidthTerminal" to true,
+                "hideKeyBarWithHardwareKeyboard" to false,
                 "reachabilityEnabled" to true,
                 "reachabilityInterval" to "FIVE_MINUTES",
                 "reachabilityAllowsMetered" to false,
@@ -181,6 +182,7 @@ class ConfigImportTest {
         assertEquals(true, settings.exactSchemeColours)
         assertEquals(BellMode.SILENT, settings.bellMode)
         assertEquals(true, settings.fullWidthTerminal)
+        assertEquals(false, settings.hideKeyBarWithHardwareKeyboard)
         assertEquals(ReachabilityInterval.FIVE_MINUTES, settings.reachabilityInterval)
         assertEquals(listOf(5L), settings.widgetPinnedScriptIds)
         assertEquals(5L, settings.quickSettingsTileScriptId)
@@ -196,6 +198,7 @@ class ConfigImportTest {
         assertNull(settings.themeMode)
         assertNull(settings.bellMode)
         assertNull(settings.fullWidthTerminal)
+        assertNull(settings.hideKeyBarWithHardwareKeyboard)
         assertNull(settings.quickSettingsTileScriptId)
         assertTrue(settings.widgetPinnedScriptIds.isEmpty())
     }
