@@ -21,6 +21,10 @@ internal const val KEEPALIVE_INTERVAL_SECONDS = 15
 // Only affects a server that completes TCP but never finishes KEX; socket connect is separate.
 private const val KEX_TIMEOUT_MS = 180_000
 
+// Bounds the TCP connect only. Without it a black-holed host holds the attempt for the OS's own
+// SYN retry limit, minutes on Android, with the session stuck in CONNECTING.
+internal const val CONNECT_TIMEOUT_MS = 15_000
+
 /**
  * Connect and authenticate one [SSHClient] - the half of "open an SSH connection" that has nothing
  * to do with what happens afterwards (a PTY + shell for SshConnection, a headless `exec` for
@@ -46,6 +50,7 @@ internal fun connectAndAuthenticate(
     // connect() itself, only if the interval is already non-zero at that point.
     ssh.connection.keepAlive.keepAliveInterval = KEEPALIVE_INTERVAL_SECONDS
     ssh.transport.timeoutMs = KEX_TIMEOUT_MS
+    ssh.connectTimeout = CONNECT_TIMEOUT_MS
     ssh.connect(host, port)
     authenticate(ssh, username, authMethod)
 }

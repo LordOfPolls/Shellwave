@@ -278,12 +278,17 @@ open class SshConnection(
                 port,
                 username,
                 authMethod,
-                hostKeyVerifier
+                hostKeyVerifier,
+                isClosing = { closing.get() }
             )
 
             // Everything below runs on an authenticated transport nobody else owns yet. A failure here
             // would otherwise leave it, its shell and any forwarded agent live until Retry or tab close.
             try {
+                // A disconnect() that ran before ssh.connect() started had no socket to close, and one
+                // that ran during a proxy chain had no chain resources to tear down yet. The catch
+                // below finishes that teardown now that they exist.
+                if (closing.get()) throw IOException("Connection closed while connecting")
                 val newSession: Session =
                     if (agentKeys.isEmpty()) {
                         ssh.startSession()
