@@ -16,6 +16,7 @@ import io.github.lordofpolls.shellwave.core.prefs.AutomationPreferences
 import io.github.lordofpolls.shellwave.core.prefs.BellPreferences
 import io.github.lordofpolls.shellwave.core.prefs.ReachabilityPreferences
 import io.github.lordofpolls.shellwave.core.prefs.SessionLayoutPreferences
+import io.github.lordofpolls.shellwave.core.prefs.SessionPreferences
 import io.github.lordofpolls.shellwave.core.prefs.WidgetPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -205,6 +206,7 @@ constructor(
             "themeMode" to AppearancePreferences.getThemeMode(context).name,
             "colourTheme" to AppearancePreferences.getColourTheme(context).name,
             "exactSchemeColours" to AppearancePreferences.getExactSchemeColours(context),
+            "closeSessionOnExit" to SessionPreferences.getCloseOnExit(context),
             "bellMode" to BellPreferences.get(context).name,
             "fullWidthTerminal" to SessionLayoutPreferences.getFullWidthTerminal(context),
             "reachabilityEnabled" to ReachabilityPreferences.isEnabled(context),

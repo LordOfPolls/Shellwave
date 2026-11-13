@@ -14,6 +14,7 @@ import io.github.lordofpolls.shellwave.core.db.entities.HostEntity
 import io.github.lordofpolls.shellwave.core.db.entities.PortForwardEntity
 import io.github.lordofpolls.shellwave.core.db.entities.TerminalProfileEntity
 import io.github.lordofpolls.shellwave.core.prefs.FakeSharedPreferences
+import io.github.lordofpolls.shellwave.core.prefs.SessionPreferences
 import io.github.lordofpolls.shellwave.service.SessionAlerts
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -196,8 +197,13 @@ class SessionManagerTest {
 
     private val notices = CopyOnWriteArrayList<String>()
 
-    private fun newManager(tempDir: File, hostDao: EmptyHostDao = EmptyHostDao()): SessionManager {
+    private fun newManager(
+        tempDir: File,
+        hostDao: EmptyHostDao = EmptyHostDao(),
+        closeOnExit: Boolean = false,
+    ): SessionManager {
         val context = FakeContext(tempDir)
+        SessionPreferences.setCloseOnExit(context, closeOnExit)
         return SessionManager(
             context,
             hostDao,
@@ -312,6 +318,29 @@ class SessionManagerTest {
     private fun oneKey(): List<AgentKey> {
         val pair = KeyPairGenerator.getInstance("Ed25519").generateKeyPair()
         return listOf(AgentKey(pair.private, pair.public, "laptop"))
+    }
+
+    @Test
+    fun cleanDrop_closesTheSessionWhenCloseOnExitIsOn() {
+        val tempDir = createTempDir()
+        val manager = newManager(tempDir, closeOnExit = true)
+        val connections = CopyOnWriteArrayList<FakeSshConnection>()
+        manager.connectionFactory = { _ ->
+            FakeSshConnection(CoroutineScope(SupervisorJob() + Dispatchers.Default), FakeContext(tempDir))
+                .also { connections += it }
+        }
+        val id = manager.openSession(spec())
+        manager.beginConnectIfNeeded(id, 80, 24, 8, 16)
+        waitUntil(message = "timed out waiting for connect() to be reached") {
+            connections.size >= 1 && connections[0].connectStarted
+        }
+        connections[0].connectGate.complete(Unit)
+        waitUntil(message = "timed out waiting for CONNECTED") { summaryOf(manager, id).status == SessionStatus.CONNECTED }
+
+        handleDisconnected(manager, id, clean = true)
+
+        assertTrue(manager.summaries.value.none { it.id == id })
+        assertEquals(1, connections[0].disconnectCalls)
     }
 
     @Test

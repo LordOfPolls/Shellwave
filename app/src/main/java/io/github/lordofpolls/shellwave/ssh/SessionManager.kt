@@ -14,6 +14,7 @@ import io.github.lordofpolls.shellwave.core.db.entities.ColorSchemeEntity
 import io.github.lordofpolls.shellwave.core.db.entities.PortForwardEntity
 import io.github.lordofpolls.shellwave.core.db.entities.PortForwardType
 import io.github.lordofpolls.shellwave.core.prefs.AppearancePreferences
+import io.github.lordofpolls.shellwave.core.prefs.SessionPreferences
 import io.github.lordofpolls.shellwave.core.prefs.SupportPreferences
 import io.github.lordofpolls.shellwave.service.SessionAlerts
 import io.github.lordofpolls.shellwave.service.SessionService
@@ -285,7 +286,7 @@ constructor(
     }
 
     /**
-     * Manual retry for a session sitting in DISCONNECTED or FAILED.
+     * Manual retry for a session sitting in DISCONNECTED (a clean exit with close-on-exit off) or FAILED.
      *
      * [SshConnection.stopAllForwards] runs synchronously here, before `disconnect()`, matching the
      * ordering [handleDisconnected] uses. Otherwise the old forwards are released only by
@@ -504,8 +505,9 @@ constructor(
 
     // connect() starts the reader coroutine before it returns, so a shell that ends or a socket that
     // drops in that window can call handleDisconnected() concurrently, before this sets CONNECTED.
-    // Unguarded, that write lands after the DISCONNECTED one and overwrites it, leaving a dead
-    // session showing connected forever with no reader and no backoff.
+    // Unguarded, that write lands after the DISCONNECTED one (or, with close-on-exit on, outlives the
+    // closed entry) and overwrites it, leaving a dead session showing connected forever with no
+    // reader and no backoff.
     //
     // Reasoned from the code, not reproduced: hitting the window needs sub-millisecond timing that
     // typing `exit` into a connected shell doesn't exercise. myGeneration is snapshotted before
@@ -635,6 +637,12 @@ constructor(
     private fun handleDisconnected(id: Long, clean: Boolean) {
         val entry = entries[id] ?: return
         entry.generation.incrementAndGet() // invalidate any attemptConnect() still unwinding for this connection - see its comment
+        // Closing tears down the forwards, tunnels and transport itself, so the steps below would
+        // only repeat that.
+        if (clean && SessionPreferences.getCloseOnExit(context)) {
+            closeSession(id)
+            return
+        }
         // Release every bound local port the moment a drop is detected, rather than waiting for
         // reconnectWithBackoff()'s own disconnect() before its first retry - otherwise the port
         // stays occupied and the next start fails. A local forward's ServerSocket is independent of
@@ -643,7 +651,7 @@ constructor(
         entry.tunnels = emptyMap()
         // Not connected any more, so there is no uptime to show: see SessionSummary
         // .connectedAtElapsedRealtime. attemptConnect() clears this too, but a drop that never gets
-        // as far as a retry (a clean exit) has no attemptConnect() coming.
+        // as far as a retry (a clean exit with close-on-exit off) has no attemptConnect() coming.
         entry.connectedAtElapsedRealtime = null
         if (clean) {
             entry.status = SessionStatus.DISCONNECTED

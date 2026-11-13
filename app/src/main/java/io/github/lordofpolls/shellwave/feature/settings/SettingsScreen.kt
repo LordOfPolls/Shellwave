@@ -67,6 +67,8 @@ fun SettingsScreen(
     onThemeModeChange: (ThemeMode) -> Unit,
     exactSchemeColours: Boolean,
     onExactSchemeColoursChange: (Boolean) -> Unit,
+    closeSessionOnExit: Boolean,
+    onCloseSessionOnExitChange: (Boolean) -> Unit,
     reachabilityEnabled: Boolean,
     onReachabilityEnabledChange: (Boolean) -> Unit,
     reachabilityInterval: ReachabilityInterval,
@@ -146,6 +148,15 @@ fun SettingsScreen(
                 description = "Font, cursor, scrollback, colour scheme, key bar layouts, bell and full-width mode.",
                 chevron = true,
                 onClick = onOpenTerminalSettings,
+            )
+
+            SettingsSectionHeader("Sessions")
+
+            SettingsSwitch(
+                title = "Close the tab when the shell exits",
+                description = "Applies when the shell ends without a connection error, such as exit or logout, or when the server closes the session. The tab closes and its output is gone. Off keeps the tab so you can read the output or reconnect.",
+                checked = closeSessionOnExit,
+                onCheckedChange = onCloseSessionOnExitChange,
             )
 
             SettingsSectionHeader("Hosts")
