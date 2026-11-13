@@ -167,19 +167,39 @@ open class SshConnection(
     @Volatile
     private var logSink: SessionLogSink? = null
 
+    // Guards every change of [logSink] together with [_isLogging], so the two never disagree. A
+    // sink's failure callback runs on the reader thread while startLogging/closeLogging run on
+    // others: without this, a failure of an already-replaced sink could clear its successor.
+    private val logLock = Any()
+
     private val _isLogging = MutableStateFlow(false)
     val isLogging: StateFlow<Boolean> = _isLogging
 
-    /** [onFailure] fires at most once, the moment a write to [out] fails; logging is off by then. */
+    /**
+     * [onFailure] fires at most once, the moment a write to [out] fails; logging is off by then. It
+     * stays silent if the log was already stopped or replaced, since logging did not just stop.
+     */
     fun startLogging(out: OutputStream, onFailure: () -> Unit) {
         closeLogging()
-        logSink = SessionLogSink(out) {
+        lateinit var sink: SessionLogSink
+        sink = SessionLogSink(out) {
+            if (detachLogSink(sink) != null) onFailure()
+        }
+        synchronized(logLock) {
+            logSink = sink
+            _isLogging.value = true
+        }
+    }
+
+    /** Clears the sink and returns it, or null if none is set or [expected] is no longer the current one. */
+    private fun detachLogSink(expected: SessionLogSink? = null): SessionLogSink? =
+        synchronized(logLock) {
+            val sink = logSink
+            if (sink == null || (expected != null && sink !== expected)) return null
             logSink = null
             _isLogging.value = false
-            onFailure()
+            sink
         }
-        _isLogging.value = true
-    }
 
     fun stopLogging() = closeLogging()
 
@@ -191,9 +211,7 @@ open class SshConnection(
      * session it belongs to either way.
      */
     private fun closeLogging() {
-        val sink = logSink ?: return
-        logSink = null
-        _isLogging.value = false
+        val sink = detachLogSink() ?: return
         scope.launch(Dispatchers.IO) { sink.close() }
     }
 
