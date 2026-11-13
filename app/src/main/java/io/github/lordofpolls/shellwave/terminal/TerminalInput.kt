@@ -185,13 +185,30 @@ fun hardwareKeyCode(event: ComposeKeyEvent, cursorApp: Boolean, keypadApp: Boole
         ctrlChordCode(native.getUnicodeChar(0))?.let { return it.toString() }
     }
 
-    // xterm/bash convention: ESC then the character, e.g. Alt+. to recall the last argument.
     if (alt && !ctrl) {
-        val codePoint =
-            native.getUnicodeChar(native.metaState and android.view.KeyEvent.META_SHIFT_ON)
-        if (codePoint > 0) return "\u001B" + String(Character.toChars(codePoint))
+        val shift = native.metaState and android.view.KeyEvent.META_SHIFT_ON
+        altChordText(
+            rightAlt = native.metaState and android.view.KeyEvent.META_ALT_RIGHT_ON != 0,
+            composed = native.getUnicodeChar(native.metaState),
+            base = native.getUnicodeChar(shift),
+        )?.let { return it }
     }
 
+    return null
+}
+
+/**
+ * Text for a key pressed with Alt held. Left Alt follows the xterm/bash convention: ESC then the
+ * base character, e.g. Alt+. to recall the last argument.
+ *
+ * Right Alt is AltGr on layouts that have one (German AltGr+Q = @). Android reports it as Alt too,
+ * so it is told apart by the character it composes: when Right Alt changes the character, that
+ * composed character is sent as is, without the ESC prefix. [composed] is the code point with the
+ * full meta state applied, [base] the one with only Shift applied. Null when neither is printable.
+ */
+internal fun altChordText(rightAlt: Boolean, composed: Int, base: Int): String? {
+    if (rightAlt && composed > 0 && composed != base) return String(Character.toChars(composed))
+    if (base > 0) return "\u001B" + String(Character.toChars(base))
     return null
 }
 
