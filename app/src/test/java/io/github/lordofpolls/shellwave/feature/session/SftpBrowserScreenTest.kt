@@ -41,3 +41,17 @@ class SftpBrowserScreenTest {
         assertNull(entryDetail(file))
     }
 }
+
+class SftpBrowserHistoryTest {
+
+    @Test
+    fun `navigate pushes the current path, ignores a same-path move, and pop returns the last one`() {
+        val pushed = historyAfterNavigate(emptyList(), "/a", "/a/b")
+        assertEquals(listOf("/a"), pushed)
+        assertEquals(pushed, historyAfterNavigate(pushed, "/a/b", "/a/b"))
+
+        val twice = historyAfterNavigate(pushed, "/a/b", "/a/b/c")
+        assertEquals("/a/b" to listOf("/a"), popHistory(twice))
+        assertNull(popHistory(emptyList()))
+    }
+}

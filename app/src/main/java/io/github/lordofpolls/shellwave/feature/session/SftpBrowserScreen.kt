@@ -1,5 +1,6 @@
 package io.github.lordofpolls.shellwave.feature.session
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -41,6 +42,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -51,6 +53,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
@@ -85,6 +88,7 @@ fun SftpBrowserScreen(
     val fileTransferController = rememberFileTransferController()
 
     var path by remember { mutableStateOf(startPath) }
+    var history by remember { mutableStateOf<List<String>>(emptyList()) }
     var entries by remember { mutableStateOf<List<RemoteEntry>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var refreshing by remember { mutableStateOf(false) }
@@ -142,6 +146,24 @@ fun SftpBrowserScreen(
         reloadToken++
     }
 
+    fun navigate(to: String) {
+        history = historyAfterNavigate(history, path, to)
+        path = to
+    }
+
+    fun stepBack(): Boolean {
+        if (selected.isNotEmpty()) {
+            selected = emptySet()
+            return true
+        }
+        val (previous, rest) = popHistory(history) ?: return false
+        history = rest
+        path = previous
+        return true
+    }
+
+    BackHandler(enabled = selected.isNotEmpty() || history.isNotEmpty()) { stepBack() }
+
     fun renameEntry(entry: RemoteEntry, target: String) {
         scope.launch {
             connection.renameRemote(entry.path, target).fold(
@@ -167,12 +189,20 @@ fun SftpBrowserScreen(
         TopAppBar(
             title = {
                 if (selected.isNotEmpty()) Text("${selected.size} selected")
-                else Breadcrumb(path = path, onNavigate = { path = it })
+                else Breadcrumb(path = path, onNavigate = ::navigate)
             },
             navigationIcon = {
-                IconButton(onClick = {
-                    if (selected.isNotEmpty()) selected = emptySet() else onBack()
-                }) {
+                Box(
+                    modifier = Modifier
+                        .minimumInteractiveComponentSize()
+                        .combinedClickable(
+                            onClick = { if (!stepBack()) onBack() },
+                            onLongClick = onBack,
+                            onLongClickLabel = "Close browser",
+                            role = Role.Button,
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
                     Icon(
                         if (selected.isNotEmpty()) Icons.Outlined.Close else Icons.AutoMirrored.Outlined.ArrowBack,
                         contentDescription = if (selected.isNotEmpty()) "Cancel selection" else "Back",
@@ -186,7 +216,7 @@ fun SftpBrowserScreen(
                     }
                 } else {
                     remoteParentPath(path)?.let { parent ->
-                        TextButton(onClick = { path = parent }) { Text("Up") }
+                        TextButton(onClick = { navigate(parent) }) { Text("Up") }
                     }
                     IconButton(onClick = { reload() }) {
                         Icon(Icons.Outlined.Refresh, contentDescription = "Refresh")
@@ -233,7 +263,7 @@ fun SftpBrowserScreen(
                                         selected =
                                             if (entry.path in selected) selected - entry.path else selected + entry.path
 
-                                    entry.isDirectory -> path = entry.path
+                                    entry.isDirectory -> navigate(entry.path)
                                     else -> onEdit(entry)
                                 }
                             },
@@ -537,3 +567,9 @@ internal fun entryDetail(entry: RemoteEntry): String? {
         }
     return listOfNotNull(sizePart, timePart).joinToString(" · ").ifBlank { null }
 }
+
+internal fun historyAfterNavigate(history: List<String>, current: String, to: String): List<String> =
+    if (to == current) history else history + current
+
+internal fun popHistory(history: List<String>): Pair<String, List<String>>? =
+    history.lastOrNull()?.let { it to history.dropLast(1) }
