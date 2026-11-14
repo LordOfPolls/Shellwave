@@ -211,3 +211,35 @@ private fun ctrlChordCode(codePoint: Int): Char? {
         else -> null
     }
 }
+
+enum class ClipboardShortcut { COPY, PASTE }
+
+/**
+ * The desktop-terminal chords, since plain Ctrl+C and Ctrl+V are owned by the remote (SIGINT and
+ * literal-next) and keep going out as control bytes. Checked before [hardwareKeyCode], which would
+ * otherwise claim both: [KeyHandler.getCode] turns Shift+Insert into `\033[2;2~`, and the Ctrl
+ * chord table turns Ctrl+Shift+V into 0x16. Alt is excluded so AltGr layouts still reach the
+ * Alt+<char> path.
+ */
+fun clipboardShortcut(event: ComposeKeyEvent): ClipboardShortcut? =
+    clipboardShortcut(
+        keyCode = event.nativeKeyEvent.keyCode,
+        ctrl = event.isCtrlPressed,
+        shift = event.isShiftPressed,
+        alt = event.isAltPressed,
+    )
+
+internal fun clipboardShortcut(
+    keyCode: Int,
+    ctrl: Boolean,
+    shift: Boolean,
+    alt: Boolean,
+): ClipboardShortcut? {
+    if (alt) return null
+    return when {
+        ctrl && shift && keyCode == android.view.KeyEvent.KEYCODE_V -> ClipboardShortcut.PASTE
+        ctrl && shift && keyCode == android.view.KeyEvent.KEYCODE_C -> ClipboardShortcut.COPY
+        shift && !ctrl && keyCode == android.view.KeyEvent.KEYCODE_INSERT -> ClipboardShortcut.PASTE
+        else -> null
+    }
+}

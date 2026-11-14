@@ -2,6 +2,7 @@ package io.github.lordofpolls.shellwave.feature.session
 
 import android.content.Intent
 import android.net.Uri
+import android.view.KeyEvent
 import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -35,6 +36,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
@@ -43,7 +45,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
@@ -69,6 +73,7 @@ import io.github.lordofpolls.shellwave.ssh.SessionManager
 import io.github.lordofpolls.shellwave.ssh.SessionStatus
 import io.github.lordofpolls.shellwave.ssh.SshConnection
 import io.github.lordofpolls.shellwave.ssh.TerminalSize
+import io.github.lordofpolls.shellwave.terminal.ClipboardShortcut
 import io.github.lordofpolls.shellwave.terminal.DEFAULT_KEY_BAR_KEYS
 import io.github.lordofpolls.shellwave.terminal.DEFAULT_TERMINAL_PROFILE
 import io.github.lordofpolls.shellwave.terminal.DEFAULT_TERMINAL_TEXT_SIZE_SP
@@ -81,6 +86,8 @@ import io.github.lordofpolls.shellwave.terminal.TerminalInputCapture
 import io.github.lordofpolls.shellwave.terminal.TerminalLink
 import io.github.lordofpolls.shellwave.terminal.TerminalMatch
 import io.github.lordofpolls.shellwave.terminal.TerminalSelectionOverlay
+import io.github.lordofpolls.shellwave.terminal.WheelAction
+import io.github.lordofpolls.shellwave.terminal.clipboardShortcut
 import io.github.lordofpolls.shellwave.terminal.collectTerminalRows
 import io.github.lordofpolls.shellwave.terminal.ctrlCode
 import io.github.lordofpolls.shellwave.terminal.decodeKeyBarKeys
@@ -93,7 +100,9 @@ import io.github.lordofpolls.shellwave.terminal.resolveTerminalTypeface
 import io.github.lordofpolls.shellwave.terminal.selectionHighlightColor
 import io.github.lordofpolls.shellwave.terminal.dragRows
 import io.github.lordofpolls.shellwave.terminal.terminalGestures
+import io.github.lordofpolls.shellwave.terminal.wheelAction
 import io.github.lordofpolls.shellwave.terminal.wheelButton
+import io.github.lordofpolls.shellwave.terminal.wheelNotches
 import io.github.lordofpolls.shellwave.ui.design.EmptyState
 import io.github.lordofpolls.shellwave.ui.design.MachineText
 import io.github.lordofpolls.shellwave.ui.design.SessionChipModel
@@ -405,6 +414,9 @@ internal fun SessionTabBody(
 
     var terminalEmulator by remember { mutableStateOf<TerminalEmulator?>(null) }
     var measuredSize by remember { mutableStateOf<TerminalSize?>(null) }
+    // TerminalSize is the pty's integer geometry; hit-testing needs the renderer's fractional
+    // width.
+    var cellWidth by remember { mutableStateOf(0f) }
     var ctrlLatched by remember { mutableStateOf(false) }
     var altLatched by remember { mutableStateOf(false) }
 
@@ -413,6 +425,10 @@ internal fun SessionTabBody(
     // rounding to zero every frame.
     var topRow by remember { mutableStateOf(0) }
     var scrollDragRemainderPx by remember { mutableStateOf(0f) }
+
+    // Wheel scrolling carries its remainder in notches, not pixels like the drag above, so a
+    // touchpad's fractional scroll events add up to a notch instead of each rounding to zero.
+    var wheelRemainderNotches by remember { mutableStateOf(0f) }
 
     var searchQuery by remember(sessionId) { mutableStateOf("") }
     var searchMatches by remember(sessionId) { mutableStateOf(emptyList<TerminalMatch>()) }
@@ -613,7 +629,7 @@ internal fun SessionTabBody(
     // this only converts a pixel offset to the 1-based column and row it expects.
     fun mouseCell(offset: Offset): Pair<Int, Int>? {
         val size = measuredSize ?: return null
-        return (offset.x / size.cellWidthPx).toInt() + 1 to (offset.y / size.cellHeightPx).toInt() + 1
+        return (offset.x / cellWidth).toInt() + 1 to (offset.y / size.cellHeightPx).toInt() + 1
     }
 
     fun sendMouseClick(offset: Offset) {
@@ -630,6 +646,54 @@ internal fun SessionTabBody(
         val (notches, remainder) = dragRows(scrollDragRemainderPx + dy, cellHeightPx)
         scrollDragRemainderPx = remainder
         repeat(abs(notches)) { emulator.sendMouseEvent(wheelButton(notches), column, row, true) }
+    }
+
+    // `terminalGestures` captures its callbacks once, at the first composition, so anything they
+    // reach that reads `summary` directly would keep talking to the connection of that first
+    // composition. This state always holds the current one.
+    val connection by rememberUpdatedState(summary.connection)
+
+    fun copySelection() {
+        val emulator = terminalEmulator ?: return
+        val text = selectionState.selectedText(emulator) ?: return
+        connection.onCopyTextToClipboard(text)
+        selectionState.clear()
+    }
+
+    // Shift bypasses mouse tracking for the wheel as it does for a drag, so a full-screen app that
+    // grabbed the mouse can still be scrolled locally.
+    fun handleWheelScroll(offset: Offset, dy: Float, shift: Boolean) {
+        val emulator = terminalEmulator ?: return
+        val (notches, remainder) = wheelNotches(wheelRemainderNotches, dy)
+        wheelRemainderNotches = remainder
+        val action =
+            wheelAction(
+                notches = notches,
+                mouseTracking = emulator.isMouseTrackingActive() && !shift,
+                alternateBuffer = emulator.isAlternateBufferActive(),
+            ) ?: return
+        when (action) {
+            is WheelAction.MouseReport -> {
+                val (column, row) = mouseCell(offset) ?: return
+                repeat(action.count) { emulator.sendMouseEvent(action.button, column, row, true) }
+            }
+
+            is WheelAction.Arrows -> {
+                val code =
+                    KeyHandler.getCode(
+                        if (action.down) KeyEvent.KEYCODE_DPAD_DOWN else KeyEvent.KEYCODE_DPAD_UP,
+                        0,
+                        emulator.isCursorKeysApplicationMode,
+                        emulator.isKeypadApplicationMode,
+                    ) ?: return
+                connection.write(code.repeat(action.count))
+            }
+
+            is WheelAction.Scrollback -> {
+                val maxScrollback = emulator.screen.activeTranscriptRows
+                topRow = (topRow + action.rows).coerceIn(-maxScrollback, 0)
+            }
+        }
     }
 
     val localContext = LocalContext.current
@@ -683,9 +747,21 @@ internal fun SessionTabBody(
                     .fillMaxSize()
                     .background(Color.Black)
                     // Preview rather than onKeyEvent: claims the event before
-                    // TerminalInputCapture's BasicTextField, so Ctrl+C isn't first eaten by the
-                    // field's own copy shortcut.
+                    // TerminalInputCapture's BasicTextField. Without it Shift+Insert would paste
+                    // into the invisible field and go out as typed text, with no bracketed paste,
+                    // and Ctrl+C would be eaten by the field's own copy shortcut.
                     .onPreviewKeyEvent { event ->
+                        val shortcut = clipboardShortcut(event)
+                        if (shortcut != null) {
+                            if (event.type == KeyEventType.KeyDown) {
+                                when (shortcut) {
+                                    ClipboardShortcut.PASTE ->
+                                        summary.connection.onPasteTextFromClipboard()
+                                    ClipboardShortcut.COPY -> copySelection()
+                                }
+                            }
+                            return@onPreviewKeyEvent true
+                        }
                         val emulator = terminalEmulator
                         val bytes =
                             hardwareKeyCode(
@@ -719,7 +795,7 @@ internal fun SessionTabBody(
                             val size = measuredSize
                             val link =
                                 if (emulator != null && size != null) {
-                                    val col = (offset.x / size.cellWidthPx).toInt()
+                                    val col = (offset.x / cellWidth).toInt()
                                         .coerceIn(0, emulator.mColumns - 1)
                                     val screenRow = (offset.y / size.cellHeightPx).toInt()
                                         .coerceIn(0, emulator.mRows - 1)
@@ -740,7 +816,7 @@ internal fun SessionTabBody(
                             if (emulator != null && size != null) {
                                 selectionState.selectWord(
                                     emulator,
-                                    size.cellWidthPx,
+                                    cellWidth,
                                     size.cellHeightPx,
                                     topRow,
                                     offset
@@ -752,13 +828,52 @@ internal fun SessionTabBody(
                         },
                         onMouseClick = ::sendMouseClick,
                         onMouseWheel = ::sendMouseWheel,
+                        onMouseSelect = { anchor, current ->
+                            val emulator = terminalEmulator
+                            val size = measuredSize
+                            if (emulator != null && size != null) {
+                                selectionState.selectRange(
+                                    emulator,
+                                    cellWidth,
+                                    size.cellHeightPx,
+                                    topRow,
+                                    anchor,
+                                    current
+                                )
+                            }
+                        },
+                        onMouseSelectEnd = { selectionState.endRangeSelection() },
+                        onMouseDoubleClick = { offset ->
+                            val emulator = terminalEmulator
+                            val size = measuredSize
+                            if (emulator != null && size != null) {
+                                selectionState.selectWord(
+                                    emulator,
+                                    cellWidth,
+                                    size.cellHeightPx,
+                                    topRow,
+                                    offset
+                                )
+                            }
+                        },
+                        onSecondaryClick = {
+                            if (selectionState.selection != null) {
+                                copySelection()
+                            } else {
+                                connection.onPasteTextFromClipboard()
+                            }
+                        },
+                        // A lambda, not ::handleWheelScroll: see the note on the key bar's
+                        // `onText` below about memoised local function references.
+                        onWheelScroll = { offset, dy, shift -> handleWheelScroll(offset, dy, shift) },
                     ),
             ) {
                 TerminalCanvas(
                     emulator = terminalEmulator,
                     frame = frame,
-                    onMeasured = { cols, rows, cellW, cellH ->
-                        measuredSize = TerminalSize(cols, rows, cellW, cellH)
+                    onMeasured = { cols, rows, cellWidthPx, cellHeightPx, measuredCellWidth ->
+                        measuredSize = TerminalSize(cols, rows, cellWidthPx, cellHeightPx)
+                        cellWidth = measuredCellWidth
                     },
                     modifier = Modifier.matchParentSize(),
                     fontSizeSp = fontSizeSp,
@@ -789,7 +904,7 @@ internal fun SessionTabBody(
                 TerminalSelectionOverlay(
                     state = selectionState,
                     emulator = terminalEmulator,
-                    cellWidthPx = measuredSize?.cellWidthPx ?: 0,
+                    cellWidth = cellWidth,
                     cellHeightPx = measuredSize?.cellHeightPx ?: 0,
                     topRow = topRow,
                     onCopy = { text -> summary.connection.onCopyTextToClipboard(text) },

@@ -34,14 +34,24 @@ val DEFAULT_TERMINAL_TEXT_SIZE_SP = 14.sp
  * scopes Compose's invalidation to this draw. The session screen coalesces those to ~16 ms.
  *
  * [topRow] is the external buffer row at the viewport's top (`<= 0`; 0 is the live screen bottom).
- * [onMeasured] fires with the new (cols, rows, cellWidthPx, cellHeightPx) whenever the pixel size
- * or font metrics change, undebounced.
+ * [onMeasured] fires with the new (cols, rows, cellWidthPx, cellHeightPx, cellWidth) whenever the
+ * pixel size or font metrics change, undebounced. `cellWidth` is the renderer's fractional advance
+ * and is what the grid is laid out and drawn with, so the column count and every pixel-to-column
+ * conversion must use it: dividing by a truncated width puts the last columns past the right edge
+ * and makes taps land further right the further across they are. `cellWidthPx` is that width
+ * truncated, kept for the emulator's integer per-cell pixel size.
  */
 @Composable
 fun TerminalCanvas(
     emulator: TerminalEmulator?,
     frame: IntState,
-    onMeasured: (cols: Int, rows: Int, cellWidthPx: Int, cellHeightPx: Int) -> Unit,
+    onMeasured: (
+        cols: Int,
+        rows: Int,
+        cellWidthPx: Int,
+        cellHeightPx: Int,
+        cellWidth: Float,
+    ) -> Unit,
     modifier: Modifier = Modifier,
     fontSizeSp: TextUnit = DEFAULT_TERMINAL_TEXT_SIZE_SP,
     typeface: Typeface = Typeface.MONOSPACE,
@@ -62,11 +72,12 @@ fun TerminalCanvas(
     var boxSize by remember { mutableStateOf(IntSize.Zero) }
     LaunchedEffect(renderer, boxSize) {
         if (boxSize.width == 0 || boxSize.height == 0) return@LaunchedEffect
-        val cellWidthPx = renderer.fontWidth.toInt().coerceAtLeast(1)
+        val cellWidth = renderer.fontWidth.coerceAtLeast(1f)
+        val cellWidthPx = cellWidth.toInt()
         val cellHeightPx = renderer.fontLineSpacing.coerceAtLeast(1)
-        val cols = max(1, boxSize.width / cellWidthPx)
+        val cols = terminalColumns(boxSize.width, cellWidth)
         val rows = max(1, boxSize.height / cellHeightPx)
-        onMeasured(cols, rows, cellWidthPx, cellHeightPx)
+        onMeasured(cols, rows, cellWidthPx, cellHeightPx, cellWidth)
     }
 
     Canvas(
@@ -82,6 +93,12 @@ fun TerminalCanvas(
         drawTerminal(emulator, renderer, frame, topRow, selection, selectionColor)
     }
 }
+
+/**
+ * Whole columns that fit in [widthPx] at the renderer's fractional [cellWidth]. Dividing by the
+ * truncated width would count a column that [TerminalRenderer] draws past the right edge.
+ */
+fun terminalColumns(widthPx: Int, cellWidth: Float): Int = max(1, (widthPx / cellWidth).toInt())
 
 private fun DrawScope.drawTerminal(
     emulator: TerminalEmulator?,

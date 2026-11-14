@@ -19,22 +19,56 @@ class TerminalSelectionState {
     private var startRemainderPx = Offset.Zero
     private var endRemainderPx = Offset.Zero
 
+    // Where a mouse drag began, as (col, row) in external rows. Resolved once so wheel scrolling or
+    // new output mid-drag cannot move it: the anchor offset is a screen position, and the row under
+    // it changes with `topRow`.
+    private var dragAnchor: Pair<Int, Int>? = null
+
     fun clear() {
         selection = null
+        dragAnchor = null
     }
 
     fun selectWord(
         emulator: TerminalEmulator,
-        cellWidthPx: Int,
+        cellWidth: Float,
         cellHeightPx: Int,
         topRow: Int,
         offset: Offset
     ) {
-        val col = (offset.x / cellWidthPx).toInt().coerceIn(0, emulator.mColumns - 1)
+        val col = (offset.x / cellWidth).toInt().coerceIn(0, emulator.mColumns - 1)
         val screenRow = (offset.y / cellHeightPx).toInt().coerceIn(0, emulator.mRows - 1)
         startRemainderPx = Offset.Zero
         endRemainderPx = Offset.Zero
         selection = wordSelectionAt(emulator, col, screenRow + topRow)
+    }
+
+    /** Extends a mouse drag from [anchor], where it began, to [current], both screen offsets. */
+    fun selectRange(
+        emulator: TerminalEmulator,
+        cellWidth: Float,
+        cellHeightPx: Int,
+        topRow: Int,
+        anchor: Offset,
+        current: Offset
+    ) {
+        fun col(o: Offset) = (o.x / cellWidth).toInt().coerceIn(0, emulator.mColumns - 1)
+        fun row(o: Offset) = (o.y / cellHeightPx).toInt().coerceIn(0, emulator.mRows - 1) + topRow
+        val start = dragAnchor ?: (col(anchor) to row(anchor)).also { dragAnchor = it }
+        val (startCol, startRow) = start
+        val endRow = row(current)
+        startRemainderPx = Offset.Zero
+        endRemainderPx = Offset.Zero
+        selection = TerminalSelection(
+            validColumn(emulator, startRow, startCol),
+            startRow,
+            validColumn(emulator, endRow, col(current)),
+            endRow
+        ).normalized()
+    }
+
+    fun endRangeSelection() {
+        dragAnchor = null
     }
 
     fun selectAll(emulator: TerminalEmulator) {
@@ -49,6 +83,7 @@ class TerminalSelectionState {
     }
 
     fun shiftForScroll(scrolled: Int) {
+        dragAnchor = dragAnchor?.let { (col, row) -> col to row - scrolled }
         selection = selection?.let {
             it.copy(
                 startRow = it.startRow - scrolled,
@@ -69,7 +104,7 @@ class TerminalSelectionState {
      */
     fun dragHandle(
         emulator: TerminalEmulator,
-        cellWidthPx: Int,
+        cellWidth: Float,
         cellHeightPx: Int,
         isStart: Boolean,
         dx: Float,
@@ -78,14 +113,14 @@ class TerminalSelectionState {
         val sel = selection ?: return
         val remainder = if (isStart) startRemainderPx else endRemainderPx
         val newRemainder = Offset(remainder.x + dx, remainder.y + dy)
-        val colDelta = (newRemainder.x / cellWidthPx).toInt()
+        val colDelta = (newRemainder.x / cellWidth).toInt()
         val rowDelta = (newRemainder.y / cellHeightPx).toInt()
         if (colDelta == 0 && rowDelta == 0) {
             if (isStart) startRemainderPx = newRemainder else endRemainderPx = newRemainder
             return
         }
         val settled = Offset(
-            newRemainder.x - colDelta * cellWidthPx,
+            newRemainder.x - colDelta * cellWidth,
             newRemainder.y - rowDelta * cellHeightPx
         )
         if (isStart) startRemainderPx = settled else endRemainderPx = settled

@@ -62,7 +62,7 @@ private const val RIGHT_HANDLE_HOTSPOT_FRACTION = 0.25f
 fun TerminalSelectionOverlay(
     state: TerminalSelectionState,
     emulator: TerminalEmulator?,
-    cellWidthPx: Int,
+    cellWidth: Float,
     cellHeightPx: Int,
     topRow: Int,
     onCopy: (String) -> Unit,
@@ -90,7 +90,7 @@ fun TerminalSelectionOverlay(
             active = sel != null && emulator != null,
             emulator = emulator,
             selection = sel,
-            cellWidthPx = cellWidthPx,
+            cellWidth = cellWidth,
             cellHeightPx = cellHeightPx,
             topRow = topRow,
             boxOffsetInRoot = boxOffsetInRoot,
@@ -100,16 +100,16 @@ fun TerminalSelectionOverlay(
             onShare = onShare,
         )
 
-        if (sel != null && emulator != null && cellWidthPx > 0 && cellHeightPx > 0) {
+        if (sel != null && emulator != null && cellWidth > 0f && cellHeightPx > 0) {
             SelectionHandlePopup(
                 handleAttr = android.R.attr.textSelectHandleLeft,
                 hotspotFraction = LEFT_HANDLE_HOTSPOT_FRACTION,
-                targetXPx = sel.startCol * cellWidthPx,
+                targetXPx = (sel.startCol * cellWidth).toInt(),
                 targetYPx = (sel.startRow - topRow + 1) * cellHeightPx,
                 onDrag = { dx, dy ->
                     state.dragHandle(
                         emulator,
-                        cellWidthPx,
+                        cellWidth,
                         cellHeightPx,
                         isStart = true,
                         dx = dx,
@@ -120,12 +120,12 @@ fun TerminalSelectionOverlay(
             SelectionHandlePopup(
                 handleAttr = android.R.attr.textSelectHandleRight,
                 hotspotFraction = RIGHT_HANDLE_HOTSPOT_FRACTION,
-                targetXPx = (sel.endCol + 1) * cellWidthPx,
+                targetXPx = ((sel.endCol + 1) * cellWidth).toInt(),
                 targetYPx = (sel.endRow - topRow + 1) * cellHeightPx,
                 onDrag = { dx, dy ->
                     state.dragHandle(
                         emulator,
-                        cellWidthPx,
+                        cellWidth,
                         cellHeightPx,
                         isStart = false,
                         dx = dx,
@@ -218,7 +218,7 @@ private fun SelectionHandlePopup(
 private class SelectionMenuContext(
     val emulator: TerminalEmulator?,
     val selection: TerminalSelection?,
-    val cellWidthPx: Int,
+    val cellWidth: Float,
     val cellHeightPx: Int,
     val topRow: Int,
     val boxOffsetInRoot: Offset,
@@ -238,7 +238,7 @@ private fun TerminalSelectionActionMode(
     active: Boolean,
     emulator: TerminalEmulator?,
     selection: TerminalSelection?,
-    cellWidthPx: Int,
+    cellWidth: Float,
     cellHeightPx: Int,
     topRow: Int,
     boxOffsetInRoot: Offset,
@@ -254,7 +254,7 @@ private fun TerminalSelectionActionMode(
         SelectionMenuContext(
             emulator,
             selection,
-            cellWidthPx,
+            cellWidth,
             cellHeightPx,
             topRow,
             boxOffsetInRoot,
@@ -333,9 +333,9 @@ private fun TerminalSelectionActionMode(
                         override fun onGetContentRect(mode: ActionMode, view: View, outRect: Rect) {
                             val ctx = current
                             val sel = ctx.selection
-                            if (sel == null || ctx.cellWidthPx <= 0 || ctx.cellHeightPx <= 0) return
-                            val left = min(sel.startCol, sel.endCol) * ctx.cellWidthPx
-                            val right = (max(sel.startCol, sel.endCol) + 1) * ctx.cellWidthPx
+                            if (sel == null || ctx.cellWidth <= 0f || ctx.cellHeightPx <= 0) return
+                            val left = min(sel.startCol, sel.endCol) * ctx.cellWidth
+                            val right = (max(sel.startCol, sel.endCol) + 1) * ctx.cellWidth
                             val top =
                                 ((sel.startRow - ctx.topRow) * ctx.cellHeightPx).coerceAtLeast(0)
                             val bottom = (sel.endRow - ctx.topRow + 1) * ctx.cellHeightPx
@@ -357,7 +357,7 @@ private fun TerminalSelectionActionMode(
 
     // The mode object survives the whole selection; only its position and, after Select All, its
     // content change. Nudge it to re-query onGetContentRect instead of recreating it per frame.
-    LaunchedEffect(selection, cellWidthPx, cellHeightPx, topRow, boxOffsetInRoot) {
+    LaunchedEffect(selection, cellWidth, cellHeightPx, topRow, boxOffsetInRoot) {
         actionMode?.invalidateContentRect()
     }
 }
