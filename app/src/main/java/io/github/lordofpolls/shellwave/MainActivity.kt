@@ -74,6 +74,7 @@ import io.github.lordofpolls.shellwave.core.net.sendMagicPacket
 import io.github.lordofpolls.shellwave.core.prefs.AppearancePreferences
 import io.github.lordofpolls.shellwave.core.prefs.AutomationPreferences
 import io.github.lordofpolls.shellwave.core.prefs.ReachabilityPreferences
+import io.github.lordofpolls.shellwave.core.prefs.SessionPreferences
 import io.github.lordofpolls.shellwave.core.prefs.SupportPreferences
 import io.github.lordofpolls.shellwave.core.prefs.rememberPrefState
 import io.github.lordofpolls.shellwave.core.prefs.ThemeMode
@@ -337,6 +338,7 @@ class MainActivity : FragmentActivity() {
             val colourTheme by rememberPrefState { AppearancePreferences.getColourTheme(it) }
             val themeMode by rememberPrefState { AppearancePreferences.getThemeMode(it) }
             val exactSchemeColours by rememberPrefState { AppearancePreferences.getExactSchemeColours(it) }
+            val closeSessionOnExit by rememberPrefState { SessionPreferences.getCloseOnExit(it) }
 
             // These three exist only to render the Settings controls and gate the indicator: each
             // setter writes the pref and calls start(), and the probe re-reads all of them on
@@ -450,6 +452,18 @@ class MainActivity : FragmentActivity() {
                 val scope = rememberCoroutineScope()
 
                 val summaries by sessionManager.summaries.collectAsState()
+                // Leave the terminal for the menu once the last session closes, so the navigation
+                // chrome comes back instead of an empty terminal with no menu. Keyed on the terminal
+                // being on top and reading the flow itself, not the collected `summaries`: a session
+                // ending under a screen pushed above the terminal (the SFTP browser) is caught when
+                // that screen pops, and a session opened just before openTerminal() is seen as open
+                // rather than judged against a stale snapshot - see the save effect below.
+                val terminalOnTop = subStack.lastOrNull() == "terminal"
+                LaunchedEffect(terminalOnTop) {
+                    if (!terminalOnTop) return@LaunchedEffect
+                    sessionManager.summaries.first { it.isEmpty() }
+                    popBack()
+                }
                 val screen =
                     when (subStack.lastOrNull()) {
                         "addEdit" -> Screen.AddEditHost(editingHostId.takeIf { it >= 0 })
@@ -1045,6 +1059,13 @@ class MainActivity : FragmentActivity() {
                                             exactSchemeColours = exactSchemeColours,
                                             onExactSchemeColoursChange = {
                                                 AppearancePreferences.setExactSchemeColours(
+                                                    this@MainActivity,
+                                                    it
+                                                )
+                                            },
+                                            closeSessionOnExit = closeSessionOnExit,
+                                            onCloseSessionOnExitChange = {
+                                                SessionPreferences.setCloseOnExit(
                                                     this@MainActivity,
                                                     it
                                                 )

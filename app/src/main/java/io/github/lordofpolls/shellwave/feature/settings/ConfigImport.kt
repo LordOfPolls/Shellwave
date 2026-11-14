@@ -23,6 +23,7 @@ import io.github.lordofpolls.shellwave.core.prefs.ColourTheme
 import io.github.lordofpolls.shellwave.core.prefs.ReachabilityInterval
 import io.github.lordofpolls.shellwave.core.prefs.ReachabilityPreferences
 import io.github.lordofpolls.shellwave.core.prefs.SessionLayoutPreferences
+import io.github.lordofpolls.shellwave.core.prefs.SessionPreferences
 import io.github.lordofpolls.shellwave.core.prefs.ThemeMode
 import io.github.lordofpolls.shellwave.core.prefs.WidgetPreferences
 import io.github.lordofpolls.shellwave.feature.glance.ScriptWidget
@@ -54,6 +55,7 @@ data class ImportedSettings(
     val themeMode: ThemeMode? = null,
     val colourTheme: ColourTheme? = null,
     val exactSchemeColours: Boolean? = null,
+    val closeSessionOnExit: Boolean? = null,
     val bellMode: BellMode? = null,
     val fullWidthTerminal: Boolean? = null,
     val reachabilityEnabled: Boolean? = null,
@@ -234,6 +236,7 @@ private fun JSONObject?.toImportedSettings(): ImportedSettings {
         colourTheme = enumOrNull<ColourTheme>(stringOrNull("colourTheme"))
             ?: booleanOrNull("dynamicColour")?.let { if (it) ColourTheme.DYNAMIC else ColourTheme.SCHEMATIC },
         exactSchemeColours = booleanOrNull("exactSchemeColours"),
+        closeSessionOnExit = booleanOrNull("closeSessionOnExit"),
         bellMode = enumOrNull(stringOrNull("bellMode")),
         fullWidthTerminal = booleanOrNull("fullWidthTerminal"),
         reachabilityEnabled = booleanOrNull("reachabilityEnabled"),
@@ -382,6 +385,7 @@ constructor(
         settings.themeMode?.let { AppearancePreferences.setThemeMode(context, it) }
         settings.colourTheme?.let { AppearancePreferences.setColourTheme(context, it) }
         settings.exactSchemeColours?.let { AppearancePreferences.setExactSchemeColours(context, it) }
+        settings.closeSessionOnExit?.let { SessionPreferences.setCloseOnExit(context, it) }
         settings.bellMode?.let { BellPreferences.set(context, it) }
         settings.fullWidthTerminal?.let {
             SessionLayoutPreferences.setFullWidthTerminal(context, it)

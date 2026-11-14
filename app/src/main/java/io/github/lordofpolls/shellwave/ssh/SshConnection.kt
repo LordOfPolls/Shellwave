@@ -186,9 +186,9 @@ open class SshConnection(
     /**
      * Idempotent, and the one place every session-end path routes through: [disconnect] calls it
      * directly for an explicit close, and the reader loop's `finally` calls it again for a drop it
-     * detects itself - a clean EOF or an IOException - which never goes through [disconnect] at
-     * all (see [SessionManager.handleDisconnected]'s clean-exit branch). A log must not outlive the
-     * session it belongs to either way.
+     * detects itself - a clean EOF or an IOException. Neither goes through [disconnect] unless
+     * [SessionManager.handleDisconnected] then closes the session (clean exit with close-on-exit on).
+     * A log must not outlive the session it belongs to either way.
      */
     private fun closeLogging() {
         val sink = logSink ?: return
@@ -402,7 +402,8 @@ open class SshConnection(
 
     // Forget before cancelling, or a channel can arrive mid-teardown and start a loop nothing will
     // cancel. Cancelling a job cannot interrupt a loop blocked in a channel read, and a reader that
-    // ends on a clean EOF never reaches ssh.disconnect(), so the serve loops are ended here.
+    // ends on a clean EOF does not itself reach ssh.disconnect() (only a close-on-exit session
+    // close does, afterwards), so the serve loops are ended here.
     // Closing the input stream is a local EOF that frees the read at once; channel.close() alone
     // waits for the peer's reply, which a hostile server can withhold. If the server then sends more
     // on that channel, sshj fails the transport: harmless at teardown, and on the refusal path only a

@@ -22,7 +22,6 @@ import io.github.lordofpolls.shellwave.ssh.SessionStatus
 import io.github.lordofpolls.shellwave.ssh.SshConnection
 import io.github.lordofpolls.shellwave.ssh.resolveConnectionSpec
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -274,12 +273,15 @@ internal constructor(
         val sessionId = sessionManager.openSession(spec)
         onSessionOpened(sessionId)
         val command = substituteParams(script.snippet, values)
+        // Null once the session is gone: closed by the user, or by a clean exit with the
+        // close-on-exit setting on. `first` on the non-null values alone would wait forever then.
         val summary =
             sessionManager.summaries
                 .map { list -> list.firstOrNull { it.id == sessionId } }
-                .filterNotNull()
-                .first { it.status != SessionStatus.CONNECTING }
-        if (summary.status == SessionStatus.CONNECTED) {
+                .first { it == null || it.status != SessionStatus.CONNECTING }
+        if (summary == null) {
+            reportError("The session closed before the script could run")
+        } else if (summary.status == SessionStatus.CONNECTED) {
             summary.connection.write("$command\n")
             if (script.disconnectAfter) summary.connection.write("exit\n")
         } else {

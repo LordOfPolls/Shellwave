@@ -94,7 +94,6 @@ import io.github.lordofpolls.shellwave.terminal.selectionHighlightColor
 import io.github.lordofpolls.shellwave.terminal.dragRows
 import io.github.lordofpolls.shellwave.terminal.terminalGestures
 import io.github.lordofpolls.shellwave.terminal.wheelButton
-import io.github.lordofpolls.shellwave.ui.design.EmptyState
 import io.github.lordofpolls.shellwave.ui.design.MachineText
 import io.github.lordofpolls.shellwave.ui.design.SessionChipModel
 import io.github.lordofpolls.shellwave.ui.design.SessionChipRail
@@ -149,17 +148,9 @@ fun SessionsScreen(
     modifier: Modifier = Modifier,
 ) {
     val summaries by sessionManager.summaries.collectAsState()
-    if (summaries.isEmpty()) {
-        // Was onEmpty(), which popped the screen away and made an empty Sessions tab unreachable
-        // rather than idle. Copy matches SessionsListScreen's empty state.
-        EmptyState(
-            message = "No open sessions.",
-            actionLabel = "Open Hosts",
-            onAction = onNewSession,
-            modifier = modifier.fillMaxSize(),
-        )
-        return
-    }
+    // MainActivity leaves the terminal as soon as the last session closes; this covers the frame
+    // before that lands.
+    if (summaries.isEmpty()) return
 
     val view = LocalView.current
     DisposableEffect(view) {
@@ -176,8 +167,10 @@ fun SessionsScreen(
 
     // Driven by the navigator's own destination; a second piece of state could drift from it.
     // Falls back to the first session once a target is known to exist, so a freshly-opened screen
-    // - or one whose selected session just closed - never shows an empty detail pane.
-    val selectedId = navigator.currentDestination?.contentKey
+    // - or one whose selected session just closed - never shows an empty detail pane. The
+    // navigator keeps the closed id as its content key, hence the membership check.
+    val navigatorKey = navigator.currentDestination?.contentKey
+    val selectedId = navigatorKey?.takeIf { key -> summaries.any { it.id == key } }
         ?: summaries.firstOrNull { it.id == initialSessionId }?.id ?: summaries.first().id
 
     // Keyed on the selected session, not shared screen-wide: switching tabs must not leave the
@@ -186,6 +179,10 @@ fun SessionsScreen(
 
     fun selectSession(id: Long) {
         scope.launch { navigator.navigateTo(ListDetailPaneScaffoldRole.Detail, id) }
+    }
+
+    LaunchedEffect(navigatorKey, summaries) {
+        if (navigatorKey != null && summaries.none { it.id == navigatorKey }) selectSession(selectedId)
     }
 
     // Keyed on [initialSessionId] instead of `Unit`: the terminal is not always torn down between

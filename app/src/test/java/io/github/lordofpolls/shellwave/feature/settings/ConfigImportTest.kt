@@ -125,6 +125,7 @@ class ConfigImportTest {
                 "themeMode" to "DARK",
                 "colourTheme" to "NOTHING",
                 "exactSchemeColours" to true,
+                "closeSessionOnExit" to true,
                 "bellMode" to "SILENT",
                 "fullWidthTerminal" to true,
                 "reachabilityEnabled" to true,
@@ -179,6 +180,7 @@ class ConfigImportTest {
         assertEquals(ThemeMode.DARK, settings.themeMode)
         assertEquals(ColourTheme.NOTHING, settings.colourTheme)
         assertEquals(true, settings.exactSchemeColours)
+        assertEquals(true, settings.closeSessionOnExit)
         assertEquals(BellMode.SILENT, settings.bellMode)
         assertEquals(true, settings.fullWidthTerminal)
         assertEquals(ReachabilityInterval.FIVE_MINUTES, settings.reachabilityInterval)
@@ -194,6 +196,7 @@ class ConfigImportTest {
             parseConfigImport(export(settings = mapOf("themeMode" to "MIDNIGHT"))).settings
 
         assertNull(settings.themeMode)
+        assertNull(settings.closeSessionOnExit)
         assertNull(settings.bellMode)
         assertNull(settings.fullWidthTerminal)
         assertNull(settings.quickSettingsTileScriptId)
