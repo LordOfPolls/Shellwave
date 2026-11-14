@@ -150,8 +150,8 @@ fun SessionsScreen(
 ) {
     val summaries by sessionManager.summaries.collectAsState()
     if (summaries.isEmpty()) {
-        // Was onEmpty(), which popped the screen away and made an empty Sessions tab unreachable
-        // rather than idle. Copy matches SessionsListScreen's empty state.
+        // Only shown for the frame before MainActivity pops the terminal off the stack.
+        // Copy matches SessionsListScreen's empty state.
         EmptyState(
             message = "No open sessions.",
             actionLabel = "Open Hosts",
@@ -177,7 +177,7 @@ fun SessionsScreen(
     // Driven by the navigator's own destination; a second piece of state could drift from it.
     // Falls back to the first session once a target is known to exist, so a freshly-opened screen
     // - or one whose selected session just closed - never shows an empty detail pane.
-    val selectedId = navigator.currentDestination?.contentKey
+    val selectedId = navigator.currentDestination?.contentKey?.takeIf { id -> summaries.any { it.id == id } }
         ?: summaries.firstOrNull { it.id == initialSessionId }?.id ?: summaries.first().id
 
     // Keyed on the selected session, not shared screen-wide: switching tabs must not leave the

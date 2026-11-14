@@ -450,6 +450,12 @@ class MainActivity : FragmentActivity() {
                 val scope = rememberCoroutineScope()
 
                 val summaries by sessionManager.summaries.collectAsState()
+                // The terminal hides nav chrome, so left up with nothing to show it strands the user
+                // on an empty state with no tabs (issue #4). The tab underneath has its own.
+                val terminalOnTop = subStack.lastOrNull() == "terminal"
+                LaunchedEffect(terminalOnTop, summaries.isEmpty()) {
+                    if (terminalOnTop && summaries.isEmpty()) popBack()
+                }
                 val screen =
                     when (subStack.lastOrNull()) {
                         "addEdit" -> Screen.AddEditHost(editingHostId.takeIf { it >= 0 })
