@@ -111,6 +111,7 @@ import io.github.lordofpolls.shellwave.feature.session.RemoteTextEditorScreen
 import io.github.lordofpolls.shellwave.feature.session.SessionsListScreen
 import io.github.lordofpolls.shellwave.feature.session.SessionsScreen
 import io.github.lordofpolls.shellwave.feature.session.SftpBrowserScreen
+import io.github.lordofpolls.shellwave.feature.session.cdCommand
 import io.github.lordofpolls.shellwave.feature.settings.ConfigExporter
 import io.github.lordofpolls.shellwave.feature.settings.ConfigImporter
 import io.github.lordofpolls.shellwave.feature.settings.KeyBarLayoutsScreen
@@ -1130,6 +1131,11 @@ class MainActivity : FragmentActivity() {
                                                 onEdit = { entry ->
                                                     editingRemotePath = entry.path
                                                     push("remoteEdit")
+                                                },
+                                                onOpenInTerminal = { path ->
+                                                    cdCommand(path)?.let { connection.write(it) }
+                                                    targetSessionId = current.sessionId
+                                                    popBack()
                                                 },
                                                 modifier = Modifier.weight(1f),
                                                 startPath = browsingPath,

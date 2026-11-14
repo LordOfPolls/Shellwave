@@ -55,3 +55,18 @@ class SftpBrowserHistoryTest {
         assertNull(popHistory(emptyList()))
     }
 }
+
+class CdCommandTest {
+
+    @Test
+    fun `cd quotes a path with a space and a single quote and ends with a carriage return`() {
+        assertEquals("cd -- '/srv/it'\\''s here'\r", cdCommand("/srv/it's here"))
+    }
+
+    @Test
+    fun `cd refuses a path with control characters`() {
+        for (c in listOf('\u0015', '\u0003', '\u001b', '\r', '\n', '\u007f')) {
+            assertNull(cdCommand("/srv/a${c}b"))
+        }
+    }
+}

@@ -1,5 +1,6 @@
 package io.github.lordofpolls.shellwave.feature.session
 
+import android.content.ClipData
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
@@ -18,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.CreateNewFolder
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Description
@@ -28,6 +30,7 @@ import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material.icons.outlined.Upload
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -53,10 +56,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
+import io.github.lordofpolls.shellwave.core.util.posixQuote
 import io.github.lordofpolls.shellwave.ssh.RemoteEntry
 import io.github.lordofpolls.shellwave.ssh.SftpOp
 import io.github.lordofpolls.shellwave.ssh.SshConnection
@@ -80,12 +86,14 @@ fun SftpBrowserScreen(
     connection: SshConnection,
     onBack: () -> Unit,
     onEdit: (RemoteEntry) -> Unit,
+    onOpenInTerminal: (String) -> Unit,
     modifier: Modifier = Modifier,
     startPath: String = ".",
     onPathChange: (String) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val fileTransferController = rememberFileTransferController()
+    val clipboard = LocalClipboard.current
 
     var path by remember { mutableStateOf(startPath) }
     var history by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -97,6 +105,7 @@ fun SftpBrowserScreen(
     val listState = rememberLazyListState()
     var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
     var menuFor by remember { mutableStateOf<String?>(null) }
+    var topMenuOpen by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf<RemoteEntry?>(null) }
     var renameOverwriteConfirm by remember { mutableStateOf<Pair<RemoteEntry, String>?>(null) }
     var deleting by remember { mutableStateOf<RemoteEntry?>(null) }
@@ -144,6 +153,18 @@ fun SftpBrowserScreen(
 
     fun reload() {
         reloadToken++
+    }
+
+    fun copyPath(value: String) {
+        scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("path", value))) }
+    }
+
+    fun openInTerminal(target: String) {
+        if (cdCommand(target) == null) {
+            opError = "This path contains control characters, so it can't be typed into the terminal safely."
+        } else {
+            onOpenInTerminal(target)
+        }
     }
 
     fun navigate(to: String) {
@@ -229,6 +250,29 @@ fun SftpBrowserScreen(
                     }) {
                         Icon(Icons.Outlined.Upload, contentDescription = "Upload")
                     }
+                    Box {
+                        IconButton(onClick = { topMenuOpen = true }) {
+                            Icon(Icons.Outlined.MoreVert, contentDescription = "More options")
+                        }
+                        DropdownMenu(expanded = topMenuOpen, onDismissRequest = { topMenuOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Copy path") },
+                                leadingIcon = { Icon(Icons.Outlined.ContentCopy, contentDescription = null) },
+                                onClick = {
+                                    topMenuOpen = false
+                                    copyPath(path)
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Open in terminal") },
+                                leadingIcon = { Icon(Icons.Outlined.Terminal, contentDescription = null) },
+                                onClick = {
+                                    topMenuOpen = false
+                                    openInTerminal(path)
+                                },
+                            )
+                        }
+                    }
                 }
             },
             windowInsets = WindowInsets(0, 0, 0, 0),
@@ -286,6 +330,14 @@ fun SftpBrowserScreen(
                             onDownload = {
                                 menuFor = null
                                 fileTransferController.requestDownload(connection, entry.path)
+                            },
+                            onCopyPath = {
+                                menuFor = null
+                                copyPath(entry.path)
+                            },
+                            onOpenInTerminal = {
+                                menuFor = null
+                                openInTerminal(entry.path)
                             },
                         )
                     }
@@ -478,6 +530,8 @@ private fun SftpEntryRow(
     onDelete: () -> Unit,
     onEdit: () -> Unit,
     onDownload: () -> Unit,
+    onCopyPath: () -> Unit,
+    onOpenInTerminal: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -541,6 +595,18 @@ private fun SftpEntryRow(
                         )
                     }
                     DropdownMenuItem(
+                        text = { Text("Copy path") },
+                        leadingIcon = { Icon(Icons.Outlined.ContentCopy, contentDescription = null) },
+                        onClick = onCopyPath,
+                    )
+                    if (entry.isDirectory) {
+                        DropdownMenuItem(
+                            text = { Text("Open in terminal") },
+                            leadingIcon = { Icon(Icons.Outlined.Terminal, contentDescription = null) },
+                            onClick = onOpenInTerminal,
+                        )
+                    }
+                    DropdownMenuItem(
                         text = { Text("Delete") },
                         leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null) },
                         onClick = onDelete,
@@ -573,3 +639,6 @@ internal fun historyAfterNavigate(history: List<String>, current: String, to: St
 
 internal fun popHistory(history: List<String>): Pair<String, List<String>>? =
     history.lastOrNull()?.let { it to history.dropLast(1) }
+
+internal fun cdCommand(path: String): String? =
+    if (path.any(Char::isISOControl)) null else "cd -- ${posixQuote(path)}\r"
