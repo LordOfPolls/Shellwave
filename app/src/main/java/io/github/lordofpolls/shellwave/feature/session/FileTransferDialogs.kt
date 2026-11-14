@@ -2,6 +2,7 @@ package io.github.lordofpolls.shellwave.feature.session
 
 import android.content.Context
 import android.net.Uri
+import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -73,6 +74,19 @@ internal fun FileTransferDialogs(
                 pendingDownload.remotePath.substringAfterLast('/').ifBlank { "download" }
             createDocument.launch(suggestedName)
         }
+    }
+
+    val pendingBatch = controller.pendingBatch
+    val openTree =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { tree ->
+            controller.batchDestinationPicked(
+                tree,
+                createTarget = { treeUri, name -> createDocumentIn(context, treeUri, name) },
+                deleteTarget = { uri -> runCatching { DocumentsContract.deleteDocument(context.contentResolver, uri) } },
+            )
+        }
+    LaunchedEffect(pendingBatch) {
+        if (pendingBatch != null) openTree.launch(null)
     }
 
     // "Upload file" (explicit action): pick a local source first...
@@ -266,3 +280,14 @@ private fun existingUriHasContent(context: Context, uri: Uri): Boolean =
                 cursor.moveToFirst() && !cursor.isNull(0) && cursor.getLong(0) > 0
             }
     }.getOrNull() ?: false
+
+private fun createDocumentIn(context: Context, tree: Uri, name: String): Uri? =
+    runCatching {
+        val parent = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
+        DocumentsContract.createDocument(
+            context.contentResolver,
+            parent,
+            mimeTypeFor(name) ?: "application/octet-stream",
+            name,
+        )
+    }.getOrNull()

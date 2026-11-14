@@ -1,6 +1,7 @@
 package io.github.lordofpolls.shellwave.feature.session
 
 import android.net.Uri
+import android.webkit.MimeTypeMap
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -10,13 +11,23 @@ import androidx.compose.runtime.setValue
 import io.github.lordofpolls.shellwave.ssh.SftpOp
 import io.github.lordofpolls.shellwave.ssh.SshConnection
 import io.github.lordofpolls.shellwave.ssh.describeSftpFailure
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 internal data class PendingDownload(val connection: SshConnection, val remotePath: String)
+
+internal data class PendingBatchDownload(
+    val connection: SshConnection,
+    val remotePaths: List<String>,
+    val skippedFolders: List<String>,
+)
 
 internal data class PendingUpload(
     val connection: SshConnection,
@@ -57,6 +68,9 @@ internal class FileTransferController internal constructor(private val scope: Co
     var pendingDownload by mutableStateOf<PendingDownload?>(null)
         private set
 
+    var pendingBatch by mutableStateOf<PendingBatchDownload?>(null)
+        private set
+
     var uploadSourcePrompt by mutableStateOf<SshConnection?>(null)
         private set
 
@@ -90,6 +104,64 @@ internal class FileTransferController internal constructor(private val scope: Co
     /** The remote path is already known, so this skips [downloadPathPrompt] and goes straight to the SAF destination picker. */
     fun requestDownload(connection: SshConnection, remotePath: String) {
         pendingDownload = PendingDownload(connection, remotePath)
+    }
+
+    fun requestBatchDownload(connection: SshConnection, remotePaths: List<String>, skippedFolders: List<String>) {
+        pendingBatch = PendingBatchDownload(connection, remotePaths, skippedFolders)
+    }
+
+    /**
+     * Files are created through the provider rather than written by name, so a name already in the
+     * chosen folder gets the provider's own de-duplicated sibling instead of being overwritten.
+     */
+    fun batchDestinationPicked(
+        tree: Uri?,
+        createTarget: (tree: Uri, name: String) -> Uri?,
+        deleteTarget: (Uri) -> Unit,
+    ) {
+        val pending = pendingBatch
+        pendingBatch = null
+        if (pending == null || tree == null) return
+        activeConnection = pending.connection
+        cancelledByUser = false
+        activeJob =
+            scope.launch {
+                var downloaded = 0
+                val failures = mutableListOf<String>()
+                for (remotePath in pending.remotePaths) {
+                    val label = remotePath.substringAfterLast('/').ifEmpty { remotePath }
+                    _progress.value = TransferProgress(label, 0L, null)
+                    val target = withContext(Dispatchers.IO) { createTarget(tree, label) }
+                    if (target == null) {
+                        failures += "$label (couldn't create the file)"
+                        continue
+                    }
+                    val outcome =
+                        try {
+                            pending.connection.downloadFile(remotePath, target) { transferred, total ->
+                                _progress.value = TransferProgress(label, transferred, total.takeIf { it >= 0 })
+                            }
+                        } catch (e: CancellationException) {
+                            withContext(NonCancellable + Dispatchers.IO) { deleteTarget(target) }
+                            throw e
+                        }
+                    outcome.fold(
+                        onSuccess = { downloaded++ },
+                        onFailure = { e ->
+                            failures += "$label (${describeSftpFailure(e, SftpOp.Download, remotePath).removeSuffix(".")})"
+                            withContext(Dispatchers.IO) { deleteTarget(target) }
+                        },
+                    )
+                }
+                _progress.value = null
+                activeConnection = null
+                if (cancelledByUser) return@launch
+                result = TransferUiResult(
+                    "Download",
+                    success = failures.isEmpty() && pending.skippedFolders.isEmpty() && downloaded > 0,
+                    message = batchDownloadSummary(downloaded, failures, pending.skippedFolders),
+                )
+            }
     }
 
     fun confirmDownloadPath(path: String) {
@@ -193,7 +265,12 @@ internal class FileTransferController internal constructor(private val scope: Co
         overwriteConfirm = null
     }
 
-    private fun startDownload(connection: SshConnection, remotePath: String, destination: Uri) {
+    fun startDownload(
+        connection: SshConnection,
+        remotePath: String,
+        destination: Uri,
+        onDownloaded: (() -> Unit)? = null,
+    ) {
         val label = remotePath.substringAfterLast('/').ifEmpty { remotePath }
         activeConnection = connection
         cancelledByUser = false
@@ -205,7 +282,13 @@ internal class FileTransferController internal constructor(private val scope: Co
                         _progress.value =
                             TransferProgress(label, transferred, total.takeIf { it >= 0 })
                     }
-                finish(label, "Downloaded", SftpOp.Download, remotePath, outcome)
+                if (onDownloaded != null && outcome.isSuccess && !cancelledByUser) {
+                    _progress.value = null
+                    activeConnection = null
+                    onDownloaded()
+                } else {
+                    finish(label, "Downloaded", SftpOp.Download, remotePath, outcome)
+                }
             }
     }
 
@@ -273,6 +356,17 @@ internal class FileTransferController internal constructor(private val scope: Co
         error = null
     }
 }
+
+internal fun batchDownloadSummary(downloaded: Int, failures: List<String>, skippedFolders: List<String>): String =
+    listOfNotNull(
+        "Downloaded $downloaded ${if (downloaded == 1) "file" else "files"}.".takeIf { downloaded > 0 },
+        failures.takeIf { it.isNotEmpty() }?.let { "Couldn't download: ${it.joinToString()}" },
+        skippedFolders.takeIf { it.isNotEmpty() }
+            ?.let { "Folders aren't downloaded — compress them first: ${it.joinToString()}" },
+    ).joinToString("\n")
+
+internal fun mimeTypeFor(name: String): String? =
+    MimeTypeMap.getSingleton().getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase())
 
 internal fun formatByteCount(bytes: Long): String {
     if (bytes < 1024) return "$bytes B"

@@ -1,6 +1,9 @@
 package io.github.lordofpolls.shellwave.feature.session
 
+import android.content.ActivityNotFoundException
 import android.content.ClipData
+import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
@@ -17,6 +20,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.DriveFileMove
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
+import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ContentCopy
@@ -58,18 +64,24 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import io.github.lordofpolls.shellwave.core.util.posixQuote
+import io.github.lordofpolls.shellwave.ssh.CaptureResult
 import io.github.lordofpolls.shellwave.ssh.RemoteEntry
 import io.github.lordofpolls.shellwave.ssh.SftpOp
 import io.github.lordofpolls.shellwave.ssh.SshConnection
 import io.github.lordofpolls.shellwave.ssh.describeSftpFailure
 import io.github.lordofpolls.shellwave.ui.design.EmptyState
 import io.github.lordofpolls.shellwave.ui.design.MachineText
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 import java.text.DateFormat
 import java.util.Date
 
@@ -94,6 +106,7 @@ fun SftpBrowserScreen(
     val scope = rememberCoroutineScope()
     val fileTransferController = rememberFileTransferController()
     val clipboard = LocalClipboard.current
+    val context = LocalContext.current
 
     var path by remember { mutableStateOf(startPath) }
     var history by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -106,6 +119,10 @@ fun SftpBrowserScreen(
     var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
     var menuFor by remember { mutableStateOf<String?>(null) }
     var topMenuOpen by remember { mutableStateOf(false) }
+    var selectionMenuOpen by remember { mutableStateOf(false) }
+    var picking by remember { mutableStateOf<Pair<DestinationAction, List<RemoteEntry>>?>(null) }
+    var compressing by remember { mutableStateOf<List<RemoteEntry>?>(null) }
+    var busy by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf<RemoteEntry?>(null) }
     var renameOverwriteConfirm by remember { mutableStateOf<Pair<RemoteEntry, String>?>(null) }
     var deleting by remember { mutableStateOf<RemoteEntry?>(null) }
@@ -159,6 +176,140 @@ fun SftpBrowserScreen(
         scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("path", value))) }
     }
 
+    val entriesByPath = remember(entries) { entries.associateBy { it.path } }
+    val selectedEntries = selected.mapNotNull { entriesByPath[it] }
+
+    suspend fun splitByConflict(
+        targets: List<RemoteEntry>,
+        destination: String,
+    ): Pair<List<RemoteEntry>, List<String>>? {
+        val free = mutableListOf<RemoteEntry>()
+        val conflicts = mutableListOf<String>()
+        for (entry in targets) {
+            val target = remoteChildPath(destination, entry.name)
+            val exists = connection.remoteFileExists(target).getOrElse { e ->
+                opError =
+                    "Couldn't check whether \"$target\" already exists on the server: " +
+                        "${describeSftpFailure(e, SftpOp.Stat, target)}. Nothing was changed."
+                return null
+            }
+            if (exists) conflicts += entry.name else free += entry
+        }
+        return free to conflicts
+    }
+
+    fun runBusy(block: suspend () -> Unit) {
+        if (busy) return
+        busy = true
+        scope.launch {
+            try {
+                block()
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    fun withSelection(block: (List<RemoteEntry>) -> Unit) {
+        val snapshot = selectedEntries
+        if (snapshot.isEmpty()) opError = "Nothing is selected." else block(snapshot)
+    }
+
+    fun moveEntries(targets: List<RemoteEntry>, destination: String) {
+        runBusy {
+            val (free, conflicts) = splitByConflict(targets, destination) ?: return@runBusy
+            val failures = free.mapNotNull { entry ->
+                connection.renameRemote(entry.path, remoteChildPath(destination, entry.name))
+                    .exceptionOrNull()
+                    ?.let { "${entry.name} (${describeSftpFailure(it, SftpOp.Rename, entry.path).removeSuffix(".")})" }
+            }
+            reload()
+            opError = batchReport(failures.takeIf { it.isNotEmpty() }?.let { "Couldn't move: ${it.joinToString()}" }, conflicts)
+        }
+    }
+
+    fun copyEntries(targets: List<RemoteEntry>, destination: String) {
+        runBusy {
+            val (free, conflicts) = splitByConflict(targets, destination) ?: return@runBusy
+            val failure = if (free.isEmpty()) null else
+                captureFailure("Copy", connection.execCapture(cpCommand(free.map { it.path }, destination)))
+            reload()
+            opError = batchReport(failure, conflicts)
+        }
+    }
+
+    fun compressEntries(targets: List<RemoteEntry>, archiveName: String) {
+        val archivePath = remoteChildPath(path, archiveName)
+        runBusy {
+            val exists = connection.remoteFileExists(archivePath).getOrElse { e ->
+                opError =
+                    "Couldn't check whether \"$archivePath\" already exists on the server: " +
+                        "${describeSftpFailure(e, SftpOp.Stat, archivePath)}. Nothing was compressed."
+                return@runBusy
+            }
+            if (exists) {
+                opError = "\"$archiveName\" already exists here. Pick another name."
+                return@runBusy
+            }
+            val failure = captureFailure(
+                "Compress",
+                connection.execCapture(tarCommand(archivePath, path, targets.map { it.name })),
+            )
+            reload()
+            opError = failure
+        }
+    }
+
+    fun downloadEntries(targets: List<RemoteEntry>) {
+        val files = targets.filter { !it.isDirectory }
+        val folders = targets.filter { it.isDirectory }.map { it.name }
+        when {
+            files.size == 1 && folders.isEmpty() ->
+                fileTransferController.requestDownload(connection, files.single().path)
+
+            files.isEmpty() -> opError = batchDownloadSummary(0, emptyList(), folders)
+            else -> fileTransferController.requestBatchDownload(connection, files.map { it.path }, folders)
+        }
+    }
+
+    fun openWith(entry: RemoteEntry) {
+        val leaf = safeLocalName(entry.name)
+        if (leaf == null) {
+            opError = "\"${entry.name}\" has a name that can't be safely saved on this device."
+            return
+        }
+        if (fileTransferController.progress.value != null) {
+            opError = "Wait for the current transfer to finish first."
+            return
+        }
+        scope.launch {
+            val dir = File(context.cacheDir, "open-with")
+            val file = File(dir, leaf)
+            val ready = withContext(Dispatchers.IO) {
+                dir.deleteRecursively()
+                dir.mkdirs()
+                file.canonicalFile.parentFile == dir.canonicalFile
+            }
+            if (!ready) {
+                opError = "\"${entry.name}\" has a name that can't be safely saved on this device."
+                return@launch
+            }
+            fileTransferController.startDownload(connection, entry.path, Uri.fromFile(file)) {
+                try {
+                    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+                    val view = Intent(Intent.ACTION_VIEW)
+                        .setDataAndType(uri, mimeTypeFor(leaf) ?: "*/*")
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    context.startActivity(Intent.createChooser(view, null))
+                } catch (e: ActivityNotFoundException) {
+                    opError = "No app on this device can open \"${entry.name}\"."
+                } catch (e: IllegalArgumentException) {
+                    opError = "Couldn't share \"${entry.name}\" with another app."
+                }
+            }
+        }
+    }
+
     fun openInTerminal(target: String) {
         if (cdCommand(target) == null) {
             opError = "This path contains control characters, so it can't be typed into the terminal safely."
@@ -204,8 +355,6 @@ fun SftpBrowserScreen(
         if (transferResult != null) reload()
     }
 
-    val entriesByPath = remember(entries) { entries.associateBy { it.path } }
-
     Column(modifier = modifier.fillMaxSize()) {
         TopAppBar(
             title = {
@@ -232,8 +381,66 @@ fun SftpBrowserScreen(
             },
             actions = {
                 if (selected.isNotEmpty()) {
+                    IconButton(onClick = { downloadEntries(selectedEntries) }) {
+                        Icon(Icons.Outlined.Download, contentDescription = "Download selected")
+                    }
                     IconButton(onClick = { deletingSelection = true }) {
                         Icon(Icons.Outlined.Delete, contentDescription = "Delete selected")
+                    }
+                    Box {
+                        IconButton(onClick = { selectionMenuOpen = true }) {
+                            Icon(Icons.Outlined.MoreVert, contentDescription = "More actions")
+                        }
+                        DropdownMenu(expanded = selectionMenuOpen, onDismissRequest = { selectionMenuOpen = false }) {
+                            val single = selectedEntries.singleOrNull()
+                            if (single != null) {
+                                DropdownMenuItem(
+                                    text = { Text("Rename") },
+                                    leadingIcon = { Icon(Icons.Outlined.DriveFileRenameOutline, contentDescription = null) },
+                                    onClick = {
+                                        selectionMenuOpen = false
+                                        renaming = single
+                                    },
+                                )
+                            }
+                            DropdownMenuItem(
+                                text = { Text("Move") },
+                                leadingIcon = { Icon(Icons.AutoMirrored.Outlined.DriveFileMove, contentDescription = null) },
+                                enabled = !busy,
+                                onClick = {
+                                    selectionMenuOpen = false
+                                    withSelection { picking = DestinationAction.Move to it }
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Copy") },
+                                leadingIcon = { Icon(Icons.Outlined.ContentCopy, contentDescription = null) },
+                                enabled = !busy,
+                                onClick = {
+                                    selectionMenuOpen = false
+                                    withSelection { picking = DestinationAction.Copy to it }
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Compress") },
+                                leadingIcon = { Icon(Icons.Outlined.Archive, contentDescription = null) },
+                                enabled = !busy,
+                                onClick = {
+                                    selectionMenuOpen = false
+                                    withSelection { compressing = it }
+                                },
+                            )
+                            if (single != null && !single.isDirectory) {
+                                DropdownMenuItem(
+                                    text = { Text("Open with") },
+                                    leadingIcon = { Icon(Icons.AutoMirrored.Outlined.OpenInNew, contentDescription = null) },
+                                    onClick = {
+                                        selectionMenuOpen = false
+                                        openWith(single)
+                                    },
+                                )
+                            }
+                        }
                     }
                 } else {
                     remoteParentPath(path)?.let { parent ->
@@ -278,7 +485,7 @@ fun SftpBrowserScreen(
             windowInsets = WindowInsets(0, 0, 0, 0),
         )
 
-        if (refreshing) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        if (refreshing || busy) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
 
         when {
             loading -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -334,6 +541,10 @@ fun SftpBrowserScreen(
                             onCopyPath = {
                                 menuFor = null
                                 copyPath(entry.path)
+                            },
+                            onOpenWith = {
+                                menuFor = null
+                                openWith(entry)
                             },
                             onOpenInTerminal = {
                                 menuFor = null
@@ -416,7 +627,7 @@ fun SftpBrowserScreen(
     }
 
     if (deletingSelection) {
-        val targets = selected.mapNotNull { entriesByPath[it] }
+        val targets = selectedEntries
         AlertDialog(
             onDismissRequest = { deletingSelection = false },
             title = { Text("Delete ${targets.size} items?") },
@@ -468,6 +679,35 @@ fun SftpBrowserScreen(
                 }
             },
             onDismiss = { creatingFolder = false },
+        )
+    }
+
+    picking?.let { (action, targets) ->
+        RemotePathPickerDialog(
+            connection = connection,
+            mode = RemotePickerMode.DIRECTORY,
+            startPath = path,
+            onPick = { destination, isDirectory ->
+                if (isDirectory) {
+                    picking = null
+                    if (action == DestinationAction.Move) moveEntries(targets, destination)
+                    else copyEntries(targets, destination)
+                }
+            },
+            onDismiss = { picking = null },
+        )
+    }
+
+    compressing?.let { targets ->
+        NameDialog(
+            title = "Compress",
+            initialName = defaultArchiveName(targets.map { it.name }),
+            confirmLabel = "Compress",
+            onConfirm = { name ->
+                compressing = null
+                compressEntries(targets, name)
+            },
+            onDismiss = { compressing = null },
         )
     }
 
@@ -531,6 +771,7 @@ private fun SftpEntryRow(
     onEdit: () -> Unit,
     onDownload: () -> Unit,
     onCopyPath: () -> Unit,
+    onOpenWith: () -> Unit,
     onOpenInTerminal: () -> Unit,
 ) {
     Row(
@@ -593,6 +834,11 @@ private fun SftpEntryRow(
                             },
                             onClick = onDownload,
                         )
+                        DropdownMenuItem(
+                            text = { Text("Open with") },
+                            leadingIcon = { Icon(Icons.AutoMirrored.Outlined.OpenInNew, contentDescription = null) },
+                            onClick = onOpenWith,
+                        )
                     }
                     DropdownMenuItem(
                         text = { Text("Copy path") },
@@ -642,3 +888,38 @@ internal fun popHistory(history: List<String>): Pair<String, List<String>>? =
 
 internal fun cdCommand(path: String): String? =
     if (path.any(Char::isISOControl)) null else "cd -- ${posixQuote(path)}\r"
+
+internal enum class DestinationAction { Move, Copy }
+
+internal fun cpCommand(sources: List<String>, destination: String): String =
+    "cp -R -- ${sources.joinToString(" ") { posixQuote(it) }} ${posixQuote(destination)}"
+
+internal fun tarCommand(archivePath: String, directory: String, names: List<String>): String =
+    "tar -czf ${posixQuote(archivePath)} -C ${posixQuote(directory)} ${names.joinToString(" ") { posixQuote("./$it") }}"
+
+internal fun defaultArchiveName(names: List<String>): String =
+    if (names.size == 1) "${names.single()}.tar.gz" else "archive.tar.gz"
+
+internal fun captureFailure(what: String, result: CaptureResult): String? {
+    val error = result.error
+    return when {
+        error != null && error.startsWith("Timed out") ->
+            "$what timed out after waiting for the server. It may still be running there."
+
+        error != null -> "$what failed: $error"
+        result.exitStatus != 0 ->
+            "$what failed (exit ${result.exitStatus ?: "unknown"})" +
+                result.stderr.trim().takeIf { it.isNotEmpty() }?.let { ": $it" }.orEmpty()
+
+        else -> null
+    }
+}
+
+internal fun batchReport(failure: String?, conflicts: List<String>): String? =
+    listOfNotNull(
+        failure,
+        conflicts.takeIf { it.isNotEmpty() }?.let { "Skipped, already in the destination: ${it.joinToString()}" },
+    ).joinToString("\n").ifEmpty { null }
+
+internal fun safeLocalName(name: String): String? =
+    name.substringAfterLast('/').takeIf { it.isNotEmpty() && it != "." && it != ".." && it.none(Char::isISOControl) }
