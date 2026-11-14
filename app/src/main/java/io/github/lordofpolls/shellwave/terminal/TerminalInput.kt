@@ -115,6 +115,9 @@ fun TerminalInputCapture(
                     capitalization = KeyboardCapitalization.None,
                     // Prevent keyboard from autocorrect/suggestions
                     keyboardType = KeyboardType.PasswordVisible,
+                    // The caller decides when the keyboard comes up. A field gaining focus on its
+                    // own, as a freshly composed one does on every tab switch, must not pop it up.
+                    showKeyboardOnFocus = false,
                 ),
         )
     }

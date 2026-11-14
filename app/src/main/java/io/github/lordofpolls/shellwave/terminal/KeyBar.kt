@@ -173,11 +173,11 @@ private const val MIN_BUTTONS_FOR_FREE_SECOND_ROW = 4
 /**
  * Shows the soft keyboard, or hides it when it is already up.
  *
- * This exists because focus is not visibility. The terminal's IME shim ([TerminalInputCapture]) is
- * focused for the whole life of a session, so once the keyboard has been dismissed - by the back
- * gesture, or by the system - tapping the terminal calls `requestFocus()` on a field that is
- * *already* focused, which is a no-op and brings nothing back. The bar is the only chrome that
- * survives an IME dismissal, so this is where the way back belongs.
+ * This exists because focus is not visibility. The terminal's IME shim ([TerminalInputCapture]) does
+ * not show the keyboard when it gains focus, and it stays focused while the keyboard is dismissed -
+ * by the back gesture, or by the system - so focus alone never brings it back. Tapping the terminal
+ * shows it explicitly, but the bar is the one control that is always on screen, so the keyboard's
+ * toggle belongs here too.
  *
  * Icon-only: it is app chrome rather than a key, and nothing it does reaches the far end, so
  * dressing it as one more `CTRL`-style label would be a claim about the wrong thing. The glyph

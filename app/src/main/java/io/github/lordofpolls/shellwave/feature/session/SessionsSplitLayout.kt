@@ -15,6 +15,7 @@ import androidx.compose.material3.adaptive.layout.ListDetailPaneScaffold
 import androidx.compose.material3.adaptive.navigation.ThreePaneScaffoldNavigator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -61,6 +62,7 @@ internal fun SessionsSplitLayout(
     searchController: TerminalSearchController,
     modifier: Modifier = Modifier,
 ) {
+    val shared = remember { SessionBodyShared() }
     Box(modifier = modifier) {
         val tabletop = posture as? FoldPosture.Tabletop
         if (tabletop != null) {
@@ -74,25 +76,30 @@ internal fun SessionsSplitLayout(
                 keyBarLayoutDao = keyBarLayoutDao,
                 fileTransferController = fileTransferController,
                 searchController = searchController,
+                shared = shared,
                 modifier = Modifier.fillMaxSize(),
             )
         } else if (isWide && fullWidthTerminal) {
             // Bypasses the scaffold rather than talking it into a Detail-only pane while
             // `isWide` stays true. Reachable only while `isWide`, so a narrow window cannot get
             // stuck.
-            SessionTabBody(
-                sessionId = selectedId,
-                sessionManager = sessionManager,
-                terminalProfile = terminalProfile,
-                terminalProfileDao = terminalProfileDao,
-                keyBarLayoutDao = keyBarLayoutDao,
-                fileTransferController = fileTransferController,
-                searchController = searchController,
-                showLayoutToggle = true,
-                fullWidthTerminal = fullWidthTerminal,
-                onToggleFullWidth = onToggleFullWidth,
-                modifier = Modifier.fillMaxSize()
-            )
+            // Fresh state per session: see SessionTabBody.
+            key(selectedId) {
+                SessionTabBody(
+                    sessionId = selectedId,
+                    sessionManager = sessionManager,
+                    terminalProfile = terminalProfile,
+                    terminalProfileDao = terminalProfileDao,
+                    keyBarLayoutDao = keyBarLayoutDao,
+                    fileTransferController = fileTransferController,
+                    searchController = searchController,
+                    shared = shared,
+                    showLayoutToggle = true,
+                    fullWidthTerminal = fullWidthTerminal,
+                    onToggleFullWidth = onToggleFullWidth,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         } else {
             ListDetailPaneScaffold(
                 directive = navigator.scaffoldDirective,
@@ -112,19 +119,23 @@ internal fun SessionsSplitLayout(
                 },
                 detailPane = {
                     AnimatedPane {
-                        SessionTabBody(
-                            sessionId = selectedId,
-                            sessionManager = sessionManager,
-                            terminalProfile = terminalProfile,
-                            terminalProfileDao = terminalProfileDao,
-                            keyBarLayoutDao = keyBarLayoutDao,
-                            fileTransferController = fileTransferController,
-                            searchController = searchController,
-                            showLayoutToggle = isWide,
-                            fullWidthTerminal = fullWidthTerminal,
-                            onToggleFullWidth = onToggleFullWidth,
-                            modifier = Modifier.fillMaxSize()
-                        )
+                        // Fresh state per session: see SessionTabBody.
+                        key(selectedId) {
+                            SessionTabBody(
+                                sessionId = selectedId,
+                                sessionManager = sessionManager,
+                                terminalProfile = terminalProfile,
+                                terminalProfileDao = terminalProfileDao,
+                                keyBarLayoutDao = keyBarLayoutDao,
+                                fileTransferController = fileTransferController,
+                                searchController = searchController,
+                                shared = shared,
+                                showLayoutToggle = isWide,
+                                fullWidthTerminal = fullWidthTerminal,
+                                onToggleFullWidth = onToggleFullWidth,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
                     }
                 },
             )
@@ -211,6 +222,7 @@ private fun TabletopSessionLayout(
     keyBarLayoutDao: KeyBarLayoutDao,
     fileTransferController: FileTransferController,
     searchController: TerminalSearchController,
+    shared: SessionBodyShared,
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
@@ -226,32 +238,40 @@ private fun TabletopSessionLayout(
         val hingeGap = with(density) { (localHingeBottomPx - localHingeTopPx).toDp() }
 
         if (terminalHeight > 0.dp) {
-            SessionTabBody(
-                sessionId = sessionId,
-                sessionManager = sessionManager,
-                terminalProfile = terminalProfile,
-                terminalProfileDao = terminalProfileDao,
-                keyBarLayoutDao = keyBarLayoutDao,
-                fileTransferController = fileTransferController,
-                searchController = searchController,
-                terminalHeight = terminalHeight,
-                preKeyBarGap = hingeGap,
-                modifier = Modifier.fillMaxSize(),
-            )
+            // Fresh state per session: see SessionTabBody.
+            key(sessionId) {
+                SessionTabBody(
+                    sessionId = sessionId,
+                    sessionManager = sessionManager,
+                    terminalProfile = terminalProfile,
+                    terminalProfileDao = terminalProfileDao,
+                    keyBarLayoutDao = keyBarLayoutDao,
+                    fileTransferController = fileTransferController,
+                    searchController = searchController,
+                    shared = shared,
+                    terminalHeight = terminalHeight,
+                    preKeyBarGap = hingeGap,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         } else {
             // Hinge at or above this layout's own top edge, e.g. mid fold-transition before the
             // first onGloballyPositioned lands. Fall back to the weighted split rather than hand
             // SessionTabBody a zero or negative height.
-            SessionTabBody(
-                sessionId = sessionId,
-                sessionManager = sessionManager,
-                terminalProfile = terminalProfile,
-                terminalProfileDao = terminalProfileDao,
-                keyBarLayoutDao = keyBarLayoutDao,
-                fileTransferController = fileTransferController,
-                searchController = searchController,
-                modifier = Modifier.fillMaxSize(),
-            )
+            // Fresh state per session: see SessionTabBody.
+            key(sessionId) {
+                SessionTabBody(
+                    sessionId = sessionId,
+                    sessionManager = sessionManager,
+                    terminalProfile = terminalProfile,
+                    terminalProfileDao = terminalProfileDao,
+                    keyBarLayoutDao = keyBarLayoutDao,
+                    fileTransferController = fileTransferController,
+                    searchController = searchController,
+                    shared = shared,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
     }
 }
