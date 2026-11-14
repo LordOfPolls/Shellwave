@@ -6,10 +6,33 @@ import io.github.lordofpolls.shellwave.core.db.entities.KeyBarLayoutEntity
 import org.json.JSONArray
 import org.json.JSONObject
 
-fun shouldHideKeyBar(hideWithKeyboard: Boolean, keyboard: Int, hardKeyboardHidden: Int): Boolean =
-    hideWithKeyboard &&
-        keyboard != Configuration.KEYBOARD_NOKEYS &&
-        hardKeyboardHidden == Configuration.HARDKEYBOARDHIDDEN_NO
+data class KeyboardDeviceInfo(
+    val isVirtual: Boolean,
+    val isExternal: Boolean,
+    val isEnabled: Boolean,
+    val isKeyboard: Boolean,
+    val isAlphabetic: Boolean,
+)
+
+/**
+ * Tablet keyboard covers, some Bluetooth keyboards and OEM skins show up only as an `InputDevice`
+ * and never set `Configuration.keyboard`. An external keyboard ignores `hardKeyboardHidden`: with
+ * "Show on-screen keyboard while physical keyboard is active" on, the window manager reports
+ * `HARDKEYBOARDHIDDEN_YES` for it. Built-in keyboards keep that veto, which covers a closed lid.
+ */
+fun shouldHideKeyBar(
+    hideWithKeyboard: Boolean,
+    keyboard: Int,
+    hardKeyboardHidden: Int,
+    devices: List<KeyboardDeviceInfo>,
+): Boolean {
+    if (!hideWithKeyboard) return false
+    val usable = devices.filter { it.isKeyboard && it.isAlphabetic && it.isEnabled && !it.isVirtual }
+    if (usable.any { it.isExternal }) return true
+    if (hardKeyboardHidden == Configuration.HARDKEYBOARDHIDDEN_YES) return false
+    return usable.isNotEmpty() ||
+        (keyboard != Configuration.KEYBOARD_NOKEYS && hardKeyboardHidden == Configuration.HARDKEYBOARDHIDDEN_NO)
+}
 
 /**
  * [KeyBarKeyType.SPECIAL] is an Android [KeyEvent] keycode fed to [KeyHandler.getCode];
