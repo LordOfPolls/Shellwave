@@ -4,6 +4,7 @@ import androidx.fragment.app.FragmentActivity
 import io.github.lordofpolls.shellwave.core.crypto.CredentialVault
 import io.github.lordofpolls.shellwave.core.db.dao.HostDao
 import io.github.lordofpolls.shellwave.core.db.entities.HostEntity
+import java.io.IOException
 import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.connection.channel.direct.DirectConnection
 import net.schmizz.sshj.transport.verification.HostKeyVerifier
@@ -43,6 +44,11 @@ class ProxyChainResources internal constructor(
  *
  * A failure partway through tears down everything already opened, so a caller that never sees a
  * successful return owns nothing but [finalSsh].
+ *
+ * [isClosing] is polled before each hop is dialled, so a caller that was torn down mid-chain stops
+ * at the next hop boundary instead of authenticating (and prompting) through the rest. It cannot
+ * interrupt a hop already in flight. It throws [IOException], which the failure handling above
+ * cleans up after.
  */
 internal fun connectChainAndAuthenticate(
     finalSsh: SSHClient,
@@ -52,6 +58,7 @@ internal fun connectChainAndAuthenticate(
     targetUsername: String,
     targetAuthMethod: AuthMethod,
     hostKeyVerifier: HostKeyVerifier,
+    isClosing: () -> Boolean = { false },
 ): ProxyChainResources {
     if (hops.isEmpty()) {
         connectAndAuthenticate(
@@ -71,6 +78,7 @@ internal fun connectChainAndAuthenticate(
     try {
         var previous: SSHClient? = null
         for (hop in hops) {
+            if (isClosing()) throw IOException("Connection closed while connecting")
             val client = SSHClient()
             val prev = previous
             if (prev == null) {
@@ -96,6 +104,7 @@ internal fun connectChainAndAuthenticate(
             clients += client
             previous = client
         }
+        if (isClosing()) throw IOException("Connection closed while connecting")
         val finalChannel = previous!!.newDirectConnection(targetHost, targetPort)
         channels += finalChannel
         connectViaAndAuthenticate(
