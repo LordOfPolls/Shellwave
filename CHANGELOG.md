@@ -1,6 +1,26 @@
 # Changelog
 
 
+## 1.11.0 - 2026-11-15
+
+### New
+- Option to hide the key bar when a physical keyboard is attached
+- Show the server's pre-login banner
+- Detect physical keyboards through InputDevice
+- Back steps through visited folders
+- Copy path, open in terminal, breadcrumb follows current folder
+- Move, copy, compress, multi-download and open with
+
+### Fixed
+- Report unverified uploads as failures and truncate on download (#14)
+- Leave the terminal when the last session closes
+- Send AltGr characters from physical keyboards
+
+### Documentation
+- Add contributing guide and an enforced PR template
+
+[Every commit in this release](https://github.com/LordOfPolls/Shellwave/compare/1.10.0...1.11.0)
+
 ## 1.10.0 - 2026-10-30
 
 ### Fixed
