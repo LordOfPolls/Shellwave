@@ -96,7 +96,6 @@ import io.github.lordofpolls.shellwave.ssh.publicKeyLineOf
 import io.github.lordofpolls.shellwave.ssh.readKeyText
 import io.github.lordofpolls.shellwave.ssh.resolveProxyHops
 import io.github.lordofpolls.shellwave.terminal.DEFAULT_COLOR_SCHEME
-import io.github.lordofpolls.shellwave.terminal.DEFAULT_TERMINAL_PROFILE
 import io.github.lordofpolls.shellwave.ui.design.BackTopBar
 import io.github.lordofpolls.shellwave.ui.design.CollapsibleSection
 import io.github.lordofpolls.shellwave.ui.design.ColorPickerDialog
@@ -217,8 +216,7 @@ fun AddEditHostScreen(
     fun enableProfileOverride() {
         overridesToggled = true
         scope.launch {
-            val fresh = DEFAULT_TERMINAL_PROFILE.copy(id = 0, name = "Host override")
-            terminalProfileOverride = fresh.copy(id = terminalProfileDao.insert(fresh))
+            terminalProfileOverride = terminalProfileDao.insertOverride()
         }
     }
 
@@ -237,8 +235,7 @@ fun AddEditHostScreen(
     fun enableSchemeOverride() {
         overridesToggled = true
         scope.launch {
-            val fresh = DEFAULT_COLOR_SCHEME.copy(id = 0, name = "Custom")
-            colorSchemeOverride = fresh.copy(id = colorSchemeDao.insert(fresh))
+            colorSchemeOverride = colorSchemeDao.insertOverride()
         }
     }
 
